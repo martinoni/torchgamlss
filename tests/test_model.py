@@ -183,3 +183,23 @@ def test_missing_or_extra_smooth_covariates_are_rejected():
         model.linear_predictors(design)
     with pytest.raises(ValueError, match="extra"):
         model.linear_predictors(design, smooth_covariates={"mu": {"x": x, "other": x}})
+
+
+def test_lbfgs_rejects_automatic_smoothing_parameter_selection():
+    x = torch.linspace(-1.0, 1.0, 20, dtype=torch.float64)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        smooth_terms={"mu": {"x": PSpline.from_data(x)}},
+    )
+    design = {
+        "mu": torch.ones((x.numel(), 1), dtype=x.dtype),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+
+    with pytest.raises(ValueError, match="fit_rs"):
+        model.fit(
+            torch.sin(x),
+            design,
+            smooth_covariates={"mu": {"x": x}},
+        )

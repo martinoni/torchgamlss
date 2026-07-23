@@ -17,6 +17,13 @@ pb_fitted_reference_path <- file.path(reference_dir, "no_pb_fitted_reference.csv
 pb_coefficient_reference_path <- file.path(
   reference_dir, "no_pb_coefficient_reference.csv"
 )
+pb_ml_reference_path <- file.path(reference_dir, "no_pb_ml_reference.csv")
+pb_ml_fitted_reference_path <- file.path(
+  reference_dir, "no_pb_ml_fitted_reference.csv"
+)
+pb_ml_coefficient_reference_path <- file.path(
+  reference_dir, "no_pb_ml_coefficient_reference.csv"
+)
 
 family <- NO()
 cases <- read.csv(cases_path)
@@ -120,6 +127,41 @@ pb_coefficient_reference <- data.frame(
   coefficient = drop(pb_smooth$coef)
 )
 
+pb_ml_fit <- gamlss(
+  y ~ pb(x),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = RS(),
+  data = pb_fit_data,
+  control = gamlss.control(c.crit = 1e-10, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-10, cyc = 200, bf.tol = 1e-10, bf.cyc = 200
+  )
+)
+pb_ml_smooth <- getSmo(pb_ml_fit, parameter = "mu", which = 1)
+pb_ml_reference <- data.frame(
+  mu_intercept = unname(coef(pb_ml_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(pb_ml_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(pb_ml_fit, what = "sigma")[[1]]),
+  smoothing_parameter = unname(pb_ml_smooth$lambda),
+  smooth_edf = unname(pb_ml_smooth$edf),
+  global_deviance = unname(deviance(pb_ml_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pb_ml_fit)),
+  outer_iterations = pb_ml_fit$iter,
+  converged = pb_ml_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pb_ml_fitted_reference <- data.frame(
+  mu = fitted(pb_ml_fit, what = "mu"),
+  sigma = fitted(pb_ml_fit, what = "sigma"),
+  mu_linear_predictor = pb_ml_fit$mu.lp,
+  mu_smooth = drop(pb_ml_fit$mu.s[, 1])
+)
+pb_ml_coefficient_reference <- data.frame(
+  coefficient = drop(pb_ml_smooth$coef)
+)
+
 assert_close <- function(actual, expected_path, tolerance) {
   expected <- read.csv(expected_path, check.names = FALSE)
   if (!identical(names(actual), names(expected))) {
@@ -153,6 +195,15 @@ if (check_only) {
   assert_close(
     pb_coefficient_reference, pb_coefficient_reference_path, tolerance = 1e-7
   )
+  assert_close(pb_ml_reference, pb_ml_reference_path, tolerance = 1e-7)
+  assert_close(
+    pb_ml_fitted_reference, pb_ml_fitted_reference_path, tolerance = 1e-7
+  )
+  assert_close(
+    pb_ml_coefficient_reference,
+    pb_ml_coefficient_reference_path,
+    tolerance = 1e-7
+  )
   message("R reference parity checks passed")
 } else {
   options(digits = 17, scipen = 999)
@@ -167,6 +218,21 @@ if (check_only) {
   write.csv(
     pb_coefficient_reference,
     pb_coefficient_reference_path,
+    row.names = FALSE,
+    quote = FALSE
+  )
+  write.csv(
+    pb_ml_reference, pb_ml_reference_path, row.names = FALSE, quote = FALSE
+  )
+  write.csv(
+    pb_ml_fitted_reference,
+    pb_ml_fitted_reference_path,
+    row.names = FALSE,
+    quote = FALSE
+  )
+  write.csv(
+    pb_ml_coefficient_reference,
+    pb_ml_coefficient_reference_path,
     row.names = FALSE,
     quote = FALSE
   )

@@ -205,6 +205,14 @@ class GAMLSS(nn.Module):
         """
         if max_iter < 1:
             raise ValueError("max_iter must be at least 1")
+        if any(
+            term.estimates_smoothing_parameter
+            for terms in self.smooth_terms.values()
+            for term in terms.values()
+        ):
+            raise ValueError(
+                "automatic smoothing-parameter estimation requires fit_rs()"
+            )
 
         parameters = list(self.parameters())
         optimizer = torch.optim.LBFGS(

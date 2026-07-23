@@ -168,6 +168,8 @@ def test_rs_fixed_pspline_matches_r_gamlss_pb():
     assert result.converged
     assert result.outer_iterations == int(reference["outer_iterations"])
     assert result.backfitting_iterations["mu"] > 0
+    assert result.smoothing_parameters["mu"]["x"] == pytest.approx(12.0)
+    assert result.smoothing_iterations["mu"]["x"] == 0
     torch.testing.assert_close(
         model.coefficients["mu"],
         torch.tensor(
@@ -217,6 +219,96 @@ def test_rs_fixed_pspline_matches_r_gamlss_pb():
     )
 
 
+def test_rs_ml_pspline_smoothing_parameter_matches_r_gamlss_pb():
+    rows = _read_rows("no_pb_fit_data.csv")
+    reference = _read_rows("no_pb_ml_reference.csv")[0]
+    fitted_reference = _read_rows("no_pb_ml_fitted_reference.csv")
+    coefficient_reference = _read_rows("no_pb_ml_coefficient_reference.csv")
+    x = _column(rows, "x")
+    response = _column(rows, "y")
+    term = PSpline.from_data(x)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        smooth_terms={"mu": {"x": term}},
+        dtype=torch.float64,
+    )
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x)),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+    smooth_covariates = {"mu": {"x": x}}
+
+    result = model.fit_rs(
+        response,
+        design,
+        smooth_covariates=smooth_covariates,
+        control=RSControl(
+            outer_tolerance=1e-10,
+            max_outer_iterations=200,
+            inner_tolerance=1e-10,
+            max_inner_iterations=200,
+            backfitting_tolerance=1e-10,
+            max_backfitting_iterations=200,
+        ),
+    )
+
+    assert result.converged
+    assert result.outer_iterations == int(reference["outer_iterations"])
+    assert result.smoothing_iterations["mu"]["x"] > 0
+    torch.testing.assert_close(
+        model.coefficients["mu"],
+        torch.tensor(
+            [float(reference["mu_intercept"]), float(reference["mu_x"])],
+            dtype=torch.float64,
+        ),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    torch.testing.assert_close(
+        model.coefficients["sigma"],
+        torch.tensor([float(reference["sigma_intercept"])], dtype=torch.float64),
+        rtol=1e-7,
+        atol=1e-7,
+    )
+    torch.testing.assert_close(
+        term.coefficients,
+        _column(coefficient_reference, "coefficient"),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    predictors = model.linear_predictors(design, smooth_covariates=smooth_covariates)
+    parameters = model.family.parameters_from_predictors(predictors)
+    torch.testing.assert_close(
+        parameters["mu"],
+        _column(fitted_reference, "mu"),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    torch.testing.assert_close(
+        term(x),
+        _column(fitted_reference, "mu_smooth"),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    expected_smoothing_parameter = float(reference["smoothing_parameter"])
+    assert term.smoothing_parameter == pytest.approx(
+        expected_smoothing_parameter, rel=1e-8, abs=1e-8
+    )
+    assert result.smoothing_parameters["mu"]["x"] == pytest.approx(
+        expected_smoothing_parameter, rel=1e-8, abs=1e-8
+    )
+    assert result.smooth_effective_degrees_of_freedom["mu"]["x"] == pytest.approx(
+        float(reference["smooth_edf"]), rel=1e-8, abs=1e-8
+    )
+    assert result.global_deviance == pytest.approx(
+        float(reference["global_deviance"]), rel=1e-9, abs=1e-9
+    )
+    assert result.negative_log_likelihood == pytest.approx(
+        float(reference["negative_log_likelihood"]), rel=1e-9, abs=1e-9
+    )
+
+
 def test_rs_supports_multiple_smooth_terms_for_one_parameter():
     x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
     z = torch.cos(torch.linspace(0.0, 3.0 * torch.pi, 80, dtype=torch.float64))
@@ -259,6 +351,8 @@ def test_rs_supports_multiple_smooth_terms_for_one_parameter():
         {"max_inner_iterations": 0},
         {"backfitting_tolerance": 0.0},
         {"max_backfitting_iterations": 0},
+        {"smoothing_tolerance": 0.0},
+        {"max_smoothing_iterations": 0},
         {"step": 0.0},
         {"step": 1.1},
         {"deviance_tolerance": -1.0},

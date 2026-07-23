@@ -25,6 +25,9 @@ The committed fixtures cover:
   `pb()` basis and penalty, parametric and smooth coefficients, fitted values,
   fixed smoothing parameter, effective degrees of freedom, global deviance,
   and outer iteration count.
+- the same additive fit using `mu ~ pb(x)`, including the automatically
+  ML-selected smoothing parameter and its resulting effective degrees of
+  freedom.
 
 The expected sigma-sigma derivative supplied by `NO()` is Fisher-scoring
 information, not the observation-wise second derivative of the normal log
@@ -55,6 +58,7 @@ changing files and compares them with explicit tolerances.
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
 
 The RS implementation follows the working-response and Fisher-weight updates
-in `gamlss` 5.5-0, `R/gamlss-5.R`. Additive backfitting and fixed P-splines
-follow `R/add.r` and `R/pb.R`. See [`RS.md`](RS.md) and
+in `gamlss` 5.5-0, `R/gamlss-5.R`. Additive backfitting and P-splines
+follow `R/add.r` and `R/pb.R`; the latter is also the reference for the ML
+smoothing update. See [`RS.md`](RS.md) and
 [`SMOOTHS.md`](SMOOTHS.md) for the equations and current scope.

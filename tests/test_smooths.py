@@ -44,6 +44,8 @@ def test_pspline_basis_and_penalty_match_r_pb():
     )
 
     assert term.coefficients.numel() == 13
+    assert not term.estimates_smoothing_parameter
+    assert term.smoothing_method is None
     torch.testing.assert_close(
         term.basis(covariate)[:3, :5], expected_basis, rtol=1e-12, atol=1e-12
     )
@@ -88,3 +90,30 @@ def test_invalid_pspline_configuration_is_rejected(kwargs):
 def test_pspline_from_data_rejects_a_constant_covariate():
     with pytest.raises(ValueError, match="distinct"):
         PSpline.from_data(torch.ones(10, dtype=torch.float64), 1.0)
+
+
+def test_automatic_pspline_smoothing_state_is_serialized():
+    covariate = torch.linspace(-1.0, 1.0, 30, dtype=torch.float64)
+    term = PSpline.from_data(covariate)
+    assert term.smoothing_parameter == pytest.approx(10.0)
+    term._set_fitted_smoothing_parameter(3.25)
+    restored = PSpline.from_data(covariate)
+
+    restored.load_state_dict(term.state_dict())
+
+    assert restored.estimates_smoothing_parameter
+    assert restored.smoothing_method == "ML"
+    assert restored.smoothing_parameter == pytest.approx(3.25)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"initial_smoothing_parameter": 0.0},
+        {"initial_smoothing_parameter": float("inf")},
+        {"smoothing_method": "REML"},
+    ],
+)
+def test_invalid_automatic_smoothing_configuration_is_rejected(kwargs):
+    with pytest.raises(ValueError):
+        PSpline(0.0, 1.0, None, **kwargs)

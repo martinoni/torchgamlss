@@ -25,6 +25,8 @@ class RSControl:
     max_inner_iterations: int = 50
     backfitting_tolerance: float = 1e-3
     max_backfitting_iterations: int = 30
+    smoothing_tolerance: float = 1e-7
+    max_smoothing_iterations: int = 50
     step: float = 1.0
     autostep: bool = True
     deviance_tolerance: float = float("inf")
@@ -34,12 +36,14 @@ class RSControl:
             self.outer_tolerance <= 0
             or self.inner_tolerance <= 0
             or self.backfitting_tolerance <= 0
+            or self.smoothing_tolerance <= 0
         ):
             raise ValueError("RS tolerances must be positive")
         if (
             self.max_outer_iterations < 1
             or self.max_inner_iterations < 1
             or self.max_backfitting_iterations < 1
+            or self.max_smoothing_iterations < 1
         ):
             raise ValueError("RS iteration limits must be at least 1")
         if not 0 < self.step <= 1:
@@ -59,10 +63,42 @@ class RSFitResult:
     deviance_history: tuple[float, ...]
     backfitting_iterations: Mapping[str, int]
     smooth_effective_degrees_of_freedom: Mapping[str, Mapping[str, float]]
+    smoothing_parameters: Mapping[str, Mapping[str, float]]
+    smoothing_iterations: Mapping[str, Mapping[str, int]]
 
     @property
     def negative_log_likelihood(self) -> float:
         return self.global_deviance / 2.0
+
+
+@dataclass(frozen=True)
+class _ParameterFitResult:
+    coefficient: Tensor
+    fitted_parameter: Tensor
+    inner_iterations: int
+    smooth_coefficients: dict[str, Tensor]
+    backfitting_iterations: int
+    smooth_edf: dict[str, float]
+    smoothing_parameters: dict[str, float]
+    smoothing_iterations: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _AdditiveFitResult:
+    linear_coefficient: Tensor
+    smooth_coefficients: dict[str, Tensor]
+    iterations: int
+    smooth_edf: dict[str, float]
+    smoothing_parameters: dict[str, float]
+    smoothing_iterations: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _SmoothFitResult:
+    coefficient: Tensor
+    smoothing_parameter: float
+    effective_degrees_of_freedom: float
+    smoothing_iterations: int
 
 
 def fit_rs(
@@ -95,8 +131,19 @@ def fit_rs(
         }
         for parameter in model.family.parameter_names
     }
+    smoothing_parameters = {
+        parameter: {
+            name: term.smoothing_parameter
+            for name, term in model.smooth_terms[parameter].items()
+        }
+        for parameter in model.family.parameter_names
+    }
     inner_iterations = {name: 0 for name in model.family.parameter_names}
     backfitting_iterations = {name: 0 for name in model.family.parameter_names}
+    smoothing_iterations: dict[str, dict[str, int]] = {
+        parameter: {name: 0 for name in model.smooth_terms[parameter]}
+        for parameter in model.family.parameter_names
+    }
     smooth_edf: dict[str, dict[str, float]] = {
         name: {} for name in model.family.parameter_names
     }
@@ -110,14 +157,7 @@ def fit_rs(
         for outer_iteration in range(1, control.max_outer_iterations + 1):
             old_global_deviance = global_deviance
             for parameter in model.family.parameter_names:
-                (
-                    coefficient,
-                    fitted_parameter,
-                    iterations,
-                    parameter_smooth_coefficients,
-                    backfitting_count,
-                    parameter_smooth_edf,
-                ) = _fit_parameter(
+                parameter_fit = _fit_parameter(
                     model,
                     parameter,
                     response,
@@ -128,14 +168,23 @@ def fit_rs(
                     model.smooth_terms[parameter],
                     (smooth_covariates or {}).get(parameter, {}),
                     smooth_coefficients[parameter],
+                    smoothing_parameters[parameter],
                     control,
                 )
-                coefficients[parameter] = coefficient
-                smooth_coefficients[parameter] = parameter_smooth_coefficients
-                parameters[parameter] = fitted_parameter
-                inner_iterations[parameter] += iterations
-                backfitting_iterations[parameter] += backfitting_count
-                smooth_edf[parameter] = parameter_smooth_edf
+                coefficients[parameter] = parameter_fit.coefficient
+                smooth_coefficients[parameter] = parameter_fit.smooth_coefficients
+                smoothing_parameters[parameter] = parameter_fit.smoothing_parameters
+                parameters[parameter] = parameter_fit.fitted_parameter
+                inner_iterations[parameter] += parameter_fit.inner_iterations
+                backfitting_iterations[parameter] += (
+                    parameter_fit.backfitting_iterations
+                )
+                smooth_edf[parameter] = parameter_fit.smooth_edf
+                for (
+                    term_name,
+                    iteration_count,
+                ) in parameter_fit.smoothing_iterations.items():
+                    smoothing_iterations[parameter][term_name] += iteration_count
 
             global_deviance = _global_deviance(
                 model, response, parameters, case_weights
@@ -160,6 +209,11 @@ def fit_rs(
                 model.smooth_terms[parameter][term_name].coefficients.copy_(
                     term_coefficient
                 )
+                model.smooth_terms[parameter][
+                    term_name
+                ]._set_fitted_smoothing_parameter(
+                    smoothing_parameters[parameter][term_name]
+                )
 
     return RSFitResult(
         global_deviance=float(global_deviance),
@@ -169,6 +223,8 @@ def fit_rs(
         deviance_history=tuple(history),
         backfitting_iterations=backfitting_iterations,
         smooth_effective_degrees_of_freedom=smooth_edf,
+        smoothing_parameters=smoothing_parameters,
+        smoothing_iterations=smoothing_iterations,
     )
 
 
@@ -183,22 +239,18 @@ def _fit_parameter(
     smooth_terms: Mapping[str, SmoothTerm],
     smooth_covariates: Mapping[str, Tensor],
     initial_smooth_coefficients: Mapping[str, Tensor],
+    initial_smoothing_parameters: Mapping[str, float],
     control: RSControl,
-) -> tuple[
-    Tensor,
-    Tensor,
-    int,
-    dict[str, Tensor],
-    int,
-    dict[str, float],
-]:
+) -> _ParameterFitResult:
     link = model.family.links[parameter]
     eta = link(parameters[parameter])
     linear_predictor = eta - offset
     deviance = _global_deviance(model, response, parameters, case_weights)
     coefficient: Tensor | None = None
     smooth_coefficients = dict(initial_smooth_coefficients)
+    smoothing_parameters = dict(initial_smoothing_parameters)
     backfitting_iterations = 0
+    smoothing_iterations = {name: 0 for name in smooth_terms}
     smooth_edf: dict[str, float] = {}
 
     for inner_iteration in range(1, control.max_inner_iterations + 1):
@@ -212,21 +264,23 @@ def _fit_parameter(
         working_response = working_response - offset
         combined_weights = working_weights * case_weights
         if smooth_terms:
-            (
-                raw_coefficient,
-                raw_smooth_coefficients,
-                backfitting_count,
-                smooth_edf,
-            ) = _additive_fit(
+            additive_fit = _additive_fit(
                 design_matrix,
                 working_response,
                 combined_weights,
                 smooth_terms,
                 smooth_covariates,
                 smooth_coefficients,
+                smoothing_parameters,
                 control,
             )
-            backfitting_iterations += backfitting_count
+            raw_coefficient = additive_fit.linear_coefficient
+            raw_smooth_coefficients = additive_fit.smooth_coefficients
+            smooth_edf = additive_fit.smooth_edf
+            smoothing_parameters = additive_fit.smoothing_parameters
+            backfitting_iterations += additive_fit.iterations
+            for name, iteration_count in additive_fit.smoothing_iterations.items():
+                smoothing_iterations[name] += iteration_count
         else:
             raw_coefficient = _weighted_least_squares(
                 design_matrix,
@@ -283,36 +337,42 @@ def _fit_parameter(
                     break
 
         if abs(float(old_deviance - deviance)) <= control.inner_tolerance:
-            return (
-                coefficient,
-                fitted_parameter,
-                inner_iteration,
-                smooth_coefficients,
-                backfitting_iterations,
-                smooth_edf,
+            return _ParameterFitResult(
+                coefficient=coefficient,
+                fitted_parameter=fitted_parameter,
+                inner_iterations=inner_iteration,
+                smooth_coefficients=smooth_coefficients,
+                backfitting_iterations=backfitting_iterations,
+                smooth_edf=smooth_edf,
+                smoothing_parameters=smoothing_parameters,
+                smoothing_iterations=smoothing_iterations,
             )
 
         if not torch.isfinite(deviance):
             raise FloatingPointError("global deviance is not finite during RS fitting")
 
         if inner_iteration > 1 and torch.equal(linear_predictor, old_linear_predictor):
-            return (
-                coefficient,
-                fitted_parameter,
-                inner_iteration,
-                smooth_coefficients,
-                backfitting_iterations,
-                smooth_edf,
+            return _ParameterFitResult(
+                coefficient=coefficient,
+                fitted_parameter=fitted_parameter,
+                inner_iterations=inner_iteration,
+                smooth_coefficients=smooth_coefficients,
+                backfitting_iterations=backfitting_iterations,
+                smooth_edf=smooth_edf,
+                smoothing_parameters=smoothing_parameters,
+                smoothing_iterations=smoothing_iterations,
             )
 
     assert coefficient is not None
-    return (
-        coefficient,
-        fitted_parameter,
-        control.max_inner_iterations,
-        smooth_coefficients,
-        backfitting_iterations,
-        smooth_edf,
+    return _ParameterFitResult(
+        coefficient=coefficient,
+        fitted_parameter=fitted_parameter,
+        inner_iterations=control.max_inner_iterations,
+        smooth_coefficients=smooth_coefficients,
+        backfitting_iterations=backfitting_iterations,
+        smooth_edf=smooth_edf,
+        smoothing_parameters=smoothing_parameters,
+        smoothing_iterations=smoothing_iterations,
     )
 
 
@@ -355,13 +415,16 @@ def _additive_fit(
     smooth_terms: Mapping[str, SmoothTerm],
     smooth_covariates: Mapping[str, Tensor],
     initial_coefficients: Mapping[str, Tensor],
+    initial_smoothing_parameters: Mapping[str, float],
     control: RSControl,
-) -> tuple[Tensor, dict[str, Tensor], int, dict[str, float]]:
+) -> _AdditiveFitResult:
     """Alternate parametric and penalized terms as in ``additive.fit()``."""
     bases = {
         name: term.basis(smooth_covariates[name]) for name, term in smooth_terms.items()
     }
     coefficients = dict(initial_coefficients)
+    smoothing_parameters = dict(initial_smoothing_parameters)
+    smoothing_iterations = {name: 0 for name in smooth_terms}
     smooth_fits = {name: bases[name] @ coefficients[name] for name in smooth_terms}
     residuals = response - sum(smooth_fits.values(), torch.zeros_like(response))
     linear_fit = torch.zeros_like(response)
@@ -382,23 +445,25 @@ def _additive_fit(
         for name, term in smooth_terms.items():
             old_fit = smooth_fits[name]
             partial_response = residuals + old_fit
-            coefficient = _penalized_least_squares(
+            smooth_fit = _fit_smooth_term(
+                term,
                 bases[name],
                 partial_response,
                 weights,
-                term.smoothing_parameter,
-                term.penalty_matrix(),
+                smoothing_parameters[name],
+                control,
             )
+            coefficient = smooth_fit.coefficient
             fitted = bases[name] @ coefficient
             coefficients[name] = coefficient
+            smoothing_parameters[name] = smooth_fit.smoothing_parameter
+            smoothing_iterations[name] += smooth_fit.smoothing_iterations
             smooth_fits[name] = fitted
             residuals = partial_response - fitted
             change = change + (weights * (fitted - old_fit).square()).sum() / (
                 weights.sum()
             )
-            effective_degrees_of_freedom[name] = float(
-                term.effective_degrees_of_freedom(smooth_covariates[name], weights)
-            )
+            effective_degrees_of_freedom[name] = smooth_fit.effective_degrees_of_freedom
 
         smooth_sum = sum(smooth_fits.values(), torch.zeros_like(response))
         denominator = (weights * smooth_sum.square()).sum()
@@ -407,18 +472,130 @@ def _additive_fit(
         else:
             relative_change = float(torch.sqrt(change / denominator))
         if relative_change <= control.backfitting_tolerance:
-            return (
-                linear_coefficient,
-                coefficients,
-                iteration,
-                effective_degrees_of_freedom,
+            return _AdditiveFitResult(
+                linear_coefficient=linear_coefficient,
+                smooth_coefficients=coefficients,
+                iterations=iteration,
+                smooth_edf=effective_degrees_of_freedom,
+                smoothing_parameters=smoothing_parameters,
+                smoothing_iterations=smoothing_iterations,
             )
 
-    return (
-        linear_coefficient,
-        coefficients,
-        control.max_backfitting_iterations,
-        effective_degrees_of_freedom,
+    return _AdditiveFitResult(
+        linear_coefficient=linear_coefficient,
+        smooth_coefficients=coefficients,
+        iterations=control.max_backfitting_iterations,
+        smooth_edf=effective_degrees_of_freedom,
+        smoothing_parameters=smoothing_parameters,
+        smoothing_iterations=smoothing_iterations,
+    )
+
+
+def _fit_smooth_term(
+    term: SmoothTerm,
+    basis: Tensor,
+    response: Tensor,
+    weights: Tensor,
+    starting_smoothing_parameter: float,
+    control: RSControl,
+) -> _SmoothFitResult:
+    if term.estimates_smoothing_parameter:
+        if term.smoothing_method != "ML":
+            raise NotImplementedError(
+                f"Unsupported smoothing method: {term.smoothing_method!r}"
+            )
+        if starting_smoothing_parameter <= 1e-7 or (
+            starting_smoothing_parameter >= 1e7
+        ):
+            smoothing_parameter = min(max(starting_smoothing_parameter, 1e-7), 1e7)
+        else:
+            return _estimate_ml_smoothing_parameter(
+                basis,
+                response,
+                weights,
+                term.penalty_matrix(),
+                term.penalty_nullity,
+                starting_smoothing_parameter,
+                control,
+            )
+    else:
+        smoothing_parameter = starting_smoothing_parameter
+
+    coefficient = _penalized_least_squares(
+        basis,
+        response,
+        weights,
+        smoothing_parameter,
+        term.penalty_matrix(),
+    )
+    edf = _effective_degrees_of_freedom(
+        basis, weights, smoothing_parameter, term.penalty_matrix()
+    )
+    return _SmoothFitResult(
+        coefficient=coefficient,
+        smoothing_parameter=smoothing_parameter,
+        effective_degrees_of_freedom=float(edf),
+        smoothing_iterations=0,
+    )
+
+
+def _estimate_ml_smoothing_parameter(
+    basis: Tensor,
+    response: Tensor,
+    weights: Tensor,
+    penalty: Tensor,
+    penalty_nullity: int,
+    starting_smoothing_parameter: float,
+    control: RSControl,
+) -> _SmoothFitResult:
+    """Apply the variance-component ML update used by ``gamlss.pb()``."""
+    smoothing_parameter = starting_smoothing_parameter
+    positive_weight_count = int(torch.count_nonzero(weights))
+
+    for iteration in range(1, control.max_smoothing_iterations + 1):
+        coefficient = _penalized_least_squares(
+            basis, response, weights, smoothing_parameter, penalty
+        )
+        fitted = basis @ coefficient
+        edf = _effective_degrees_of_freedom(
+            basis, weights, smoothing_parameter, penalty
+        )
+        residual_denominator = positive_weight_count - float(edf)
+        random_effect_denominator = float(edf) - penalty_nullity
+        if residual_denominator <= 0 or random_effect_denominator <= 0:
+            raise RuntimeError(
+                "ML smoothing update requires positive residual and penalized "
+                "degrees of freedom"
+            )
+        residual_variance = float(
+            (weights * (response - fitted).square()).sum() / residual_denominator
+        )
+        coefficient_differences = penalty @ coefficient
+        random_effect_variance = float(
+            coefficient_differences.square().sum() / random_effect_denominator
+        )
+        random_effect_variance = max(random_effect_variance, 1e-7)
+        updated_smoothing_parameter = min(
+            max(residual_variance / random_effect_variance, 1e-7),
+            1e7,
+        )
+        if (
+            abs(updated_smoothing_parameter - smoothing_parameter)
+            < control.smoothing_tolerance
+        ):
+            return _SmoothFitResult(
+                coefficient=coefficient,
+                smoothing_parameter=updated_smoothing_parameter,
+                effective_degrees_of_freedom=float(edf),
+                smoothing_iterations=iteration,
+            )
+        smoothing_parameter = updated_smoothing_parameter
+
+    return _SmoothFitResult(
+        coefficient=coefficient,
+        smoothing_parameter=smoothing_parameter,
+        effective_degrees_of_freedom=float(edf),
+        smoothing_iterations=control.max_smoothing_iterations,
     )
 
 
@@ -443,6 +620,17 @@ def _penalized_least_squares(
         )
     )
     return torch.linalg.lstsq(augmented_design, augmented_response).solution
+
+
+def _effective_degrees_of_freedom(
+    basis: Tensor,
+    weights: Tensor,
+    smoothing_parameter: float,
+    penalty: Tensor,
+) -> Tensor:
+    gram = basis.mT @ (weights.unsqueeze(-1) * basis)
+    system = gram + smoothing_parameter * (penalty.mT @ penalty)
+    return torch.trace(torch.linalg.pinv(system) @ gram)
 
 
 def _additive_predictor(

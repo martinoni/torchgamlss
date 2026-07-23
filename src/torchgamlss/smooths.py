@@ -25,7 +25,26 @@ class SmoothTerm(nn.Module, ABC):
     @property
     @abstractmethod
     def smoothing_parameter(self) -> float:
-        """Return the fixed smoothing parameter."""
+        """Return the fixed or most recently estimated smoothing parameter."""
+
+    @property
+    def estimates_smoothing_parameter(self) -> bool:
+        """Whether RS fitting should update the smoothing parameter."""
+        return False
+
+    @property
+    def smoothing_method(self) -> str | None:
+        """Return the smoothing-parameter selection method, when enabled."""
+        return None
+
+    @property
+    def penalty_nullity(self) -> int:
+        """Return the dimension of the unpenalized coefficient subspace."""
+        return self.coefficients.numel() - self.penalty_matrix().shape[0]
+
+    def _set_fitted_smoothing_parameter(self, value: float) -> None:
+        if value != self.smoothing_parameter:
+            raise RuntimeError("This smooth term has a fixed smoothing parameter")
 
     def forward(self, covariate: Tensor) -> Tensor:
         return self.basis(covariate) @ self.coefficients
@@ -56,16 +75,18 @@ class SmoothTerm(nn.Module, ABC):
 class PSpline(SmoothTerm):
     """Eilers-Marx P-spline with an equally spaced B-spline basis.
 
-    The basis and difference penalty follow ``gamlss::pb()``. This first
-    implementation intentionally requires a fixed smoothing parameter.
+    The basis, difference penalty, and optional ML smoothing update follow
+    ``gamlss::pb()``.
     """
 
     def __init__(
         self,
         lower_bound: float,
         upper_bound: float,
-        smoothing_parameter: float,
+        smoothing_parameter: float | None = None,
         *,
+        initial_smoothing_parameter: float = 10.0,
+        smoothing_method: str = "ML",
         intervals: int = 20,
         degree: int = 3,
         penalty_order: int = 2,
@@ -77,10 +98,17 @@ class PSpline(SmoothTerm):
             raise ValueError("P-spline bounds must be finite")
         if not upper_bound > lower_bound:
             raise ValueError("upper_bound must be greater than lower_bound")
-        if not math.isfinite(smoothing_parameter):
-            raise ValueError("smoothing_parameter must be finite")
-        if smoothing_parameter < 0:
-            raise ValueError("smoothing_parameter must be non-negative")
+        if smoothing_parameter is not None:
+            if not math.isfinite(smoothing_parameter):
+                raise ValueError("smoothing_parameter must be finite")
+            if smoothing_parameter < 0:
+                raise ValueError("smoothing_parameter must be non-negative")
+        if not math.isfinite(initial_smoothing_parameter):
+            raise ValueError("initial_smoothing_parameter must be finite")
+        if initial_smoothing_parameter <= 0:
+            raise ValueError("initial_smoothing_parameter must be positive")
+        if smoothing_method != "ML":
+            raise ValueError("smoothing_method currently must be 'ML'")
         if intervals < 1:
             raise ValueError("intervals must be at least 1")
         if degree < 1:
@@ -124,10 +152,20 @@ class PSpline(SmoothTerm):
         self.intervals = intervals
         self.degree = degree
         self.penalty_order = penalty_order
-        self._smoothing_parameter = float(smoothing_parameter)
+        self._estimates_smoothing_parameter = smoothing_parameter is None
+        self._smoothing_method = smoothing_method
+        smoothing_value = (
+            initial_smoothing_parameter
+            if smoothing_parameter is None
+            else smoothing_parameter
+        )
         self.register_buffer("knots", knots)
         self.register_buffer("_basis_differences", basis_differences)
         self.register_buffer("_penalty", penalty)
+        self.register_buffer(
+            "_smoothing_parameter_value",
+            torch.tensor(smoothing_value, dtype=dtype, device=device),
+        )
         self.coefficients = nn.Parameter(
             torch.zeros(basis_size, dtype=dtype, device=device)
         )
@@ -136,8 +174,10 @@ class PSpline(SmoothTerm):
     def from_data(
         cls,
         covariate: Tensor,
-        smoothing_parameter: float,
+        smoothing_parameter: float | None = None,
         *,
+        initial_smoothing_parameter: float = 10.0,
+        smoothing_method: str = "ML",
         intervals: int = 20,
         degree: int = 3,
         penalty_order: int = 2,
@@ -167,6 +207,8 @@ class PSpline(SmoothTerm):
             float(covariate.min()),
             float(covariate.max()),
             smoothing_parameter,
+            initial_smoothing_parameter=initial_smoothing_parameter,
+            smoothing_method=smoothing_method,
             intervals=effective_intervals,
             degree=degree,
             penalty_order=penalty_order,
@@ -176,7 +218,24 @@ class PSpline(SmoothTerm):
 
     @property
     def smoothing_parameter(self) -> float:
-        return self._smoothing_parameter
+        return float(self._smoothing_parameter_value)
+
+    @property
+    def estimates_smoothing_parameter(self) -> bool:
+        return self._estimates_smoothing_parameter
+
+    @property
+    def smoothing_method(self) -> str | None:
+        return self._smoothing_method if self.estimates_smoothing_parameter else None
+
+    def _set_fitted_smoothing_parameter(self, value: float) -> None:
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(
+                "fitted smoothing parameter must be finite and non-negative"
+            )
+        if not self.estimates_smoothing_parameter and value != self.smoothing_parameter:
+            raise RuntimeError("This P-spline has a fixed smoothing parameter")
+        self._smoothing_parameter_value.fill_(value)
 
     def basis(self, covariate: Tensor) -> Tensor:
         if covariate.ndim != 1:

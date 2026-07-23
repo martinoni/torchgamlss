@@ -32,14 +32,15 @@ The first vertical slice contains:
 - Rigby-Stasinopoulos fitting cycles for linear and additive predictors;
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
+- automatic P-spline smoothing-parameter selection with the `pb()` ML update;
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for the `NO` density, links, derivatives, and a
   fitted model;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Formula parsing, the CG algorithm, automatic smoothing-parameter selection,
+Formula parsing, the CG algorithm, alternative smoothing selection methods,
 inference, and diagnostics are planned work. The L-BFGS path remains a
-Torch-native numerical baseline.
+Torch-native numerical baseline and requires fixed smoothing parameters.
 
 ## Development
 
@@ -59,7 +60,7 @@ Rscript tools/generate_no_reference.R --check
 
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
-fixed-lambda P-spline API.
+P-spline API.
 
 ## Attribution and license
 

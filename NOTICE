@@ -16,7 +16,8 @@ The linear RS fitting implementation is translated from the algorithm in
 gamlss 5.5-0, R/gamlss-5.R, by Mikis Stasinopoulos, Robert Rigby, and
 contributors. The translated implementation remains under GPL-3.0-only.
 
-The additive backfitting and fixed P-spline implementation is translated from
+The additive backfitting and P-spline implementation, including fixed and
+ML-selected smoothing parameters, is translated from
 gamlss 5.5-0, in particular R/add.r and R/pb.R. The latter credits work by
 Mikis Stasinopoulos, Robert Rigby, Paul Eilers, and Simon Wood. The translated
 implementation remains under GPL-3.0-only.
