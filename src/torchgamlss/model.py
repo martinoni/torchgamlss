@@ -11,6 +11,7 @@ from torch.distributions import Distribution
 
 from torchgamlss.families import Family
 from torchgamlss.fitting import RSControl, RSFitResult, fit_rs
+from torchgamlss.smooths import SmoothTerm
 
 
 @dataclass(frozen=True)
@@ -27,9 +28,8 @@ class FitResult:
 class GAMLSS(nn.Module):
     """A minimal multi-parameter distributional regression model.
 
-    The caller supplies one design matrix per distribution parameter. Formula
-    handling and smooth-term construction intentionally live outside this first
-    vertical slice.
+    The caller supplies one design matrix per distribution parameter and may
+    attach named smooth terms. Formula handling remains outside the core model.
     """
 
     def __init__(
@@ -37,6 +37,7 @@ class GAMLSS(nn.Module):
         family: Family,
         design_sizes: Mapping[str, int],
         *,
+        smooth_terms: Mapping[str, Mapping[str, SmoothTerm]] | None = None,
         dtype: torch.dtype = torch.float64,
     ) -> None:
         super().__init__()
@@ -59,11 +60,32 @@ class GAMLSS(nn.Module):
                 for parameter, size in design_sizes.items()
             }
         )
+        smooth_terms = smooth_terms or {}
+        extra_smooth_parameters = set(smooth_terms).difference(expected)
+        if extra_smooth_parameters:
+            raise ValueError(
+                "Smooth terms contain unknown parameters: "
+                f"{sorted(extra_smooth_parameters)}"
+            )
+        self.smooth_terms = nn.ModuleDict()
+        for parameter in family.parameter_names:
+            parameter_terms = smooth_terms.get(parameter, {})
+            if any(not name or "." in name for name in parameter_terms):
+                raise ValueError(
+                    "Smooth-term names must be non-empty and contain no dots"
+                )
+            if any(
+                term.coefficients.dtype != dtype for term in parameter_terms.values()
+            ):
+                raise ValueError("Smooth terms must match the model dtype")
+            self.smooth_terms[parameter] = nn.ModuleDict(dict(parameter_terms))
 
     def linear_predictors(
         self,
         design_matrices: Mapping[str, Tensor],
         offsets: Mapping[str, Tensor] | None = None,
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     ) -> dict[str, Tensor]:
         """Calculate one linear predictor for each distribution parameter."""
         expected = set(self.family.parameter_names)
@@ -93,6 +115,12 @@ class GAMLSS(nn.Module):
                     f"design matrix for {parameter!r} has an invalid shape"
                 )
             predictor = design_matrix @ self.coefficients[parameter]
+            for term_name, covariate in self._validated_smooth_covariates(
+                parameter, predictor, smooth_covariates
+            ).items():
+                predictor = predictor + self.smooth_terms[parameter][term_name](
+                    covariate
+                )
             if parameter in offsets:
                 try:
                     offset = torch.broadcast_to(offsets[parameter], predictor.shape)
@@ -110,9 +138,13 @@ class GAMLSS(nn.Module):
         self,
         design_matrices: Mapping[str, Tensor],
         offsets: Mapping[str, Tensor] | None = None,
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     ) -> Distribution:
         """Build the fitted conditional response distribution."""
-        predictors = self.linear_predictors(design_matrices, offsets)
+        predictors = self.linear_predictors(
+            design_matrices, offsets, smooth_covariates=smooth_covariates
+        )
         parameters = self.family.parameters_from_predictors(predictors)
         return self.family.distribution(parameters)
 
@@ -120,8 +152,12 @@ class GAMLSS(nn.Module):
         self,
         design_matrices: Mapping[str, Tensor],
         offsets: Mapping[str, Tensor] | None = None,
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     ) -> Distribution:
-        return self.distribution(design_matrices, offsets)
+        return self.distribution(
+            design_matrices, offsets, smooth_covariates=smooth_covariates
+        )
 
     def negative_log_likelihood(
         self,
@@ -130,10 +166,15 @@ class GAMLSS(nn.Module):
         *,
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         reduction: str = "sum",
     ) -> Tensor:
         """Return the negative log-likelihood with sum, mean, or no reduction."""
-        losses = -self.distribution(design_matrices, offsets).log_prob(response)
+        losses = -self.distribution(
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+        ).log_prob(response)
         observation_weights = self._validated_weights(losses, weights)
         losses = losses * observation_weights
         if reduction == "sum":
@@ -151,6 +192,7 @@ class GAMLSS(nn.Module):
         *,
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         max_iter: int = 100,
         tolerance_grad: float = 1e-9,
         tolerance_change: float = 1e-12,
@@ -158,8 +200,8 @@ class GAMLSS(nn.Module):
         """Fit all distribution parameters jointly with full-batch L-BFGS.
 
         This Torch-native optimizer is the first parametric fitting path. It is
-        intended as a numerical baseline; the classical GAMLSS RS and CG
-        algorithms remain separate planned implementations.
+        intended as a numerical baseline; the classical GAMLSS RS path is
+        implemented separately and the CG algorithm remains planned work.
         """
         if max_iter < 1:
             raise ValueError("max_iter must be at least 1")
@@ -180,14 +222,23 @@ class GAMLSS(nn.Module):
                 design_matrices,
                 weights=weights,
                 offsets=offsets,
+                smooth_covariates=smooth_covariates,
             )
+            loss = loss + 0.5 * self.smooth_penalty()
             if not torch.isfinite(loss):
                 raise FloatingPointError("negative log-likelihood is not finite")
             loss.backward()
             return loss
 
         optimizer.step(closure)
-        final_loss = closure().detach()
+        closure()
+        final_loss = self.negative_log_likelihood(
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+        ).detach()
         gradient_max = max(
             float(parameter.grad.detach().abs().max())
             for parameter in parameters
@@ -212,17 +263,66 @@ class GAMLSS(nn.Module):
         *,
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         control: RSControl | None = None,
     ) -> RSFitResult:
-        """Fit linear parameter predictors with Rigby-Stasinopoulos cycles."""
+        """Fit linear or additive predictors with Rigby-Stasinopoulos cycles."""
         return fit_rs(
             self,
             response,
             design_matrices,
             weights=weights,
             offsets=offsets,
+            smooth_covariates=smooth_covariates,
             control=control,
         )
+
+    def smooth_penalty(self) -> Tensor:
+        """Return the sum of all fixed quadratic smoothness penalties."""
+        return sum(
+            (
+                term.quadratic_penalty()
+                for terms in self.smooth_terms.values()
+                for term in terms.values()
+            ),
+            torch.zeros(
+                (),
+                dtype=next(self.parameters()).dtype,
+                device=next(self.parameters()).device,
+            ),
+        )
+
+    def _validated_smooth_covariates(
+        self,
+        parameter: str,
+        predictor: Tensor,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None,
+    ) -> Mapping[str, Tensor]:
+        smooth_covariates = smooth_covariates or {}
+        extra_parameters = set(smooth_covariates).difference(
+            self.family.parameter_names
+        )
+        if extra_parameters:
+            raise ValueError(
+                "Smooth covariates contain unknown parameters: "
+                f"{sorted(extra_parameters)}"
+            )
+        supplied = smooth_covariates.get(parameter, {})
+        expected_terms = set(self.smooth_terms[parameter])
+        supplied_terms = set(supplied)
+        if expected_terms != supplied_terms:
+            raise ValueError(
+                f"Smooth covariates for {parameter!r} do not match configured terms: "
+                f"missing={sorted(expected_terms - supplied_terms)}, "
+                f"extra={sorted(supplied_terms - expected_terms)}"
+            )
+        for term_name, covariate in supplied.items():
+            if covariate.shape != predictor.shape:
+                raise ValueError(
+                    f"smooth covariate {term_name!r} for {parameter!r} "
+                    "must have one value per predictor"
+                )
+        return supplied
 
     @staticmethod
     def _validated_weights(losses: Tensor, weights: Tensor | None) -> Tensor:

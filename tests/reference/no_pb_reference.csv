@@ -1,0 +1,2 @@
+mu_intercept,mu_x,sigma_intercept,smoothing_parameter,smooth_edf,global_deviance,negative_log_likelihood,outer_iterations,converged,gamlss_version,gamlss_dist_version
+0.696854570992107,1.8011914684668,-2.11319346240957,12,7.27187277464111,-55.5403943363919,-27.770197168196,10,TRUE,5.5.0,6.1.1

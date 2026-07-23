@@ -29,17 +29,17 @@ The first vertical slice contains:
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - likelihood weights and offsets for every distribution parameter;
-- a linear, unpenalized implementation of the Rigby-Stasinopoulos fitting
-  cycles;
+- Rigby-Stasinopoulos fitting cycles for linear and additive predictors;
+- fixed-lambda P-splines, penalized weighted least squares, additive
+  backfitting, and effective degrees of freedom;
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for the `NO` density, links, derivatives, and a
   fitted model;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Formula parsing, the CG algorithm, penalized splines, smoothing-parameter
-selection, inference, and diagnostics are planned work. The current RS path is
-limited to linear design matrices; the L-BFGS path remains a Torch-native
-numerical baseline.
+Formula parsing, the CG algorithm, automatic smoothing-parameter selection,
+inference, and diagnostics are planned work. The L-BFGS path remains a
+Torch-native numerical baseline.
 
 ## Development
 
@@ -58,7 +58,8 @@ Rscript tools/generate_no_reference.R --check
 ```
 
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
-conventions and provenance.
+conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
+fixed-lambda P-spline API.
 
 ## Attribution and license
 

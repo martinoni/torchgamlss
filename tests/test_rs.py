@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from torchgamlss import GAMLSS, Normal, RSControl
+from torchgamlss import GAMLSS, Normal, PSpline, RSControl
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
 
@@ -131,6 +131,125 @@ def test_lbfgs_with_weights_and_offsets_matches_r_gamlss():
     )
 
 
+def test_rs_fixed_pspline_matches_r_gamlss_pb():
+    rows = _read_rows("no_pb_fit_data.csv")
+    reference = _read_rows("no_pb_reference.csv")[0]
+    fitted_reference = _read_rows("no_pb_fitted_reference.csv")
+    coefficient_reference = _read_rows("no_pb_coefficient_reference.csv")
+    x = _column(rows, "x")
+    response = _column(rows, "y")
+    term = PSpline.from_data(x, smoothing_parameter=12.0, intervals=10)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        smooth_terms={"mu": {"x": term}},
+        dtype=torch.float64,
+    )
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x)),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+    smooth_covariates = {"mu": {"x": x}}
+
+    result = model.fit_rs(
+        response,
+        design,
+        smooth_covariates=smooth_covariates,
+        control=RSControl(
+            outer_tolerance=1e-10,
+            max_outer_iterations=200,
+            inner_tolerance=1e-10,
+            max_inner_iterations=200,
+            backfitting_tolerance=1e-10,
+            max_backfitting_iterations=200,
+        ),
+    )
+
+    assert result.converged
+    assert result.outer_iterations == int(reference["outer_iterations"])
+    assert result.backfitting_iterations["mu"] > 0
+    torch.testing.assert_close(
+        model.coefficients["mu"],
+        torch.tensor(
+            [float(reference["mu_intercept"]), float(reference["mu_x"])],
+            dtype=torch.float64,
+        ),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    torch.testing.assert_close(
+        model.coefficients["sigma"],
+        torch.tensor([float(reference["sigma_intercept"])], dtype=torch.float64),
+        rtol=1e-7,
+        atol=1e-7,
+    )
+    torch.testing.assert_close(
+        term.coefficients,
+        _column(coefficient_reference, "coefficient"),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    predictors = model.linear_predictors(design, smooth_covariates=smooth_covariates)
+    parameters = model.family.parameters_from_predictors(predictors)
+    torch.testing.assert_close(
+        parameters["mu"],
+        _column(fitted_reference, "mu"),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    torch.testing.assert_close(
+        parameters["sigma"],
+        _column(fitted_reference, "sigma"),
+        rtol=1e-7,
+        atol=1e-8,
+    )
+    torch.testing.assert_close(
+        term(x),
+        _column(fitted_reference, "mu_smooth"),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    assert result.smooth_effective_degrees_of_freedom["mu"]["x"] == pytest.approx(
+        float(reference["smooth_edf"]), rel=1e-10, abs=1e-10
+    )
+    assert result.global_deviance == pytest.approx(
+        float(reference["global_deviance"]), rel=1e-10, abs=1e-10
+    )
+
+
+def test_rs_supports_multiple_smooth_terms_for_one_parameter():
+    x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    z = torch.cos(torch.linspace(0.0, 3.0 * torch.pi, 80, dtype=torch.float64))
+    response = (
+        0.5
+        + torch.sin(torch.pi * x)
+        + 0.4 * torch.cos(torch.pi * z)
+        + 0.08 * torch.sin(19.0 * x)
+    )
+    x_term = PSpline.from_data(x, smoothing_parameter=8.0)
+    z_term = PSpline.from_data(z, smoothing_parameter=8.0)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 3, "sigma": 1},
+        smooth_terms={"mu": {"x": x_term, "z": z_term}},
+    )
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x, z)),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+
+    result = model.fit_rs(
+        response,
+        design,
+        smooth_covariates={"mu": {"x": x, "z": z}},
+    )
+
+    assert result.converged
+    assert set(result.smooth_effective_degrees_of_freedom["mu"]) == {"x", "z"}
+    assert torch.isfinite(x_term.coefficients).all()
+    assert torch.isfinite(z_term.coefficients).all()
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -138,6 +257,8 @@ def test_lbfgs_with_weights_and_offsets_matches_r_gamlss():
         {"inner_tolerance": 0.0},
         {"max_outer_iterations": 0},
         {"max_inner_iterations": 0},
+        {"backfitting_tolerance": 0.0},
+        {"max_backfitting_iterations": 0},
         {"step": 0.0},
         {"step": 1.1},
         {"deviance_tolerance": -1.0},

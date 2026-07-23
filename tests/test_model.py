@@ -1,6 +1,7 @@
+import pytest
 import torch
 
-from torchgamlss import GAMLSS, Normal
+from torchgamlss import GAMLSS, Normal, PSpline
 
 
 def _example():
@@ -134,3 +135,51 @@ def test_unknown_parameter_offset_is_rejected():
         assert "Offsets" in str(error)
     else:
         raise AssertionError("unknown offset was accepted")
+
+
+def test_smooth_terms_contribute_to_predictors_and_likelihood():
+    x = torch.linspace(-1.0, 1.0, 20, dtype=torch.float64)
+    term = PSpline.from_data(x, smoothing_parameter=5.0)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        smooth_terms={"mu": {"x": term}},
+    )
+    design = {
+        "mu": torch.ones((x.numel(), 1), dtype=x.dtype),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+    with torch.no_grad():
+        model.coefficients["mu"].fill_(0.75)
+        term.coefficients.copy_(torch.linspace(-0.5, 0.5, term.coefficients.numel()))
+
+    predictors = model.linear_predictors(design, smooth_covariates={"mu": {"x": x}})
+
+    torch.testing.assert_close(predictors["mu"], 0.75 + term(x))
+    assert torch.isfinite(
+        model.negative_log_likelihood(
+            torch.zeros_like(x),
+            design,
+            smooth_covariates={"mu": {"x": x}},
+        )
+    )
+    assert model.smooth_penalty() > 0
+
+
+def test_missing_or_extra_smooth_covariates_are_rejected():
+    x = torch.linspace(-1.0, 1.0, 20, dtype=torch.float64)
+    term = PSpline.from_data(x, smoothing_parameter=5.0)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        smooth_terms={"mu": {"x": term}},
+    )
+    design = {
+        "mu": torch.ones((x.numel(), 1), dtype=x.dtype),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+
+    with pytest.raises(ValueError, match="missing"):
+        model.linear_predictors(design)
+    with pytest.raises(ValueError, match="extra"):
+        model.linear_predictors(design, smooth_covariates={"mu": {"x": x, "other": x}})

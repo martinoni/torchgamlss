@@ -21,6 +21,10 @@ The committed fixtures cover:
 - a weighted RS fit with parameter-specific offsets, `mu ~ x` and
   `sigma ~ z`, including coefficients, iteration count, log likelihood, and
   global deviance.
+- an additive RS fit of `mu ~ pb(x, lambda=12)` and `sigma ~ 1`, including the
+  `pb()` basis and penalty, parametric and smooth coefficients, fitted values,
+  fixed smoothing parameter, effective degrees of freedom, global deviance,
+  and outer iteration count.
 
 The expected sigma-sigma derivative supplied by `NO()` is Fisher-scoring
 information, not the observation-wise second derivative of the normal log
@@ -50,6 +54,7 @@ changing files and compares them with explicit tolerances.
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
 
-The linear RS implementation follows the working-response and Fisher-weight
-updates in `gamlss` 5.5-0, `R/gamlss-5.R`. See [`RS.md`](RS.md) for the
-equations and current scope.
+The RS implementation follows the working-response and Fisher-weight updates
+in `gamlss` 5.5-0, `R/gamlss-5.R`. Additive backfitting and fixed P-splines
+follow `R/add.r` and `R/pb.R`. See [`RS.md`](RS.md) and
+[`SMOOTHS.md`](SMOOTHS.md) for the equations and current scope.

@@ -11,6 +11,12 @@ reference_path <- file.path(reference_dir, "no_reference.csv")
 fit_reference_path <- file.path(reference_dir, "no_fit_reference.csv")
 rs_fit_data_path <- file.path(reference_dir, "no_rs_fit_data.csv")
 rs_reference_path <- file.path(reference_dir, "no_rs_reference.csv")
+pb_fit_data_path <- file.path(reference_dir, "no_pb_fit_data.csv")
+pb_reference_path <- file.path(reference_dir, "no_pb_reference.csv")
+pb_fitted_reference_path <- file.path(reference_dir, "no_pb_fitted_reference.csv")
+pb_coefficient_reference_path <- file.path(
+  reference_dir, "no_pb_coefficient_reference.csv"
+)
 
 family <- NO()
 cases <- read.csv(cases_path)
@@ -73,6 +79,47 @@ rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+pb_x <- seq(-1, 1, length.out = 40)
+pb_fit_data <- data.frame(
+  x = pb_x,
+  y = 0.7 + 0.8 * pb_x + 1.15 * sin(pi * pb_x) +
+    0.16 * sin(31 * pb_x) + 0.07 * cos(23 * pb_x)
+)
+pb_fit <- gamlss(
+  y ~ pb(x, lambda = 12),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = RS(),
+  data = pb_fit_data,
+  control = gamlss.control(c.crit = 1e-10, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-10, cyc = 200, bf.tol = 1e-10, bf.cyc = 200
+  )
+)
+pb_smooth <- getSmo(pb_fit, parameter = "mu", which = 1)
+pb_reference <- data.frame(
+  mu_intercept = unname(coef(pb_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(pb_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(pb_fit, what = "sigma")[[1]]),
+  smoothing_parameter = unname(pb_smooth$lambda),
+  smooth_edf = unname(pb_smooth$edf),
+  global_deviance = unname(deviance(pb_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pb_fit)),
+  outer_iterations = pb_fit$iter,
+  converged = pb_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pb_fitted_reference <- data.frame(
+  mu = fitted(pb_fit, what = "mu"),
+  sigma = fitted(pb_fit, what = "sigma"),
+  mu_linear_predictor = pb_fit$mu.lp,
+  mu_smooth = drop(pb_fit$mu.s[, 1])
+)
+pb_coefficient_reference <- data.frame(
+  coefficient = drop(pb_smooth$coef)
+)
+
 assert_close <- function(actual, expected_path, tolerance) {
   expected <- read.csv(expected_path, check.names = FALSE)
   if (!identical(names(actual), names(expected))) {
@@ -88,7 +135,8 @@ assert_close <- function(actual, expected_path, tolerance) {
   if (any(difference > tolerance * scale)) {
     stop("Numeric parity check failed for ", expected_path)
   }
-  if (!identical(actual[character_columns], expected[character_columns])) {
+  if (any(character_columns) &&
+      !identical(actual[character_columns], expected[character_columns])) {
     stop("Reference package versions differ in ", expected_path)
   }
 }
@@ -97,11 +145,30 @@ if (check_only) {
   assert_close(reference, reference_path, tolerance = 1e-12)
   assert_close(fit_reference, fit_reference_path, tolerance = 1e-7)
   assert_close(rs_reference, rs_reference_path, tolerance = 1e-7)
+  assert_close(pb_fit_data, pb_fit_data_path, tolerance = 1e-12)
+  assert_close(pb_reference, pb_reference_path, tolerance = 1e-7)
+  assert_close(
+    pb_fitted_reference, pb_fitted_reference_path, tolerance = 1e-7
+  )
+  assert_close(
+    pb_coefficient_reference, pb_coefficient_reference_path, tolerance = 1e-7
+  )
   message("R reference parity checks passed")
 } else {
   options(digits = 17, scipen = 999)
   write.csv(reference, reference_path, row.names = FALSE, quote = FALSE)
   write.csv(fit_reference, fit_reference_path, row.names = FALSE, quote = FALSE)
   write.csv(rs_reference, rs_reference_path, row.names = FALSE, quote = FALSE)
+  write.csv(pb_fit_data, pb_fit_data_path, row.names = FALSE, quote = FALSE)
+  write.csv(pb_reference, pb_reference_path, row.names = FALSE, quote = FALSE)
+  write.csv(
+    pb_fitted_reference, pb_fitted_reference_path, row.names = FALSE, quote = FALSE
+  )
+  write.csv(
+    pb_coefficient_reference,
+    pb_coefficient_reference_path,
+    row.names = FALSE,
+    quote = FALSE
+  )
   message("Wrote R reference fixtures to ", reference_dir)
 }

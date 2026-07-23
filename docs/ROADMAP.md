@@ -25,12 +25,12 @@ as supported.
 ## Phase 2 — classical GAMLSS fitting
 
 - [x] Linear unpenalized RS core
-- [ ] RS backfitting with smooth and penalized terms
+- [x] RS backfitting with smooth and penalized terms
 - [ ] CG algorithm
-- [ ] Penalized weighted least squares
-- [ ] P-splines with fixed smoothing parameters
+- [x] Penalized weighted least squares
+- [x] P-splines with fixed smoothing parameters
 - [ ] Automatic smoothing-parameter selection
-- [ ] Effective degrees of freedom
+- [x] Effective degrees of freedom for fixed-lambda P-splines
 
 ## Phase 3 — compatibility and diagnostics
 
