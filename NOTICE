@@ -23,6 +23,12 @@ gamlss.dist 6.1-1. The shared starting-value behavior follows the corresponding
 family initialization expressions. These translations remain under
 GPL-3.0-only.
 
+The Box-Cox Cole-Green implementation and fixtures are derived from and tested
+against the BCCG family, dBCCG(), pBCCG(), and qBCCG() definitions in
+gamlss.dist 6.1-1. Its numerically stable nu=0 evaluation preserves the
+lognormal limit of those definitions. This translation remains under
+GPL-3.0-only.
+
 The linear RS fitting implementation is translated from the algorithm in
 gamlss 5.5-0, R/gamlss-5.R, by Mikis Stasinopoulos, Robert Rigby, and
 contributors. The translated implementation remains under GPL-3.0-only.

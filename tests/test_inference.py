@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from torchgamlss import (
+    BCCG,
     GAMLSS,
     Beta,
     NegativeBinomial,
@@ -77,6 +78,17 @@ def _covariance(family: str, size: int) -> torch.Tensor:
             {
                 "mu": "y ~ x + offset(mu_offset)",
                 "sigma": "~ z + offset(sigma_offset)",
+            },
+            1e-9,
+        ),
+        (
+            "BCCG",
+            "bccg",
+            BCCG(),
+            {
+                "mu": "y ~ x + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+                "nu": "~ w + offset(nu_offset)",
             },
             1e-9,
         ),

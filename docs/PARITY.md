@@ -79,11 +79,30 @@ For NBI, `sigma` is the quadratic overdispersion in
 `Var(Y) = mu + sigma * mu^2`. For BE, `sigma` is the square root of the
 variance ratio, so `Var(Y) = sigma^2 * mu * (1 - mu)`.
 
+## Box-Cox Cole-Green family (`BCCG`)
+
+The BCCG slice is the first three-parameter parity target. Its fixtures cover:
+
+- `dBCCG(..., log=TRUE)`, `pBCCG()`, and the identity/log/identity links;
+- the `mu`, `sigma`, and `nu` scores and all expected second derivatives
+  exposed by `BCCG()`;
+- R-compatible starts and strictly positive response support;
+- a weighted RS fit with independent formulas and offsets for all three
+  parameters;
+- formula prediction, full-Hessian inference, information criteria, and
+  continuous quantile residuals.
+
+The implementation evaluates the Box-Cox transform through its analytic
+series at `nu=0`. This is algebraically the same lognormal limit while avoiding
+the indeterminate divisions in a literal evaluation of the R expressions.
+Tests compare nonzero values directly with R and independently verify density,
+CDF, and score continuity at zero.
+
 ## Coefficient inference
 
 Inference fixtures compare TorchGAMLSS with `vcov.gamlss(type="all")` and the
 default `summary.gamlss(type="vcov")` calculations for weighted, offset models
-from the `NO`, `PO`, `NBI`, and `BE` families. They cover:
+from the `NO`, `PO`, `NBI`, `BE`, and `BCCG` families. They cover:
 
 - the full observed-Hessian covariance matrix, including cross-parameter
   entries;
@@ -98,7 +117,7 @@ documented numerical tolerance rather than bitwise equality.
 
 ## Diagnostics and quantile residuals
 
-Diagnostics fixtures cover all five supported families and a fixed-lambda
+Diagnostics fixtures cover all six supported families and a fixed-lambda
 Normal P-spline fit. They compare:
 
 - log likelihood and global deviance;
@@ -112,10 +131,10 @@ design dimension plus each smooth EDF minus the nullity of that smooth's
 penalty. This reproduces `fit$df.fit` without counting the unpenalized
 polynomial subspace twice.
 
-Quantile-residual fixtures compare the `pNO`, `pGA`, `pPO`, `pNBI`, and `pBE`
-CDFs and normal-score transformations. The discrete PO and NBI fixtures use
-committed uniform values inside `[F(y-1), F(y)]`, making the randomized
-Dunn-Smyth calculation exactly reproducible.
+Quantile-residual fixtures compare the `pNO`, `pGA`, `pPO`, `pNBI`, `pBE`,
+and `pBCCG` CDFs and normal-score transformations. The discrete PO and NBI
+fixtures use committed uniform values inside `[F(y-1), F(y)]`, making the
+randomized Dunn-Smyth calculation exactly reproducible.
 
 ## Reproducing the fixtures
 

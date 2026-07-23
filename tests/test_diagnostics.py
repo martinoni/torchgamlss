@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from torchgamlss import (
+    BCCG,
     GAMLSS,
     Beta,
     Gamma,
@@ -81,6 +82,17 @@ def _diagnostic_row(family: str) -> dict[str, str]:
             {
                 "mu": "y ~ x + offset(mu_offset)",
                 "sigma": "~ z + offset(sigma_offset)",
+            },
+            1e-9,
+        ),
+        (
+            "BCCG",
+            "bccg",
+            BCCG(),
+            {
+                "mu": "y ~ x + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+                "nu": "~ w + offset(nu_offset)",
             },
             1e-9,
         ),
@@ -201,6 +213,7 @@ def test_smooth_model_effective_degrees_of_freedom_match_r_gamlss():
         ("PO", "po_reference.csv", Poisson()),
         ("NBI", "nbi_reference.csv", NegativeBinomial()),
         ("BE", "be_reference.csv", Beta()),
+        ("BCCG", "bccg_reference.csv", BCCG()),
     ],
 )
 def test_quantile_residuals_match_r_gamlss(family_code, reference_name, family):

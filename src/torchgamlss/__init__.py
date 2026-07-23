@@ -2,7 +2,9 @@
 
 from torchgamlss.diagnostics import ModelDiagnostics, compare_models
 from torchgamlss.families import (
+    BCCG,
     Beta,
+    BoxCoxColeGreen,
     Family,
     Gamma,
     NegativeBinomial,
@@ -17,7 +19,9 @@ from torchgamlss.model import GAMLSS, FitResult, TermContributions
 from torchgamlss.smooths import PSpline, SmoothTerm
 
 __all__ = [
+    "BCCG",
     "Beta",
+    "BoxCoxColeGreen",
     "Family",
     "FitResult",
     "FormulaData",

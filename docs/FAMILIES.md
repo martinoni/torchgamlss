@@ -1,4 +1,4 @@
-# Poisson, negative-binomial, and Beta families
+# Response families
 
 The public classes follow named `gamlss.dist` parameterizations rather than
 adopting similarly named conventions from other libraries.
@@ -81,3 +81,5 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - weighted RS fits with parameter-specific offsets and formulas.
 
 See [`PARITY.md`](PARITY.md) for package versions and regeneration commands.
+The three-parameter Box-Cox Cole-Green family is documented separately in
+[`BCCG.md`](BCCG.md).

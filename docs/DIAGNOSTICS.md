@@ -116,7 +116,8 @@ residuals = model.quantile_residuals_data(data, uniforms="uniform_column")
 `uniforms` applies only to discrete families. For continuous responses the CDF
 determines the residual uniquely.
 
-The current CDF implementations use SciPy as a non-differentiable numerical
-backend and return a tensor with the model's original dtype and device. Thus,
-quantile residuals are post-fit diagnostics, not differentiable training
-operations, and GPU inputs incur a CPU round trip.
+The Normal, Gamma, Poisson, NBI, and Beta CDF implementations use SciPy as a
+non-differentiable numerical backend and return a tensor with the model's
+original dtype and device, so GPU inputs incur a CPU round trip. BCCG uses a
+Torch-native CDF. Quantile residuals are a post-fit diagnostic API; callers
+should not rely on differentiation through them.
