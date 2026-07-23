@@ -67,17 +67,21 @@ class Normal(Family):
             ("mu", "sigma"): response.new_zeros(response.shape),
         }
 
-    def initial_parameters(self, response: Tensor) -> dict[str, Tensor]:
+    def _default_initial_parameters(
+        self,
+        response: Tensor,
+        parameters: set[str],
+    ) -> dict[str, Tensor]:
         """Match the starting expressions in ``gamlss.dist::NO``."""
-        if response.ndim != 1 or response.numel() < 2:
-            raise ValueError("NO initialization requires at least two observations")
-        sigma = response.std(correction=1)
-        if not torch.isfinite(sigma) or sigma <= 0:
-            raise ValueError("NO initialization requires a non-constant response")
-        return {
-            "mu": (response + response.mean()) / 2.0,
-            "sigma": torch.full_like(response, sigma),
-        }
+        defaults = {}
+        if "mu" in parameters:
+            defaults["mu"] = (response + response.mean()) / 2.0
+        if "sigma" in parameters:
+            defaults["sigma"] = torch.full_like(
+                response,
+                response.std(correction=1),
+            )
+        return defaults
 
     def _broadcast(
         self, response: Tensor, parameters: Mapping[str, Tensor]

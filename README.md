@@ -25,11 +25,13 @@ Y | X ~ D(theta_1, ..., theta_K)
 The current implementation contains:
 
 - identity, inverse, log, and logit links;
-- normal (`NO`) and Gamma (`GA`) GAMLSS families with predictors for `mu`
-  and `sigma`;
+- Normal (`NO`), Gamma (`GA`), Poisson (`PO`), negative-binomial type I
+  (`NBI`), and Beta (`BE`) GAMLSS families;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - likelihood weights and offsets for every distribution parameter;
+- R-compatible family defaults and user-supplied parameter-scale starting
+  values for RS fitting;
 - Rigby-Stasinopoulos fitting cycles for linear and additive predictors;
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
@@ -41,8 +43,8 @@ The current implementation contains:
 - Wilkinson formulas for tabular fitting and prediction, including categorical
   variables, `offset()`, and `pb()`;
 - independent design matrices for each distribution parameter;
-- R-generated parity fixtures for the `NO` and `GA` densities, links,
-  derivatives, and fitted models;
+- R-generated parity fixtures for all supported families' densities or masses,
+  links, derivatives, starting values, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
 The CG algorithm, inference, and diagnostics are planned work. The L-BFGS path
@@ -68,9 +70,11 @@ Rscript tools/generate_r_references.R --check
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
 P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
-parameterization. The supported prediction interface is documented in
-[`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular formula API in
-[`docs/FORMULAS.md`](docs/FORMULAS.md).
+parameterization. Poisson, NBI, and Beta are described in
+[`docs/FAMILIES.md`](docs/FAMILIES.md), and RS starting values in
+[`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). The prediction interface
+is documented in [`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular
+formula API in [`docs/FORMULAS.md`](docs/FORMULAS.md).
 
 ## Attribution and license
 

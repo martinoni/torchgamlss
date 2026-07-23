@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import Tensor
@@ -118,6 +118,7 @@ def fit_rs(
     weights: Tensor | None = None,
     offsets: Mapping[str, Tensor] | None = None,
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    initial_parameters: Mapping[str, Any] | None = None,
     control: RSControl | None = None,
 ) -> RSFitResult:
     """Fit additive predictors using the R GAMLSS RS equations."""
@@ -127,7 +128,9 @@ def fit_rs(
     parameter_offsets = _parameter_offsets(model, response, offsets)
     parameters = {
         name: value.detach().clone()
-        for name, value in model.family.initial_parameters(response).items()
+        for name, value in model.family.initial_parameters(
+            response, initial_parameters
+        ).items()
     }
     coefficients = {
         name: coefficient.detach().clone()

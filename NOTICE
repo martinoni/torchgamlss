@@ -17,6 +17,12 @@ from and tested against gamlss.dist 6.1-1, in particular R/NO.r and R/GA.R,
 and gamlss 5.5-0. Both source packages are distributed by CRAN under GPL-2 or
 GPL-3.
 
+The Poisson, negative-binomial type I, and Beta implementations and fixtures
+are derived from and tested against the PO, NBI, and BE family definitions in
+gamlss.dist 6.1-1. The shared starting-value behavior follows the corresponding
+family initialization expressions. These translations remain under
+GPL-3.0-only.
+
 The linear RS fitting implementation is translated from the algorithm in
 gamlss 5.5-0, R/gamlss-5.R, by Mikis Stasinopoulos, Robert Rigby, and
 contributors. The translated implementation remains under GPL-3.0-only.

@@ -175,18 +175,21 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         weights: Any = None,
+        initial_parameters: Mapping[str, Any] | None = None,
         control: RSControl | None = None,
     ) -> RSFitResult:
         """Fit a formula model from tabular data with RS cycles."""
         prepared = self.prepare_formula_data(data, include_response=True)
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
+        parameter_starts = self._formula_initial_parameters(data, initial_parameters)
         return self.fit_rs(
             prepared.response,
             prepared.design_matrices,
             weights=case_weights,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            initial_parameters=parameter_starts,
             control=control,
         )
 
@@ -497,6 +500,7 @@ class GAMLSS(nn.Module):
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        initial_parameters: Mapping[str, Any] | None = None,
         control: RSControl | None = None,
     ) -> RSFitResult:
         """Fit linear or additive predictors with Rigby-Stasinopoulos cycles."""
@@ -507,6 +511,7 @@ class GAMLSS(nn.Module):
             weights=weights,
             offsets=offsets,
             smooth_covariates=smooth_covariates,
+            initial_parameters=initial_parameters,
             control=control,
         )
 
@@ -579,6 +584,29 @@ class GAMLSS(nn.Module):
             device=model_parameter.device,
             context=context,
         )
+
+    def _formula_initial_parameters(
+        self,
+        data: Any,
+        values: Mapping[str, Any] | None,
+    ) -> Mapping[str, Tensor] | None:
+        if values is None:
+            return None
+        if not isinstance(values, Mapping):
+            raise ValueError("initial parameters must be supplied as a mapping")
+        extra = set(values).difference(self.family.parameter_names)
+        if extra:
+            raise ValueError(
+                f"Initial parameters contain unknown names: {sorted(extra)}"
+            )
+        return {
+            parameter: self._formula_tensor(
+                data,
+                value,
+                context=f"initial parameter {parameter!r}",
+            )
+            for parameter, value in values.items()
+        }
 
     @staticmethod
     def _validated_weights(losses: Tensor, weights: Tensor | None) -> Tensor:

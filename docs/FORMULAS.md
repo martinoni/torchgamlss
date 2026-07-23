@@ -27,6 +27,19 @@ model = GAMLSS.from_formula(
 result = model.fit_rs_data(data, weights="weight")
 ```
 
+RS starting values may be scalars, vectors, or names of columns in `data`:
+
+```python
+result = model.fit_rs_data(
+    data,
+    weights="weight",
+    initial_parameters={"mu": "mu_start", "sigma": 0.5},
+)
+```
+
+See [`INITIALIZATION.md`](INITIALIZATION.md) for validation and default
+behavior.
+
 `fit_data()` provides the corresponding Torch L-BFGS path:
 
 ```python

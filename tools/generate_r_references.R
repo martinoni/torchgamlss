@@ -56,6 +56,15 @@ pb_gcv_fitted_reference_path <- file.path(
 pb_gcv_coefficient_reference_path <- file.path(
   reference_dir, "no_pb_gcv_coefficient_reference.csv"
 )
+po_reference_path <- file.path(reference_dir, "po_reference.csv")
+po_fit_data_path <- file.path(reference_dir, "po_fit_data.csv")
+po_rs_reference_path <- file.path(reference_dir, "po_rs_reference.csv")
+nbi_reference_path <- file.path(reference_dir, "nbi_reference.csv")
+nbi_fit_data_path <- file.path(reference_dir, "nbi_fit_data.csv")
+nbi_rs_reference_path <- file.path(reference_dir, "nbi_rs_reference.csv")
+be_reference_path <- file.path(reference_dir, "be_reference.csv")
+be_fit_data_path <- file.path(reference_dir, "be_fit_data.csv")
+be_rs_reference_path <- file.path(reference_dir, "be_rs_reference.csv")
 
 family <- NO()
 cases <- read.csv(cases_path)
@@ -89,6 +98,80 @@ ga_reference <- data.frame(
   d2ldmu2 = ga_family$d2ldm2(ga_cases$mu, ga_cases$sigma),
   d2ldsigma2 = ga_family$d2ldd2(ga_cases$sigma),
   d2ldmudsigma = ga_family$d2ldmdd(ga_cases$y),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+po_family <- PO()
+po_cases <- data.frame(
+  y = c(0, 1, 2, 5, 9),
+  mu = c(0.2, 0.8, 2.5, 5.5, 9)
+)
+po_reference <- data.frame(
+  y = po_cases$y,
+  mu = po_cases$mu,
+  eta_mu = po_family$mu.linkfun(po_cases$mu),
+  log_density = dPO(po_cases$y, po_cases$mu, log = TRUE),
+  dldmu = po_family$dldm(po_cases$y, po_cases$mu),
+  d2ldmu2 = po_family$d2ldm2(po_cases$mu),
+  initial_mu = (po_cases$y + mean(po_cases$y)) / 2,
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+nbi_family <- NBI()
+nbi_cases <- data.frame(
+  y = c(0, 1, 3, 7, 12),
+  mu = c(0.4, 1.2, 2.8, 6.5, 10),
+  sigma = c(0.15, 0.25, 0.4, 0.7, 1.1)
+)
+nbi_initial_sigma <- max(
+  (var(nbi_cases$y) - mean(nbi_cases$y)) / mean(nbi_cases$y)^2,
+  0.1
+)
+nbi_reference <- data.frame(
+  y = nbi_cases$y,
+  mu = nbi_cases$mu,
+  sigma = nbi_cases$sigma,
+  eta_mu = nbi_family$mu.linkfun(nbi_cases$mu),
+  eta_sigma = nbi_family$sigma.linkfun(nbi_cases$sigma),
+  log_density = dNBI(
+    nbi_cases$y, nbi_cases$mu, nbi_cases$sigma, log = TRUE
+  ),
+  dldmu = nbi_family$dldm(
+    nbi_cases$y, nbi_cases$mu, nbi_cases$sigma
+  ),
+  dldsigma = nbi_family$dldd(
+    nbi_cases$y, nbi_cases$mu, nbi_cases$sigma
+  ),
+  d2ldmu2 = nbi_family$d2ldm2(nbi_cases$mu, nbi_cases$sigma),
+  d2ldsigma2 = nbi_family$d2ldd2(
+    nbi_cases$y, nbi_cases$mu, nbi_cases$sigma
+  ),
+  d2ldmudsigma = nbi_family$d2ldmdd(nbi_cases$y),
+  initial_mu = (nbi_cases$y + mean(nbi_cases$y)) / 2,
+  initial_sigma = rep(nbi_initial_sigma, nrow(nbi_cases)),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+be_family <- BE()
+be_cases <- data.frame(
+  y = c(0.03, 0.15, 0.4, 0.72, 0.94),
+  mu = c(0.08, 0.22, 0.5, 0.7, 0.9),
+  sigma = c(0.15, 0.25, 0.4, 0.55, 0.7)
+)
+be_reference <- data.frame(
+  y = be_cases$y,
+  mu = be_cases$mu,
+  sigma = be_cases$sigma,
+  eta_mu = be_family$mu.linkfun(be_cases$mu),
+  eta_sigma = be_family$sigma.linkfun(be_cases$sigma),
+  log_density = dBE(be_cases$y, be_cases$mu, be_cases$sigma, log = TRUE),
+  dldmu = be_family$dldm(be_cases$y, be_cases$mu, be_cases$sigma),
+  dldsigma = be_family$dldd(be_cases$y, be_cases$mu, be_cases$sigma),
+  d2ldmu2 = be_family$d2ldm2(be_cases$mu, be_cases$sigma),
+  d2ldsigma2 = be_family$d2ldd2(be_cases$mu, be_cases$sigma),
+  d2ldmudsigma = be_family$d2ldmdd(be_cases$mu, be_cases$sigma),
+  initial_mu = (be_cases$y + mean(be_cases$y)) / 2,
+  initial_sigma = rep(0.5, nrow(be_cases)),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
@@ -187,6 +270,118 @@ ga_pb_fitted_reference <- data.frame(
 )
 ga_pb_coefficient_reference <- data.frame(
   coefficient = drop(ga_pb_smooth$coef)
+)
+
+po_n <- 72
+po_x <- seq(-1, 1, length.out = po_n)
+po_mu_offset <- 0.12 * sin(seq(0, 3 * pi, length.out = po_n))
+po_weight <- rep(c(1, 1.5, 2, 0.75), length.out = po_n)
+po_mu <- exp(0.55 + 0.65 * po_x + po_mu_offset)
+po_probability <- (((seq_len(po_n) * 37) %% po_n) + 0.5) / po_n
+po_fit_data <- data.frame(
+  x = po_x,
+  y = qPO(po_probability, mu = po_mu),
+  weight = po_weight,
+  mu_offset = po_mu_offset
+)
+po_rs_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  weights = weight,
+  family = PO(),
+  method = RS(),
+  data = po_fit_data,
+  control = gamlss.control(c.crit = 1e-10, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(cc = 1e-10, cyc = 200)
+)
+po_rs_reference <- data.frame(
+  mu_intercept = unname(coef(po_rs_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(po_rs_fit, what = "mu")[[2]]),
+  global_deviance = unname(deviance(po_rs_fit)),
+  negative_log_likelihood = -as.numeric(logLik(po_rs_fit)),
+  outer_iterations = po_rs_fit$iter,
+  converged = po_rs_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+nbi_n <- 84
+nbi_x <- seq(-1, 1, length.out = nbi_n)
+nbi_z <- cos(seq(0, 2 * pi, length.out = nbi_n))
+nbi_mu_offset <- 0.08 * sin(seq(0, 3 * pi, length.out = nbi_n))
+nbi_sigma_offset <- 0.05 * cos(seq(0, 4 * pi, length.out = nbi_n))
+nbi_weight <- rep(c(1, 1.25, 1.75, 0.8), length.out = nbi_n)
+nbi_mu <- exp(0.75 + 0.55 * nbi_x + nbi_mu_offset)
+nbi_sigma <- exp(-1.1 + 0.25 * nbi_z + nbi_sigma_offset)
+nbi_probability <- (((seq_len(nbi_n) * 43) %% nbi_n) + 0.5) / nbi_n
+nbi_fit_data <- data.frame(
+  x = nbi_x,
+  z = nbi_z,
+  y = qNBI(nbi_probability, mu = nbi_mu, sigma = nbi_sigma),
+  weight = nbi_weight,
+  mu_offset = nbi_mu_offset,
+  sigma_offset = nbi_sigma_offset
+)
+nbi_rs_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  weights = weight,
+  family = NBI(),
+  method = RS(),
+  data = nbi_fit_data,
+  control = gamlss.control(c.crit = 1e-9, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(cc = 1e-9, cyc = 200)
+)
+nbi_rs_reference <- data.frame(
+  mu_intercept = unname(coef(nbi_rs_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(nbi_rs_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(nbi_rs_fit, what = "sigma")[[1]]),
+  sigma_z = unname(coef(nbi_rs_fit, what = "sigma")[[2]]),
+  global_deviance = unname(deviance(nbi_rs_fit)),
+  negative_log_likelihood = -as.numeric(logLik(nbi_rs_fit)),
+  outer_iterations = nbi_rs_fit$iter,
+  converged = nbi_rs_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+be_n <- 80
+be_x <- seq(-1, 1, length.out = be_n)
+be_z <- cos(seq(0, 2 * pi, length.out = be_n))
+be_mu_offset <- 0.07 * sin(seq(0, 3 * pi, length.out = be_n))
+be_sigma_offset <- 0.04 * cos(seq(0, 4 * pi, length.out = be_n))
+be_weight <- rep(c(1, 1.5, 2, 0.75), length.out = be_n)
+be_mu <- plogis(-0.15 + 1.05 * be_x + be_mu_offset)
+be_sigma <- plogis(-1.25 + 0.2 * be_z + be_sigma_offset)
+be_probability <- (((seq_len(be_n) * 37) %% be_n) + 0.5) / be_n
+be_fit_data <- data.frame(
+  x = be_x,
+  z = be_z,
+  y = qBE(be_probability, mu = be_mu, sigma = be_sigma),
+  weight = be_weight,
+  mu_offset = be_mu_offset,
+  sigma_offset = be_sigma_offset
+)
+be_rs_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  weights = weight,
+  family = BE(),
+  method = RS(),
+  data = be_fit_data,
+  control = gamlss.control(c.crit = 1e-9, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(cc = 1e-9, cyc = 200)
+)
+be_rs_reference <- data.frame(
+  mu_intercept = unname(coef(be_rs_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(be_rs_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(be_rs_fit, what = "sigma")[[1]]),
+  sigma_z = unname(coef(be_rs_fit, what = "sigma")[[2]]),
+  global_deviance = unname(deviance(be_rs_fit)),
+  negative_log_likelihood = -as.numeric(logLik(be_rs_fit)),
+  outer_iterations = be_rs_fit$iter,
+  converged = be_rs_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
 rs_fit_data <- read.csv(rs_fit_data_path)
@@ -492,6 +687,15 @@ if (check_only) {
     pb_gcv_coefficient_reference_path,
     tolerance = 1e-6
   )
+  assert_close(po_reference, po_reference_path, tolerance = 1e-12)
+  assert_close(po_fit_data, po_fit_data_path, tolerance = 1e-12)
+  assert_close(po_rs_reference, po_rs_reference_path, tolerance = 1e-7)
+  assert_close(nbi_reference, nbi_reference_path, tolerance = 1e-12)
+  assert_close(nbi_fit_data, nbi_fit_data_path, tolerance = 1e-12)
+  assert_close(nbi_rs_reference, nbi_rs_reference_path, tolerance = 1e-6)
+  assert_close(be_reference, be_reference_path, tolerance = 1e-12)
+  assert_close(be_fit_data, be_fit_data_path, tolerance = 1e-12)
+  assert_close(be_rs_reference, be_rs_reference_path, tolerance = 1e-6)
   message("R reference parity checks passed")
 } else {
   options(digits = 17, scipen = 999)
@@ -561,5 +765,14 @@ if (check_only) {
     pb_gcv_coefficient_reference,
     pb_gcv_coefficient_reference_path
   )
+  write_csv_lf(po_reference, po_reference_path)
+  write_csv_lf(po_fit_data, po_fit_data_path)
+  write_csv_lf(po_rs_reference, po_rs_reference_path)
+  write_csv_lf(nbi_reference, nbi_reference_path)
+  write_csv_lf(nbi_fit_data, nbi_fit_data_path)
+  write_csv_lf(nbi_rs_reference, nbi_rs_reference_path)
+  write_csv_lf(be_reference, be_reference_path)
+  write_csv_lf(be_fit_data, be_fit_data_path)
+  write_csv_lf(be_rs_reference, be_rs_reference_path)
   message("Wrote R reference fixtures to ", reference_dir)
 }

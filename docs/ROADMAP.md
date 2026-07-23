@@ -17,9 +17,8 @@ as supported.
 
 - [x] Weighted observations and offsets
 - [x] Formula/design-matrix interface
-- [ ] Starting-value protocol
-- [x] Normal and Gamma families
-- [ ] Poisson, beta, and negative-binomial families
+- [x] Starting-value protocol
+- [x] Normal, Gamma, Poisson, beta, and negative-binomial families
 - [x] Initial joint L-BFGS optimizer and convergence diagnostics
 - [ ] Covariance matrix and standard errors
 

@@ -63,6 +63,22 @@ Normal RS with parameter offsets, Normal L-BFGS, and Gamma RS with a fixed
 P-spline. This verifies that formula materialization reaches the same
 coefficients and likelihood as the corresponding tensor inputs.
 
+## Poisson, negative-binomial, and Beta families
+
+The additional family slices target `PO(mu)`, `NBI(mu, sigma)`, and
+`BE(mu, sigma)` respectively. Their fixtures cover:
+
+- log density or mass, default links, and family starting expressions;
+- parameter-scale scores and all expected second derivatives exposed by the R
+  family objects;
+- distribution means and variances;
+- weighted RS fits with parameter-specific offsets;
+- formula materialization and response-scale prediction.
+
+For NBI, `sigma` is the quadratic overdispersion in
+`Var(Y) = mu + sigma * mu^2`. For BE, `sigma` is the square root of the
+variance ratio, so `Var(Y) = sigma^2 * mu * (1 - mu)`.
+
 ## Reproducing the fixtures
 
 From the repository root:

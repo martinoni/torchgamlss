@@ -48,14 +48,14 @@ class Gamma(Family):
         )
 
     def log_prob(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
-        self._validate_response(response)
+        self.validate_response(response)
         return super().log_prob(response, parameters)
 
     def score(
         self, response: Tensor, parameters: Mapping[str, Tensor]
     ) -> dict[str, Tensor]:
         """Match ``GA()$dldm`` and ``GA()$dldd`` from ``gamlss.dist``."""
-        self._validate_response(response)
+        self.validate_response(response)
         mu, sigma, response = self._broadcast(response, parameters)
         sigma_squared = sigma.square()
         inverse_variance = sigma_squared.reciprocal()
@@ -85,15 +85,18 @@ class Gamma(Family):
             ("mu", "sigma"): response.new_zeros(response.shape),
         }
 
-    def initial_parameters(self, response: Tensor) -> dict[str, Tensor]:
+    def _default_initial_parameters(
+        self,
+        response: Tensor,
+        parameters: set[str],
+    ) -> dict[str, Tensor]:
         """Match the starting expressions in ``gamlss.dist::GA``."""
-        if response.ndim != 1 or response.numel() < 1:
-            raise ValueError("GA initialization requires at least one observation")
-        self._validate_response(response, context="initialization")
-        return {
-            "mu": (response + response.mean()) / 2.0,
-            "sigma": torch.ones_like(response),
-        }
+        defaults = {}
+        if "mu" in parameters:
+            defaults["mu"] = (response + response.mean()) / 2.0
+        if "sigma" in parameters:
+            defaults["sigma"] = torch.ones_like(response)
+        return defaults
 
     def _broadcast(
         self, response: Tensor, parameters: Mapping[str, Tensor]
@@ -104,9 +107,18 @@ class Gamma(Family):
         mu, sigma, response = torch.broadcast_tensors(mu, sigma, response)
         return mu, sigma, response
 
-    @staticmethod
-    def _validate_response(response: Tensor, *, context: str = "family") -> None:
-        if not torch.isfinite(response).all() or (response <= 0).any():
+    def validate_response(
+        self,
+        response: Tensor,
+        *,
+        context: str = "family",
+    ) -> None:
+        if (
+            response.ndim != 1
+            or response.numel() < 1
+            or not torch.isfinite(response).all()
+            or (response <= 0).any()
+        ):
             raise ValueError(
                 f"GA {context} requires a finite strictly positive response"
             )

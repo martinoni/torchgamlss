@@ -27,6 +27,11 @@ The working weights are clipped to `[1e-10, 1e10]`, matching the safeguards in
 the R source. Automatic step halving is used when an inner update increases the
 global deviance.
 
+Before the first cycle, the family supplies R-compatible parameter-scale
+starting values. `initial_parameters` can override any subset with scalars or
+one value per observation. Formula fits also accept column names. See
+[`INITIALIZATION.md`](INITIALIZATION.md).
+
 ## Controls
 
 `RSControl` exposes separate outer, inner, backfitting, ML smoothing-update,
@@ -76,3 +81,8 @@ family. They cover a weighted heteroscedastic `GA` model with offsets in both
 predictors and an additive fit with a fixed-lambda P-spline for `mu`.
 Coefficients, fitted parameters, effective degrees of freedom, deviances, and
 outer iteration counts match R.
+
+Poisson, NBI, and Beta fixtures further exercise one-parameter discrete,
+two-parameter discrete, and bounded continuous responses. Their weighted,
+offset formula fits match the R coefficients, deviances, likelihoods, and
+outer-cycle counts.
