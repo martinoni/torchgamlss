@@ -59,6 +59,16 @@ eta = model.predict_data(new_data, type="link")
 terms = model.predict_data(new_data, type="terms")
 ```
 
+For fitted parametric models, `inference_data()` applies the same encodings
+and returns joint coefficient covariance and Wald inference:
+
+```python
+inference = model.inference_data(data, weights="weight")
+table = inference.to_dataframe()
+```
+
+See [`INFERENCE.md`](INFERENCE.md).
+
 The new data need not contain the response, but must contain every predictor,
 smooth covariate, and offset referenced by the formulas. Categorical levels
 that were absent during construction are rejected because silently treating

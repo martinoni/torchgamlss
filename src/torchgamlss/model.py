@@ -13,6 +13,7 @@ from torch.distributions import Distribution
 from torchgamlss.families import Family
 from torchgamlss.fitting import RSControl, RSFitResult, fit_rs
 from torchgamlss.formula import FormulaData, FormulaEncoder
+from torchgamlss.inference import InferenceResult, coefficient_inference
 from torchgamlss.smooths import PSpline, SmoothTerm
 
 
@@ -230,6 +231,27 @@ class GAMLSS(nn.Module):
             prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             type=type,
+        )
+
+    def inference_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        confidence_level: float = 0.95,
+        degrees_of_freedom: float | None = None,
+    ) -> InferenceResult:
+        """Infer formula-model coefficients from the current fitted state."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        return self.inference(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            confidence_level=confidence_level,
+            degrees_of_freedom=degrees_of_freedom,
         )
 
     def linear_predictors(
@@ -513,6 +535,27 @@ class GAMLSS(nn.Module):
             smooth_covariates=smooth_covariates,
             initial_parameters=initial_parameters,
             control=control,
+        )
+
+    def inference(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        confidence_level: float = 0.95,
+        degrees_of_freedom: float | None = None,
+    ) -> InferenceResult:
+        """Return full-Hessian covariance and t-based Wald inference."""
+        return coefficient_inference(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            confidence_level=confidence_level,
+            degrees_of_freedom=degrees_of_freedom,
         )
 
     def smooth_penalty(self) -> Tensor:

@@ -79,6 +79,23 @@ For NBI, `sigma` is the quadratic overdispersion in
 `Var(Y) = mu + sigma * mu^2`. For BE, `sigma` is the square root of the
 variance ratio, so `Var(Y) = sigma^2 * mu * (1 - mu)`.
 
+## Coefficient inference
+
+Inference fixtures compare TorchGAMLSS with `vcov.gamlss(type="all")` and the
+default `summary.gamlss(type="vcov")` calculations for weighted, offset models
+from the `NO`, `PO`, `NBI`, and `BE` families. They cover:
+
+- the full observed-Hessian covariance matrix, including cross-parameter
+  entries;
+- standard errors and coefficient statistics;
+- residual degrees of freedom under frequency and case weights;
+- two-sided Student t p-values;
+- 95% Wald confidence intervals.
+
+R obtains the Hessian numerically with `optimHess`; TorchGAMLSS obtains it
+through Torch automatic differentiation. Parity is therefore defined to the
+documented numerical tolerance rather than bitwise equality.
+
 ## Reproducing the fixtures
 
 From the repository root:

@@ -65,6 +65,10 @@ nbi_rs_reference_path <- file.path(reference_dir, "nbi_rs_reference.csv")
 be_reference_path <- file.path(reference_dir, "be_reference.csv")
 be_fit_data_path <- file.path(reference_dir, "be_fit_data.csv")
 be_rs_reference_path <- file.path(reference_dir, "be_rs_reference.csv")
+inference_table_path <- file.path(reference_dir, "inference_table_reference.csv")
+inference_covariance_path <- file.path(
+  reference_dir, "inference_covariance_reference.csv"
+)
 
 family <- NO()
 cases <- read.csv(cases_path)
@@ -409,6 +413,78 @@ rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+inference_reference <- function(
+  fit, family_code, parameter_names, term_names
+) {
+  inference <- vcov(fit, type = "all", hessian.fun = "R")
+  coefficient_names <- paste(parameter_names, term_names, sep = ".")
+  estimates <- as.numeric(inference$coef)
+  standard_errors <- as.numeric(inference$se)
+  degrees_of_freedom <- fit$df.residual
+  statistics <- estimates / standard_errors
+  p_values <- 2 * pt(-abs(statistics), degrees_of_freedom)
+  critical_value <- qt(0.975, degrees_of_freedom)
+  table <- data.frame(
+    family = family_code,
+    coefficient_index = seq_along(estimates) - 1,
+    coefficient = coefficient_names,
+    estimate = estimates,
+    standard_error = standard_errors,
+    statistic = statistics,
+    p_value = p_values,
+    ci_lower = estimates - critical_value * standard_errors,
+    ci_upper = estimates + critical_value * standard_errors,
+    degrees_of_freedom = degrees_of_freedom,
+    gamlss_version = as.character(packageVersion("gamlss")),
+    gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+  )
+  covariance_grid <- expand.grid(
+    row_index = seq_along(estimates) - 1,
+    column_index = seq_along(estimates) - 1
+  )
+  covariance <- data.frame(
+    family = family_code,
+    covariance_grid,
+    covariance = as.vector(inference$vcov),
+    gamlss_version = as.character(packageVersion("gamlss")),
+    gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+  )
+  list(table = table, covariance = covariance)
+}
+
+inference_results <- list(
+  inference_reference(
+    rs_fit,
+    "NO",
+    c("mu", "mu", "sigma", "sigma"),
+    c("Intercept", "x", "Intercept", "z")
+  ),
+  inference_reference(
+    po_rs_fit,
+    "PO",
+    c("mu", "mu"),
+    c("Intercept", "x")
+  ),
+  inference_reference(
+    nbi_rs_fit,
+    "NBI",
+    c("mu", "mu", "sigma", "sigma"),
+    c("Intercept", "x", "Intercept", "z")
+  ),
+  inference_reference(
+    be_rs_fit,
+    "BE",
+    c("mu", "mu", "sigma", "sigma"),
+    c("Intercept", "x", "Intercept", "z")
+  )
+)
+inference_table_reference <- do.call(
+  rbind, lapply(inference_results, function(result) result$table)
+)
+inference_covariance_reference <- do.call(
+  rbind, lapply(inference_results, function(result) result$covariance)
+)
+
 pb_x <- seq(-1, 1, length.out = 40)
 pb_fit_data <- data.frame(
   x = pb_x,
@@ -696,6 +772,14 @@ if (check_only) {
   assert_close(be_reference, be_reference_path, tolerance = 1e-12)
   assert_close(be_fit_data, be_fit_data_path, tolerance = 1e-12)
   assert_close(be_rs_reference, be_rs_reference_path, tolerance = 1e-6)
+  assert_close(
+    inference_table_reference, inference_table_path, tolerance = 1e-6
+  )
+  assert_close(
+    inference_covariance_reference,
+    inference_covariance_path,
+    tolerance = 1e-6
+  )
   message("R reference parity checks passed")
 } else {
   options(digits = 17, scipen = 999)
@@ -774,5 +858,7 @@ if (check_only) {
   write_csv_lf(be_reference, be_reference_path)
   write_csv_lf(be_fit_data, be_fit_data_path)
   write_csv_lf(be_rs_reference, be_rs_reference_path)
+  write_csv_lf(inference_table_reference, inference_table_path)
+  write_csv_lf(inference_covariance_reference, inference_covariance_path)
   message("Wrote R reference fixtures to ", reference_dir)
 }

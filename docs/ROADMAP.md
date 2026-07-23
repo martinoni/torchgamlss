@@ -20,7 +20,7 @@ as supported.
 - [x] Starting-value protocol
 - [x] Normal, Gamma, Poisson, beta, and negative-binomial families
 - [x] Initial joint L-BFGS optimizer and convergence diagnostics
-- [ ] Covariance matrix and standard errors
+- [x] Covariance matrix, standard errors, and basic Wald inference
 
 ## Phase 2 — classical GAMLSS fitting
 
@@ -41,6 +41,7 @@ as supported.
 - [ ] Deviance, AIC, GAIC, and model comparison
 - [ ] Four-parameter families including BCT and BCPE
 - [ ] R-to-Python API and numerical compatibility guide
+- [ ] Joint covariance and uncertainty for penalized smooth terms
 
 ## Phase 4 — Torch-native extensions
 

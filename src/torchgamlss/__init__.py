@@ -10,6 +10,7 @@ from torchgamlss.families import (
 )
 from torchgamlss.fitting import RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
+from torchgamlss.inference import InferenceResult
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
 from torchgamlss.model import GAMLSS, FitResult, TermContributions
 from torchgamlss.smooths import PSpline, SmoothTerm
@@ -22,6 +23,7 @@ __all__ = [
     "GAMLSS",
     "Gamma",
     "IdentityLink",
+    "InferenceResult",
     "InverseLink",
     "Link",
     "LogLink",

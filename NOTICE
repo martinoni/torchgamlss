@@ -27,6 +27,10 @@ The linear RS fitting implementation is translated from the algorithm in
 gamlss 5.5-0, R/gamlss-5.R, by Mikis Stasinopoulos, Robert Rigby, and
 contributors. The translated implementation remains under GPL-3.0-only.
 
+Full-Hessian covariance and Wald inference behavior follows vcov.gamlss(),
+gen.likelihood(), and summary.gamlss() in gamlss 5.5-0. The translated
+behavior remains under GPL-3.0-only.
+
 The additive backfitting and P-spline implementation, including fixed, ML,
 target-EDF, GAIC, and GCV smoothing-parameter selection, is translated from
 gamlss 5.5-0, in particular R/add.r and R/pb.R. The latter credits work by

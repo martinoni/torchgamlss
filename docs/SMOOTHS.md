@@ -127,7 +127,9 @@ gcv_term = PSpline.from_data(
 ## Current limitations
 
 - Only one-dimensional, equally spaced P-spline bases are available.
-- Standard errors and covariance matrices are not available.
+- Parametric covariance and Wald inference are available only for models
+  without smooth terms. Joint uncertainty for spline coefficients and
+  smoothing-parameter estimation is not yet available.
 - Automatic smoothing selection is available through `fit_rs()`; joint
   L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

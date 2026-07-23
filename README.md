@@ -40,6 +40,8 @@ The current implementation contains:
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with
   `pb.control(method=...)`;
 - prediction on response, link, and additive-term scales, including new data;
+- joint full-Hessian covariance, standard errors, Wald tests, and confidence
+  intervals for parametric models;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
   variables, `offset()`, and `pb()`;
 - independent design matrices for each distribution parameter;
@@ -47,9 +49,9 @@ The current implementation contains:
   links, derivatives, starting values, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-The CG algorithm, inference, and diagnostics are planned work. The L-BFGS path
+The CG algorithm and broader diagnostics are planned work. The L-BFGS path
 remains a Torch-native numerical baseline and requires fixed smoothing
-parameters.
+parameters. Inference for penalized smooth terms is not yet supported.
 
 ## Development
 
@@ -74,7 +76,8 @@ parameterization. Poisson, NBI, and Beta are described in
 [`docs/FAMILIES.md`](docs/FAMILIES.md), and RS starting values in
 [`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). The prediction interface
 is documented in [`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular
-formula API in [`docs/FORMULAS.md`](docs/FORMULAS.md).
+formula API in [`docs/FORMULAS.md`](docs/FORMULAS.md). See
+[`docs/INFERENCE.md`](docs/INFERENCE.md) for covariance and Wald inference.
 
 ## Attribution and license
 
