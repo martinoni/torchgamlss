@@ -37,8 +37,8 @@ as supported.
 ## Phase 3 — compatibility and diagnostics
 
 - [x] Predictions on link, response, and term scales
-- [ ] Randomized quantile residuals
-- [ ] Deviance, AIC, GAIC, and model comparison
+- [x] Randomized quantile residuals
+- [x] Deviance, AIC, AICc, GAIC, SBC/BIC, and model comparison
 - [ ] Four-parameter families including BCT and BCPE
 - [ ] R-to-Python API and numerical compatibility guide
 - [ ] Joint covariance and uncertainty for penalized smooth terms

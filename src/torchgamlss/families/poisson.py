@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import torch
+from scipy.stats import poisson as scipy_poisson
 from torch import Tensor
 from torch.distributions import Poisson as TorchPoisson
 
+from torchgamlss.families._scipy import scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogLink
 
@@ -17,6 +19,7 @@ class Poisson(Family):
 
     name = "PO"
     parameter_names = ("mu",)
+    is_discrete = True
 
     def __init__(self, *, mu_link: Link | None = None) -> None:
         self._links = {"mu": mu_link or LogLink()}
@@ -31,6 +34,15 @@ class Poisson(Family):
     def log_prob(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
         self.validate_response(response)
         return super().log_prob(response, parameters)
+
+    def cdf(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
+        mu, response = torch.broadcast_tensors(parameters["mu"], response)
+        return scipy_cdf(
+            response,
+            scipy_poisson.cdf,
+            response,
+            mu,
+        )
 
     def score(
         self, response: Tensor, parameters: Mapping[str, Tensor]

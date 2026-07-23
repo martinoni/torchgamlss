@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import torch
+from scipy.stats import beta as scipy_beta
 from torch import Tensor
 from torch.distributions import Beta as TorchBeta
 
+from torchgamlss.families._scipy import scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogitLink
 
@@ -49,6 +51,19 @@ class Beta(Family):
     def log_prob(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
         self.validate_response(response)
         return super().log_prob(response, parameters)
+
+    def cdf(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
+        mu, sigma, response = self._broadcast(response, parameters)
+        precision = sigma.square().reciprocal() - 1.0
+        concentration1 = mu * precision
+        concentration0 = (1.0 - mu) * precision
+        return scipy_cdf(
+            response,
+            scipy_beta.cdf,
+            response,
+            concentration1,
+            concentration0,
+        )
 
     def score(
         self, response: Tensor, parameters: Mapping[str, Tensor]

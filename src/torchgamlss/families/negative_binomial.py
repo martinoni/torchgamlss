@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import torch
+from scipy.stats import nbinom as scipy_negative_binomial
 from torch import Tensor
 from torch.distributions import NegativeBinomial as TorchNegativeBinomial
 
+from torchgamlss.families._scipy import scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogLink
 
@@ -20,6 +22,7 @@ class NegativeBinomial(Family):
 
     name = "NBI"
     parameter_names = ("mu", "sigma")
+    is_discrete = True
 
     def __init__(
         self,
@@ -48,6 +51,18 @@ class NegativeBinomial(Family):
     def log_prob(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
         self.validate_response(response)
         return super().log_prob(response, parameters)
+
+    def cdf(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
+        mu, sigma, response = self._broadcast(response, parameters)
+        total_count = sigma.reciprocal()
+        success_probability = (1.0 + mu * sigma).reciprocal()
+        return scipy_cdf(
+            response,
+            scipy_negative_binomial.cdf,
+            response,
+            total_count,
+            success_probability,
+        )
 
     def score(
         self, response: Tensor, parameters: Mapping[str, Tensor]

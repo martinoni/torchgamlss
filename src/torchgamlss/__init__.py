@@ -1,5 +1,6 @@
 """Generalized Additive Models for Location, Scale and Shape in PyTorch."""
 
+from torchgamlss.diagnostics import ModelDiagnostics, compare_models
 from torchgamlss.families import (
     Beta,
     Family,
@@ -28,6 +29,7 @@ __all__ = [
     "Link",
     "LogLink",
     "LogitLink",
+    "ModelDiagnostics",
     "NegativeBinomial",
     "Normal",
     "Poisson",
@@ -36,6 +38,7 @@ __all__ = [
     "RSFitResult",
     "SmoothTerm",
     "TermContributions",
+    "compare_models",
 ]
 
 __version__ = "0.0.0"

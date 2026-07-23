@@ -69,6 +69,16 @@ table = inference.to_dataframe()
 
 See [`INFERENCE.md`](INFERENCE.md).
 
+Diagnostics and quantile residuals use the same stored encodings:
+
+```python
+diagnostics = model.diagnostics_data(data, weights="weight")
+residuals = model.quantile_residuals_data(data)
+```
+
+Discrete residual randomization accepts a seeded `torch.Generator` or a
+column name through `uniforms=`. See [`DIAGNOSTICS.md`](DIAGNOSTICS.md).
+
 The new data need not contain the response, but must contain every predictor,
 smooth covariate, and offset referenced by the formulas. Categorical levels
 that were absent during construction are rejected because silently treating

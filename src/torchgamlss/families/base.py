@@ -18,6 +18,7 @@ class Family(ABC):
 
     name: str
     parameter_names: tuple[str, ...]
+    is_discrete = False
 
     @property
     @abstractmethod
@@ -48,6 +49,15 @@ class Family(ABC):
     def log_prob(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
         """Evaluate the observation-wise log density or log mass."""
         return self.distribution(parameters).log_prob(response)
+
+    def cdf(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
+        """Evaluate the response CDF for quantile diagnostics."""
+        try:
+            return self.distribution(parameters).cdf(response)
+        except NotImplementedError as error:
+            raise NotImplementedError(
+                f"CDF is not implemented for the {self.name} family"
+            ) from error
 
     @abstractmethod
     def score(

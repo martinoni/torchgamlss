@@ -31,6 +31,12 @@ Full-Hessian covariance and Wald inference behavior follows vcov.gamlss(),
 gen.likelihood(), and summary.gamlss() in gamlss 5.5-0. The translated
 behavior remains under GPL-3.0-only.
 
+Likelihood diagnostics and model-selection criteria follow logLik.gamlss(),
+deviance.gamlss(), GAIC.gamlss(), and the fitted degrees-of-freedom conventions
+in gamlss 5.5-0. Quantile residual behavior follows residuals.gamlss(), the
+family rqres definitions, and the shared rqres() helper in gamlss.dist 6.1-1.
+The translated behavior remains under GPL-3.0-only.
+
 The additive backfitting and P-spline implementation, including fixed, ML,
 target-EDF, GAIC, and GCV smoothing-parameter selection, is translated from
 gamlss 5.5-0, in particular R/add.r and R/pb.R. The latter credits work by

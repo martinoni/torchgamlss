@@ -96,6 +96,27 @@ R obtains the Hessian numerically with `optimHess`; TorchGAMLSS obtains it
 through Torch automatic differentiation. Parity is therefore defined to the
 documented numerical tolerance rather than bitwise equality.
 
+## Diagnostics and quantile residuals
+
+Diagnostics fixtures cover all five supported families and a fixed-lambda
+Normal P-spline fit. They compare:
+
+- log likelihood and global deviance;
+- model and residual effective degrees of freedom;
+- original and effective observation counts under integer frequency weights
+  and non-integer case weights;
+- AIC, AICc, GAIC with `k=3`, and SBC/BIC.
+
+The effective degrees of freedom for an additive parameter equal its linear
+design dimension plus each smooth EDF minus the nullity of that smooth's
+penalty. This reproduces `fit$df.fit` without counting the unpenalized
+polynomial subspace twice.
+
+Quantile-residual fixtures compare the `pNO`, `pGA`, `pPO`, `pNBI`, and `pBE`
+CDFs and normal-score transformations. The discrete PO and NBI fixtures use
+committed uniform values inside `[F(y-1), F(y)]`, making the randomized
+Dunn-Smyth calculation exactly reproducible.
+
 ## Reproducing the fixtures
 
 From the repository root:
@@ -134,3 +155,7 @@ The GAIC and GCV fixtures follow the same final-result convention.
 TorchGAMLSS uses bounded Brent minimization on `log(lambda)`, while R uses
 `nlminb()` on `lambda`; optimizer and outer-cycle counts may differ even when
 the selected smoothing parameter and final fit agree.
+
+Likelihood criteria follow `GAIC.gamlss()` and `logLik.gamlss()`. Quantile
+residuals follow the family `rqres` definitions and the shared `rqres()`
+helper in `gamlss.dist`.

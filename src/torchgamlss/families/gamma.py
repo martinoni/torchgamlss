@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import torch
+from scipy.stats import gamma as scipy_gamma
 from torch import Tensor
 from torch.distributions import Gamma as TorchGamma
 
+from torchgamlss.families._scipy import scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogLink
 
@@ -50,6 +52,20 @@ class Gamma(Family):
     def log_prob(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
         self.validate_response(response)
         return super().log_prob(response, parameters)
+
+    def cdf(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
+        mu, sigma, response = self._broadcast(response, parameters)
+        shape = sigma.square().reciprocal()
+        scale = mu * sigma.square()
+        zeros = torch.zeros_like(response)
+        return scipy_cdf(
+            response,
+            scipy_gamma.cdf,
+            response,
+            shape,
+            zeros,
+            scale,
+        )
 
     def score(
         self, response: Tensor, parameters: Mapping[str, Tensor]

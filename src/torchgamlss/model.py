@@ -10,6 +10,11 @@ import torch
 from torch import Tensor, nn
 from torch.distributions import Distribution
 
+from torchgamlss.diagnostics import (
+    ModelDiagnostics,
+    model_diagnostics,
+    quantile_residuals,
+)
 from torchgamlss.families import Family
 from torchgamlss.fitting import RSControl, RSFitResult, fit_rs
 from torchgamlss.formula import FormulaData, FormulaEncoder
@@ -252,6 +257,50 @@ class GAMLSS(nn.Module):
             offsets=prepared.offsets,
             confidence_level=confidence_level,
             degrees_of_freedom=degrees_of_freedom,
+        )
+
+    def diagnostics_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        degrees_of_freedom: float | None = None,
+    ) -> ModelDiagnostics:
+        """Evaluate model-selection diagnostics from formula data."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        return self.diagnostics(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            degrees_of_freedom=degrees_of_freedom,
+        )
+
+    def quantile_residuals_data(
+        self,
+        data: Any,
+        *,
+        uniforms: Any = None,
+        generator: torch.Generator | None = None,
+    ) -> Tensor:
+        """Return quantile residuals using stored formula encodings."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        uniform_tensor = self._formula_tensor(
+            data,
+            uniforms,
+            context="uniforms",
+        )
+        return self.quantile_residuals(
+            prepared.response,
+            prepared.design_matrices,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            uniforms=uniform_tensor,
+            generator=generator,
         )
 
     def linear_predictors(
@@ -556,6 +605,48 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             confidence_level=confidence_level,
             degrees_of_freedom=degrees_of_freedom,
+        )
+
+    def diagnostics(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        degrees_of_freedom: float | None = None,
+    ) -> ModelDiagnostics:
+        """Return deviance and information criteria for the current model."""
+        return model_diagnostics(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            degrees_of_freedom=degrees_of_freedom,
+        )
+
+    def quantile_residuals(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        uniforms: Tensor | None = None,
+        generator: torch.Generator | None = None,
+    ) -> Tensor:
+        """Return normal quantile residuals for the current fitted model."""
+        return quantile_residuals(
+            self,
+            response,
+            design_matrices,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            uniforms=uniforms,
+            generator=generator,
         )
 
     def smooth_penalty(self) -> Tensor:

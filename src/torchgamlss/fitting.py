@@ -74,6 +74,8 @@ class RSFitResult:
     smooth_effective_degrees_of_freedom: Mapping[str, Mapping[str, float]]
     smoothing_parameters: Mapping[str, Mapping[str, float]]
     smoothing_iterations: Mapping[str, Mapping[str, int]]
+    parameter_effective_degrees_of_freedom: Mapping[str, float]
+    effective_degrees_of_freedom: float
 
     @property
     def negative_log_likelihood(self) -> float:
@@ -227,6 +229,14 @@ def fit_rs(
                     smoothing_parameters[parameter][term_name]
                 )
 
+    parameter_edf = {
+        parameter: float(model.coefficients[parameter].numel())
+        + sum(
+            smooth_edf[parameter][name] - term.penalty_nullity
+            for name, term in model.smooth_terms[parameter].items()
+        )
+        for parameter in model.family.parameter_names
+    }
     return RSFitResult(
         global_deviance=float(global_deviance),
         outer_iterations=outer_iterations,
@@ -237,6 +247,8 @@ def fit_rs(
         smooth_effective_degrees_of_freedom=smooth_edf,
         smoothing_parameters=smoothing_parameters,
         smoothing_iterations=smoothing_iterations,
+        parameter_effective_degrees_of_freedom=parameter_edf,
+        effective_degrees_of_freedom=sum(parameter_edf.values()),
     )
 
 

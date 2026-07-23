@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import torch
+from scipy.stats import norm as scipy_normal
 from torch import Tensor
 from torch.distributions import Normal as TorchNormal
 
+from torchgamlss.families._scipy import scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import IdentityLink, Link, LogLink
 
@@ -38,6 +40,16 @@ class Normal(Family):
             loc=parameters["mu"],
             scale=parameters["sigma"],
             validate_args=True,
+        )
+
+    def cdf(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
+        mu, sigma, response = self._broadcast(response, parameters)
+        return scipy_cdf(
+            response,
+            scipy_normal.cdf,
+            response,
+            mu,
+            sigma,
         )
 
     def score(

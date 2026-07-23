@@ -69,6 +69,12 @@ inference_table_path <- file.path(reference_dir, "inference_table_reference.csv"
 inference_covariance_path <- file.path(
   reference_dir, "inference_covariance_reference.csv"
 )
+model_diagnostics_path <- file.path(
+  reference_dir, "model_diagnostics_reference.csv"
+)
+quantile_residual_path <- file.path(
+  reference_dir, "quantile_residual_reference.csv"
+)
 
 family <- NO()
 cases <- read.csv(cases_path)
@@ -178,6 +184,58 @@ be_reference <- data.frame(
   initial_sigma = rep(0.5, nrow(be_cases)),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
+
+continuous_quantile_reference <- function(
+  family_code, cases, probabilities
+) {
+  data.frame(
+    family = family_code,
+    case_index = seq_len(nrow(cases)) - 1,
+    uniform = 0.5,
+    probability = probabilities,
+    residual = qnorm(probabilities),
+    gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+  )
+}
+
+discrete_quantile_reference <- function(
+  family_code, cases, lower, upper
+) {
+  uniforms <- seq(0.1, 0.9, length.out = nrow(cases))
+  probabilities <- lower + uniforms * (upper - lower)
+  data.frame(
+    family = family_code,
+    case_index = seq_len(nrow(cases)) - 1,
+    uniform = uniforms,
+    probability = probabilities,
+    residual = qnorm(probabilities),
+    gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+  )
+}
+
+quantile_residual_reference <- do.call(rbind, list(
+  continuous_quantile_reference(
+    "NO", cases, pNO(cases$y, cases$mu, cases$sigma)
+  ),
+  continuous_quantile_reference(
+    "GA", ga_cases, pGA(ga_cases$y, ga_cases$mu, ga_cases$sigma)
+  ),
+  discrete_quantile_reference(
+    "PO",
+    po_cases,
+    pPO(po_cases$y - 1, po_cases$mu),
+    pPO(po_cases$y, po_cases$mu)
+  ),
+  discrete_quantile_reference(
+    "NBI",
+    nbi_cases,
+    pNBI(nbi_cases$y - 1, nbi_cases$mu, nbi_cases$sigma),
+    pNBI(nbi_cases$y, nbi_cases$mu, nbi_cases$sigma)
+  ),
+  continuous_quantile_reference(
+    "BE", be_cases, pBE(be_cases$y, be_cases$mu, be_cases$sigma)
+  )
+))
 
 fit_data <- read.csv(fit_data_path)
 fit <- gamlss(
@@ -526,6 +584,33 @@ pb_coefficient_reference <- data.frame(
   coefficient = drop(pb_smooth$coef)
 )
 
+diagnostic_reference <- function(fit, family_code) {
+  data.frame(
+    family = family_code,
+    observation_count = fit$N,
+    effective_observation_count = fit$noObs,
+    effective_df = fit$df.fit,
+    residual_df = fit$df.residual,
+    log_likelihood = as.numeric(logLik(fit)),
+    global_deviance = unname(deviance(fit)),
+    aic = unname(GAIC(fit, k = 2)),
+    aicc = unname(GAIC(fit, k = 2, c = TRUE)),
+    gaic3 = unname(GAIC(fit, k = 3)),
+    sbc = unname(GAIC(fit, k = log(fit$noObs))),
+    gamlss_version = as.character(packageVersion("gamlss")),
+    gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+  )
+}
+
+model_diagnostics_reference <- do.call(rbind, list(
+  diagnostic_reference(rs_fit, "NO"),
+  diagnostic_reference(ga_rs_fit, "GA"),
+  diagnostic_reference(po_rs_fit, "PO"),
+  diagnostic_reference(nbi_rs_fit, "NBI"),
+  diagnostic_reference(be_rs_fit, "BE"),
+  diagnostic_reference(pb_fit, "NO_PB")
+))
+
 pb_ml_fit <- gamlss(
   y ~ pb(x),
   sigma.formula = ~ 1,
@@ -780,6 +865,16 @@ if (check_only) {
     inference_covariance_path,
     tolerance = 1e-6
   )
+  assert_close(
+    model_diagnostics_reference,
+    model_diagnostics_path,
+    tolerance = 1e-6
+  )
+  assert_close(
+    quantile_residual_reference,
+    quantile_residual_path,
+    tolerance = 1e-12
+  )
   message("R reference parity checks passed")
 } else {
   options(digits = 17, scipen = 999)
@@ -860,5 +955,7 @@ if (check_only) {
   write_csv_lf(be_rs_reference, be_rs_reference_path)
   write_csv_lf(inference_table_reference, inference_table_path)
   write_csv_lf(inference_covariance_reference, inference_covariance_path)
+  write_csv_lf(model_diagnostics_reference, model_diagnostics_path)
+  write_csv_lf(quantile_residual_reference, quantile_residual_path)
   message("Wrote R reference fixtures to ", reference_dir)
 }
