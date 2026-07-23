@@ -68,6 +68,9 @@ be_rs_reference_path <- file.path(reference_dir, "be_rs_reference.csv")
 bccg_reference_path <- file.path(reference_dir, "bccg_reference.csv")
 bccg_fit_data_path <- file.path(reference_dir, "bccg_fit_data.csv")
 bccg_rs_reference_path <- file.path(reference_dir, "bccg_rs_reference.csv")
+bct_reference_path <- file.path(reference_dir, "bct_reference.csv")
+bct_fit_data_path <- file.path(reference_dir, "bct_fit_data.csv")
+bct_rs_reference_path <- file.path(reference_dir, "bct_rs_reference.csv")
 inference_table_path <- file.path(reference_dir, "inference_table_reference.csv")
 inference_covariance_path <- file.path(
   reference_dir, "inference_covariance_reference.csv"
@@ -243,6 +246,96 @@ bccg_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+bct_family <- BCT()
+bct_cases <- data.frame(
+  y = c(0.65, 1.2, 2.8, 5.5, 11),
+  mu = c(0.8, 1.5, 3, 5, 9),
+  sigma = c(0.12, 0.2, 0.3, 0.45, 0.6),
+  nu = c(-1.2, -0.35, 0.08, 0.4, 1.1),
+  tau = c(2.5, 4, 7, 12, 30)
+)
+bct_reference <- data.frame(
+  y = bct_cases$y,
+  mu = bct_cases$mu,
+  sigma = bct_cases$sigma,
+  nu = bct_cases$nu,
+  tau = bct_cases$tau,
+  eta_mu = bct_family$mu.linkfun(bct_cases$mu),
+  eta_sigma = bct_family$sigma.linkfun(bct_cases$sigma),
+  eta_nu = bct_family$nu.linkfun(bct_cases$nu),
+  eta_tau = bct_family$tau.linkfun(bct_cases$tau),
+  log_density = dBCT(
+    bct_cases$y,
+    bct_cases$mu,
+    bct_cases$sigma,
+    bct_cases$nu,
+    bct_cases$tau,
+    log = TRUE
+  ),
+  cdf = pBCT(
+    bct_cases$y,
+    bct_cases$mu,
+    bct_cases$sigma,
+    bct_cases$nu,
+    bct_cases$tau
+  ),
+  dldmu = bct_family$dldm(
+    bct_cases$y,
+    bct_cases$mu,
+    bct_cases$sigma,
+    bct_cases$nu,
+    bct_cases$tau
+  ),
+  dldsigma = bct_family$dldd(
+    bct_cases$y,
+    bct_cases$mu,
+    bct_cases$sigma,
+    bct_cases$nu,
+    bct_cases$tau
+  ),
+  dldnu = bct_family$dldv(
+    bct_cases$y,
+    bct_cases$mu,
+    bct_cases$sigma,
+    bct_cases$nu,
+    bct_cases$tau
+  ),
+  dldtau = bct_family$dldt(
+    bct_cases$y,
+    bct_cases$mu,
+    bct_cases$sigma,
+    bct_cases$nu,
+    bct_cases$tau
+  ),
+  d2ldmu2 = bct_family$d2ldm2(
+    bct_cases$mu, bct_cases$sigma, bct_cases$nu, bct_cases$tau
+  ),
+  d2ldsigma2 = bct_family$d2ldd2(bct_cases$sigma, bct_cases$tau),
+  d2ldnu2 = bct_family$d2ldv2(bct_cases$sigma),
+  d2ldtau2 = bct_family$d2ldt2(bct_cases$tau),
+  d2ldmudsigma = bct_family$d2ldmdd(
+    bct_cases$mu, bct_cases$sigma, bct_cases$nu, bct_cases$tau
+  ),
+  d2ldmudnu = bct_family$d2ldmdv(bct_cases$mu, bct_cases$tau),
+  d2ldmudtau = bct_family$d2ldmdt(
+    bct_cases$mu, bct_cases$nu, bct_cases$tau
+  ),
+  d2ldsigmadnu = bct_family$d2ldddv(
+    bct_cases$sigma, bct_cases$nu, bct_cases$tau
+  ),
+  d2ldsigmadtau = bct_family$d2ldddt(
+    bct_cases$sigma, bct_cases$tau
+  ),
+  d2ldnudtau = bct_family$d2ldvdt(
+    bct_cases$sigma, bct_cases$nu, bct_cases$tau
+  ),
+  initial_mu = (bct_cases$y + mean(bct_cases$y)) / 2,
+  initial_sigma = rep(0.1, nrow(bct_cases)),
+  initial_nu = rep(0.5, nrow(bct_cases)),
+  initial_tau = rep(10, nrow(bct_cases)),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
 continuous_quantile_reference <- function(
   family_code, cases, probabilities
 ) {
@@ -301,6 +394,17 @@ quantile_residual_reference <- do.call(rbind, list(
       bccg_cases$mu,
       bccg_cases$sigma,
       bccg_cases$nu
+    )
+  ),
+  continuous_quantile_reference(
+    "BCT",
+    bct_cases,
+    pBCT(
+      bct_cases$y,
+      bct_cases$mu,
+      bct_cases$sigma,
+      bct_cases$nu,
+      bct_cases$tau
     )
   )
 ))
@@ -569,6 +673,63 @@ bccg_rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+bct_n <- 160
+bct_x <- seq(-1, 1, length.out = bct_n)
+bct_z <- cos(seq(0, 2 * pi, length.out = bct_n))
+bct_w <- sin(seq(0, 2 * pi, length.out = bct_n))
+bct_mu_offset <- 0.08 * cos(seq(0, 3 * pi, length.out = bct_n))
+bct_sigma_offset <- 0.03 * sin(seq(0, 4 * pi, length.out = bct_n))
+bct_nu_offset <- 0.04 * cos(seq(0, 5 * pi, length.out = bct_n))
+bct_weight <- rep(c(1, 1.5, 2, 0.75), length.out = bct_n)
+bct_mu <- 3 + 0.7 * bct_x + bct_mu_offset
+bct_sigma <- exp(-1.5 + 0.18 * bct_z + bct_sigma_offset)
+bct_nu <- 0.35 + 0.2 * bct_w + bct_nu_offset
+bct_tau <- 4
+bct_probability <- (((seq_len(bct_n) * 67) %% bct_n) + 0.5) / bct_n
+bct_fit_data <- data.frame(
+  x = bct_x,
+  z = bct_z,
+  w = bct_w,
+  y = qBCT(
+    bct_probability,
+    mu = bct_mu,
+    sigma = bct_sigma,
+    nu = bct_nu,
+    tau = bct_tau
+  ),
+  weight = bct_weight,
+  mu_offset = bct_mu_offset,
+  sigma_offset = bct_sigma_offset,
+  nu_offset = bct_nu_offset
+)
+bct_rs_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  nu.formula = ~ w + offset(nu_offset),
+  tau.formula = ~ 1,
+  weights = weight,
+  family = BCT(),
+  method = RS(),
+  data = bct_fit_data,
+  control = gamlss.control(c.crit = 1e-7, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(cc = 1e-7, cyc = 200)
+)
+bct_rs_reference <- data.frame(
+  mu_intercept = unname(coef(bct_rs_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(bct_rs_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(bct_rs_fit, what = "sigma")[[1]]),
+  sigma_z = unname(coef(bct_rs_fit, what = "sigma")[[2]]),
+  nu_intercept = unname(coef(bct_rs_fit, what = "nu")[[1]]),
+  nu_w = unname(coef(bct_rs_fit, what = "nu")[[2]]),
+  tau_intercept = unname(coef(bct_rs_fit, what = "tau")[[1]]),
+  global_deviance = unname(deviance(bct_rs_fit)),
+  negative_log_likelihood = -as.numeric(logLik(bct_rs_fit)),
+  outer_iterations = bct_rs_fit$iter,
+  converged = bct_rs_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
 rs_fit_data <- read.csv(rs_fit_data_path)
 rs_fit <- gamlss(
   y ~ x + offset(mu_offset),
@@ -663,6 +824,12 @@ inference_results <- list(
     "BCCG",
     c("mu", "mu", "sigma", "sigma", "nu", "nu"),
     c("Intercept", "x", "Intercept", "z", "Intercept", "w")
+  ),
+  inference_reference(
+    bct_rs_fit,
+    "BCT",
+    c("mu", "mu", "sigma", "sigma", "nu", "nu", "tau"),
+    c("Intercept", "x", "Intercept", "z", "Intercept", "w", "Intercept")
   )
 )
 inference_table_reference <- do.call(
@@ -738,6 +905,7 @@ model_diagnostics_reference <- do.call(rbind, list(
   diagnostic_reference(nbi_rs_fit, "NBI"),
   diagnostic_reference(be_rs_fit, "BE"),
   diagnostic_reference(bccg_rs_fit, "BCCG"),
+  diagnostic_reference(bct_rs_fit, "BCT"),
   diagnostic_reference(pb_fit, "NO_PB")
 ))
 
@@ -990,6 +1158,9 @@ if (check_only) {
   assert_close(bccg_reference, bccg_reference_path, tolerance = 1e-10)
   assert_close(bccg_fit_data, bccg_fit_data_path, tolerance = 1e-12)
   assert_close(bccg_rs_reference, bccg_rs_reference_path, tolerance = 1e-6)
+  assert_close(bct_reference, bct_reference_path, tolerance = 1e-9)
+  assert_close(bct_fit_data, bct_fit_data_path, tolerance = 1e-12)
+  assert_close(bct_rs_reference, bct_rs_reference_path, tolerance = 1e-6)
   assert_close(
     inference_table_reference, inference_table_path, tolerance = 1e-6
   )
@@ -1089,6 +1260,9 @@ if (check_only) {
   write_csv_lf(bccg_reference, bccg_reference_path)
   write_csv_lf(bccg_fit_data, bccg_fit_data_path)
   write_csv_lf(bccg_rs_reference, bccg_rs_reference_path)
+  write_csv_lf(bct_reference, bct_reference_path)
+  write_csv_lf(bct_fit_data, bct_fit_data_path)
+  write_csv_lf(bct_rs_reference, bct_rs_reference_path)
   write_csv_lf(inference_table_reference, inference_table_path)
   write_csv_lf(inference_covariance_reference, inference_covariance_path)
   write_csv_lf(model_diagnostics_reference, model_diagnostics_path)

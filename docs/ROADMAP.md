@@ -40,7 +40,8 @@ as supported.
 - [x] Randomized quantile residuals
 - [x] Deviance, AIC, AICc, GAIC, SBC/BIC, and model comparison
 - [x] Three-parameter BCCG family
-- [ ] Four-parameter families including BCT and BCPE
+- [x] First four-parameter family: BCT
+- [ ] BCPE four-parameter family
 - [ ] R-to-Python API and numerical compatibility guide
 - [ ] Joint covariance and uncertainty for penalized smooth terms
 

@@ -27,7 +27,8 @@ Formula coefficient names are parameter-qualified, for example
 `mu.Intercept`, `mu.x`, `sigma.Intercept`, and `sigma.z`. Low-level models use
 stable positional names such as `mu[0]`. The same joint calculation supports
 three-parameter BCCG models and retains covariance involving `nu`
-coefficients.
+coefficients. Four-parameter BCT models additionally retain covariance
+involving `tau`.
 
 The corresponding tensor API is:
 

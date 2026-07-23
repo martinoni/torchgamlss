@@ -7,6 +7,7 @@ import torch
 
 from torchgamlss import (
     BCCG,
+    BCT,
     GAMLSS,
     Beta,
     NegativeBinomial,
@@ -91,6 +92,18 @@ def _covariance(family: str, size: int) -> torch.Tensor:
                 "nu": "~ w + offset(nu_offset)",
             },
             1e-9,
+        ),
+        (
+            "BCT",
+            "bct",
+            BCT(),
+            {
+                "mu": "y ~ x + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+                "nu": "~ w + offset(nu_offset)",
+                "tau": "~ 1",
+            },
+            1e-7,
         ),
     ],
 )

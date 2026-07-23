@@ -98,11 +98,29 @@ the indeterminate divisions in a literal evaluation of the R expressions.
 Tests compare nonzero values directly with R and independently verify density,
 CDF, and score continuity at zero.
 
+## Box-Cox t family (`BCT`)
+
+BCT is the first four-parameter parity target. Its fixtures cover:
+
+- `dBCT(..., log=TRUE)`, `pBCT()`, and the identity/log/identity/log links;
+- all four parameter scores and all ten expected second-derivative entries
+  supplied by `BCT()`;
+- a converged weighted RS fit with separate predictors for `mu`, `sigma`, and
+  `nu`, plus an estimated `tau` intercept;
+- formula prediction, seven-coefficient full-Hessian inference, information
+  criteria, and continuous quantile residuals.
+
+TorchGAMLSS evaluates the Student t CDF through a differentiable regularized
+incomplete beta implementation. Direct CDF values agree with R and SciPy at
+float64 precision. For RS, the `tau` working score retains R's finite
+difference of `0.01`; autograd of the likelihood uses the differentiable CDF
+itself.
+
 ## Coefficient inference
 
 Inference fixtures compare TorchGAMLSS with `vcov.gamlss(type="all")` and the
 default `summary.gamlss(type="vcov")` calculations for weighted, offset models
-from the `NO`, `PO`, `NBI`, `BE`, and `BCCG` families. They cover:
+from the `NO`, `PO`, `NBI`, `BE`, `BCCG`, and `BCT` families. They cover:
 
 - the full observed-Hessian covariance matrix, including cross-parameter
   entries;
@@ -117,7 +135,7 @@ documented numerical tolerance rather than bitwise equality.
 
 ## Diagnostics and quantile residuals
 
-Diagnostics fixtures cover all six supported families and a fixed-lambda
+Diagnostics fixtures cover all seven supported families and a fixed-lambda
 Normal P-spline fit. They compare:
 
 - log likelihood and global deviance;
@@ -132,9 +150,9 @@ penalty. This reproduces `fit$df.fit` without counting the unpenalized
 polynomial subspace twice.
 
 Quantile-residual fixtures compare the `pNO`, `pGA`, `pPO`, `pNBI`, `pBE`,
-and `pBCCG` CDFs and normal-score transformations. The discrete PO and NBI
-fixtures use committed uniform values inside `[F(y-1), F(y)]`, making the
-randomized Dunn-Smyth calculation exactly reproducible.
+`pBCCG`, and `pBCT` CDFs and normal-score transformations. The discrete PO
+and NBI fixtures use committed uniform values inside `[F(y-1), F(y)]`, making
+the randomized Dunn-Smyth calculation exactly reproducible.
 
 ## Reproducing the fixtures
 

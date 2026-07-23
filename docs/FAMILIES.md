@@ -82,4 +82,5 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 
 See [`PARITY.md`](PARITY.md) for package versions and regeneration commands.
 The three-parameter Box-Cox Cole-Green family is documented separately in
-[`BCCG.md`](BCCG.md).
+[`BCCG.md`](BCCG.md), and the four-parameter Box-Cox t family in
+[`BCT.md`](BCT.md).
