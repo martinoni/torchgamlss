@@ -77,8 +77,10 @@ result = model.fit_rs(
     smooth_covariates=smooth_covariates,
     control=RSControl(),
 )
-mu = model.linear_predictors(
-    design, smooth_covariates=smooth_covariates
+mu = model.predict(
+    design,
+    smooth_covariates=smooth_covariates,
+    type="response",
 )["mu"]
 edf = result.smooth_effective_degrees_of_freedom["mu"]["x"]
 estimated_lambda = result.smoothing_parameters["mu"]["x"]

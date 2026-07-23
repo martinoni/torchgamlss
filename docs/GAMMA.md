@@ -28,6 +28,9 @@ design = {
 }
 model = GAMLSS(Gamma(), {"mu": 2, "sigma": 1})
 result = model.fit_rs(y, design)
+parameters = model.predict(design)
+fitted_mu = parameters["mu"]
+fitted_sigma = parameters["sigma"]
 ```
 
 Custom `Link` instances can be supplied as `mu_link` and `sigma_link`. The

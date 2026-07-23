@@ -154,12 +154,12 @@ def test_ga_fixed_pspline_rs_fit_matches_r_gamlss():
         rtol=1e-4,
         atol=1e-5,
     )
-    predictors = model.linear_predictors(
+    parameters = model.predict(
         design,
         offsets,
         smooth_covariates=smooth_covariates,
+        type="response",
     )
-    parameters = model.family.parameters_from_predictors(predictors)
     torch.testing.assert_close(
         parameters["mu"],
         _column(fitted_reference, "mu"),

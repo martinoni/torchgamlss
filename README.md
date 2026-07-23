@@ -37,6 +37,7 @@ The current implementation contains:
 - target-EDF P-splines compatible with `pb(x, df=...)`;
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with
   `pb.control(method=...)`;
+- prediction on response, link, and additive-term scales, including new data;
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for the `NO` density, links, derivatives, and a
   fitted model;
@@ -65,7 +66,8 @@ Rscript tools/generate_r_references.R --check
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
 P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
-parameterization.
+parameterization. The supported prediction interface is documented in
+[`docs/PREDICTION.md`](docs/PREDICTION.md).
 
 ## Attribution and license
 

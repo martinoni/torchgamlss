@@ -55,7 +55,8 @@ mean and `sigma` is the coefficient of variation. Its fixtures cover:
 
 The fitted-model fixtures compare coefficients, likelihood or deviance,
 effective degrees of freedom, fitted distribution parameters, and P-spline
-coefficients where applicable.
+coefficients where applicable. Public response-scale prediction is exercised
+against the fitted Gamma P-spline fixture.
 
 ## Reproducing the fixtures
 

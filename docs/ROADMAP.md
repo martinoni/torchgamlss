@@ -37,7 +37,7 @@ as supported.
 
 ## Phase 3 — compatibility and diagnostics
 
-- [ ] Predictions on link, response, and term scales
+- [x] Predictions on link, response, and term scales
 - [ ] Randomized quantile residuals
 - [ ] Deviance, AIC, GAIC, and model comparison
 - [ ] Four-parameter families including BCT and BCPE

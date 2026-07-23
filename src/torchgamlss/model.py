@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 from torch import Tensor, nn
@@ -23,6 +24,23 @@ class FitResult:
     function_evaluations: int
     gradient_max: float
     converged: bool
+
+
+@dataclass(frozen=True)
+class TermContributions:
+    """Additive contributions to one parameter predictor on the link scale."""
+
+    linear: Tensor
+    smooth: Mapping[str, Tensor]
+    offset: Tensor
+
+    @property
+    def total(self) -> Tensor:
+        """Reconstruct the complete link-scale predictor."""
+        total = self.linear.sum(dim=-1)
+        for contribution in self.smooth.values():
+            total = total + contribution
+        return total + self.offset
 
 
 class GAMLSS(nn.Module):
@@ -88,6 +106,23 @@ class GAMLSS(nn.Module):
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     ) -> dict[str, Tensor]:
         """Calculate one linear predictor for each distribution parameter."""
+        return {
+            parameter: contributions.total
+            for parameter, contributions in self.term_contributions(
+                design_matrices,
+                offsets,
+                smooth_covariates=smooth_covariates,
+            ).items()
+        }
+
+    def term_contributions(
+        self,
+        design_matrices: Mapping[str, Tensor],
+        offsets: Mapping[str, Tensor] | None = None,
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    ) -> dict[str, TermContributions]:
+        """Decompose parameter predictors into linear, smooth, and offset terms."""
         expected = set(self.family.parameter_names)
         received = set(design_matrices)
         if expected != received:
@@ -104,7 +139,9 @@ class GAMLSS(nn.Module):
                 f"Offsets contain unknown parameters: {sorted(extra_offsets)}"
             )
 
-        predictors = {}
+        contributions = {}
+        observation_count: int | None = None
+        model_parameter = next(self.parameters())
         for parameter in self.family.parameter_names:
             design_matrix = design_matrices[parameter]
             if (
@@ -114,25 +151,82 @@ class GAMLSS(nn.Module):
                 raise ValueError(
                     f"design matrix for {parameter!r} has an invalid shape"
                 )
-            predictor = design_matrix @ self.coefficients[parameter]
-            for term_name, covariate in self._validated_smooth_covariates(
-                parameter, predictor, smooth_covariates
-            ).items():
-                predictor = predictor + self.smooth_terms[parameter][term_name](
-                    covariate
+            if observation_count is None:
+                observation_count = design_matrix.shape[0]
+            elif design_matrix.shape[0] != observation_count:
+                raise ValueError(
+                    "design matrices must contain the same number of observations"
                 )
+            if (
+                design_matrix.dtype != model_parameter.dtype
+                or design_matrix.device != model_parameter.device
+            ):
+                raise ValueError(
+                    f"design matrix for {parameter!r} must match model dtype and device"
+                )
+            if not torch.isfinite(design_matrix).all():
+                raise ValueError(f"design matrix for {parameter!r} must be finite")
+
+            linear = design_matrix * self.coefficients[parameter]
+            linear_total = linear.sum(dim=-1)
+            smooth = {}
+            for term_name, covariate in self._validated_smooth_covariates(
+                parameter, linear_total, smooth_covariates
+            ).items():
+                smooth[term_name] = self.smooth_terms[parameter][term_name](covariate)
             if parameter in offsets:
+                raw_offset = offsets[parameter]
+                if (
+                    raw_offset.dtype != model_parameter.dtype
+                    or raw_offset.device != model_parameter.device
+                ):
+                    raise ValueError(
+                        f"offset for {parameter!r} must match model dtype and device"
+                    )
                 try:
-                    offset = torch.broadcast_to(offsets[parameter], predictor.shape)
+                    offset = torch.broadcast_to(raw_offset, linear_total.shape)
                 except RuntimeError as error:
                     raise ValueError(
                         f"offset for {parameter!r} cannot be broadcast to its predictor"
                     ) from error
                 if not torch.isfinite(offset).all():
                     raise ValueError(f"offset for {parameter!r} must be finite")
-                predictor = predictor + offset
-            predictors[parameter] = predictor
-        return predictors
+            else:
+                offset = torch.zeros_like(linear_total)
+            contributions[parameter] = TermContributions(
+                linear=linear,
+                smooth=smooth,
+                offset=offset,
+            )
+        return contributions
+
+    def predict(
+        self,
+        design_matrices: Mapping[str, Tensor],
+        offsets: Mapping[str, Tensor] | None = None,
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        type: Literal["link", "response", "terms"] = "response",
+    ) -> dict[str, Tensor] | dict[str, TermContributions]:
+        """Predict family parameters, link predictors, or additive terms."""
+        if type not in {"link", "response", "terms"}:
+            raise ValueError("type must be one of: 'link', 'response', 'terms'")
+        if type == "terms":
+            return self.term_contributions(
+                design_matrices,
+                offsets,
+                smooth_covariates=smooth_covariates,
+            )
+        predictors = self.linear_predictors(
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+        )
+        if type == "link":
+            return predictors
+        if type == "response":
+            return self.family.parameters_from_predictors(predictors)
+        raise AssertionError("unreachable prediction type")
 
     def distribution(
         self,
