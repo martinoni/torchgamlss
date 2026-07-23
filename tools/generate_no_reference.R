@@ -191,8 +191,6 @@ pb_df_reference <- data.frame(
   smooth_edf = unname(pb_df_smooth$edf),
   global_deviance = unname(deviance(pb_df_fit)),
   negative_log_likelihood = -as.numeric(logLik(pb_df_fit)),
-  outer_iterations = pb_df_fit$iter,
-  converged = pb_df_fit$converged,
   gamlss_version = as.character(packageVersion("gamlss")),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )

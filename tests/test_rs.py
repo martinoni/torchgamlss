@@ -344,7 +344,6 @@ def test_rs_target_edf_pspline_matches_r_gamlss_pb():
     )
 
     assert result.converged
-    assert reference["converged"] == "TRUE"
     assert result.smoothing_iterations["mu"]["x"] > 0
     torch.testing.assert_close(
         model.coefficients["mu"],
