@@ -56,6 +56,18 @@ pb_gcv_fitted_reference_path <- file.path(
 pb_gcv_coefficient_reference_path <- file.path(
   reference_dir, "no_pb_gcv_coefficient_reference.csv"
 )
+cg_smooth_reference_path <- file.path(
+  reference_dir, "cg_smooth_reference.csv"
+)
+cg_smooth_linear_reference_path <- file.path(
+  reference_dir, "cg_smooth_linear_reference.csv"
+)
+cg_smooth_fitted_reference_path <- file.path(
+  reference_dir, "cg_smooth_fitted_reference.csv"
+)
+cg_smooth_coefficient_reference_path <- file.path(
+  reference_dir, "cg_smooth_coefficient_reference.csv"
+)
 po_reference_path <- file.path(reference_dir, "po_reference.csv")
 po_fit_data_path <- file.path(reference_dir, "po_fit_data.csv")
 po_rs_reference_path <- file.path(reference_dir, "po_rs_reference.csv")
@@ -1307,6 +1319,162 @@ pb_gcv_coefficient_reference <- data.frame(
   coefficient = drop(pb_gcv_smooth$coef)
 )
 
+cg_smooth_control <- gamlss.control(
+  c.crit = 1e-8,
+  n.cyc = 300,
+  trace = FALSE
+)
+cg_smooth_inner_control <- glim.control(
+  cc = 1e-8,
+  cyc = 300,
+  bf.tol = 1e-8,
+  bf.cyc = 300
+)
+be_cg_pb_fit <- gamlss(
+  y ~ pb(x, lambda = 12) + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  weights = weight,
+  family = BE(),
+  method = CG(),
+  data = be_fit_data,
+  control = gamlss.control(c.crit = 1e-7, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-7,
+    cyc = 300,
+    bf.tol = 1e-7,
+    bf.cyc = 300
+  )
+)
+no_cg_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 12),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = CG(),
+  data = pb_fit_data,
+  control = cg_smooth_control,
+  i.control = cg_smooth_inner_control
+)
+no_cg_ml_fit <- gamlss(
+  y ~ pb(x),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = CG(),
+  data = pb_fit_data,
+  control = cg_smooth_control,
+  i.control = cg_smooth_inner_control
+)
+no_cg_df_fit <- gamlss(
+  y ~ pb(x, df = 3),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = CG(),
+  data = pb_fit_data,
+  control = cg_smooth_control,
+  i.control = cg_smooth_inner_control
+)
+no_cg_gaic_fit <- gamlss(
+  y ~ pb(x, control = pb.control(method = "GAIC", k = 2)),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = CG(),
+  data = pb_fit_data,
+  control = cg_smooth_control,
+  i.control = cg_smooth_inner_control
+)
+no_cg_gcv_fit <- gamlss(
+  y ~ pb(x, control = pb.control(method = "GCV", k = 2)),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = CG(),
+  data = pb_fit_data,
+  control = cg_smooth_control,
+  i.control = cg_smooth_inner_control
+)
+cg_smooth_fits <- list(
+  BE_FIXED = be_cg_pb_fit,
+  NO_FIXED = no_cg_fixed_fit,
+  NO_ML = no_cg_ml_fit,
+  NO_DF = no_cg_df_fit,
+  NO_GAIC = no_cg_gaic_fit,
+  NO_GCV = no_cg_gcv_fit
+)
+cg_smooth_family <- c("BE", rep("NO", 5))
+cg_smooth_selection <- c("FIXED", "FIXED", "ML", "DF", "GAIC", "GCV")
+cg_smooth_reference <- do.call(
+  rbind,
+  lapply(seq_along(cg_smooth_fits), function(index) {
+    fit <- cg_smooth_fits[[index]]
+    smooth <- getSmo(fit, parameter = "mu", which = 1)
+    data.frame(
+      case = names(cg_smooth_fits)[[index]],
+      family = cg_smooth_family[[index]],
+      selection = cg_smooth_selection[[index]],
+      smoothing_parameter = unname(smooth$lambda),
+      smooth_edf = unname(smooth$edf),
+      mu_df = fit$mu.df,
+      total_df = fit$df.fit,
+      global_deviance = unname(deviance(fit)),
+      negative_log_likelihood = -as.numeric(logLik(fit)),
+      outer_iterations = fit$iter,
+      converged = fit$converged,
+      gamlss_version = as.character(packageVersion("gamlss")),
+      gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+    )
+  })
+)
+cg_smooth_linear_reference <- do.call(
+  rbind,
+  lapply(names(cg_smooth_fits), function(case_name) {
+    fit <- cg_smooth_fits[[case_name]]
+    do.call(
+      rbind,
+      lapply(fit$parameters, function(parameter) {
+        coefficients <- unname(coef(fit, what = parameter))
+        data.frame(
+          case = case_name,
+          parameter = parameter,
+          coefficient_index = seq_along(coefficients) - 1,
+          coefficient = coefficients
+        )
+      })
+    )
+  })
+)
+cg_smooth_fitted_reference <- do.call(
+  rbind,
+  lapply(names(cg_smooth_fits), function(case_name) {
+    fit <- cg_smooth_fits[[case_name]]
+    data.frame(
+      case = case_name,
+      observation_index = seq_along(fitted(fit, what = "mu")) - 1,
+      mu = fitted(fit, what = "mu"),
+      sigma = fitted(fit, what = "sigma"),
+      mu_smooth = drop(fit$mu.s[, 1])
+    )
+  })
+)
+cg_smooth_coefficient_reference <- do.call(
+  rbind,
+  lapply(names(cg_smooth_fits), function(case_name) {
+    coefficients <- drop(
+      getSmo(
+        cg_smooth_fits[[case_name]],
+        parameter = "mu",
+        which = 1
+      )$coef
+    )
+    data.frame(
+      case = case_name,
+      coefficient_index = seq_along(coefficients) - 1,
+      coefficient = coefficients
+    )
+  })
+)
+rownames(cg_smooth_reference) <- NULL
+rownames(cg_smooth_linear_reference) <- NULL
+rownames(cg_smooth_fitted_reference) <- NULL
+rownames(cg_smooth_coefficient_reference) <- NULL
+
 assert_close <- function(actual, expected_path, tolerance) {
   expected <- read.csv(expected_path, check.names = FALSE)
   if (!identical(names(actual), names(expected))) {
@@ -1405,6 +1573,26 @@ if (check_only) {
     pb_gcv_coefficient_reference,
     pb_gcv_coefficient_reference_path,
     tolerance = 1e-6
+  )
+  assert_close(
+    cg_smooth_reference,
+    cg_smooth_reference_path,
+    tolerance = 1e-6
+  )
+  assert_close(
+    cg_smooth_linear_reference,
+    cg_smooth_linear_reference_path,
+    tolerance = 1e-6
+  )
+  assert_close(
+    cg_smooth_fitted_reference,
+    cg_smooth_fitted_reference_path,
+    tolerance = 1e-5
+  )
+  assert_close(
+    cg_smooth_coefficient_reference,
+    cg_smooth_coefficient_reference_path,
+    tolerance = 1e-5
   )
   assert_close(po_reference, po_reference_path, tolerance = 1e-12)
   assert_close(po_fit_data, po_fit_data_path, tolerance = 1e-12)
@@ -1512,6 +1700,19 @@ if (check_only) {
   write_csv_lf(
     pb_gcv_coefficient_reference,
     pb_gcv_coefficient_reference_path
+  )
+  write_csv_lf(cg_smooth_reference, cg_smooth_reference_path)
+  write_csv_lf(
+    cg_smooth_linear_reference,
+    cg_smooth_linear_reference_path
+  )
+  write_csv_lf(
+    cg_smooth_fitted_reference,
+    cg_smooth_fitted_reference_path
+  )
+  write_csv_lf(
+    cg_smooth_coefficient_reference,
+    cg_smooth_coefficient_reference_path
   )
   write_csv_lf(po_reference, po_reference_path)
   write_csv_lf(po_fit_data, po_fit_data_path)

@@ -29,7 +29,7 @@ class SmoothTerm(nn.Module, ABC):
 
     @property
     def estimates_smoothing_parameter(self) -> bool:
-        """Whether RS fitting should update the smoothing parameter."""
+        """Whether classical fitting should update the smoothing parameter."""
         return False
 
     @property

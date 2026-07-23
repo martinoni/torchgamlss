@@ -43,9 +43,9 @@ independently implemented regularized incomplete gamma calculation while
 preserving the R parameterization, truncation, working scores, and limiting
 behavior. This translation remains under GPL-3.0-only.
 
-The linear RS and parametric Cole-Green fitting implementations are translated
-from the algorithms in gamlss 5.5-0, R/gamlss-5.R, by Mikis Stasinopoulos,
-Robert Rigby, and contributors. The translated implementations remain under
+The RS and Cole-Green fitting implementations are translated from the
+algorithms in gamlss 5.5-0, R/gamlss-5.R, by Mikis Stasinopoulos, Robert
+Rigby, and contributors. The translated implementations remain under
 GPL-3.0-only.
 
 Full-Hessian covariance and Wald inference behavior follows vcov.gamlss(),

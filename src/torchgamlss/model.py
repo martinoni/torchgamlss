@@ -214,7 +214,7 @@ class GAMLSS(nn.Module):
         initial_parameters: Mapping[str, Any] | None = None,
         control: CGControl | None = None,
     ) -> CGFitResult:
-        """Fit a parametric formula model from tabular data with CG cycles."""
+        """Fit a linear or additive formula model from tabular data with CG cycles."""
         prepared = self.prepare_formula_data(data, include_response=True)
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
@@ -224,6 +224,7 @@ class GAMLSS(nn.Module):
             prepared.design_matrices,
             weights=case_weights,
             offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
             initial_parameters=parameter_starts,
             control=control,
         )
@@ -527,9 +528,8 @@ class GAMLSS(nn.Module):
     ) -> FitResult:
         """Fit all distribution parameters jointly with full-batch L-BFGS.
 
-        This Torch-native optimizer is the first parametric fitting path. It is
-        intended as a numerical baseline; the classical GAMLSS RS path is
-        implemented separately and the CG algorithm remains planned work.
+        This Torch-native optimizer is intended as a numerical baseline. The
+        classical GAMLSS RS and CG algorithms are implemented separately.
         """
         if max_iter < 1:
             raise ValueError("max_iter must be at least 1")
@@ -539,7 +539,7 @@ class GAMLSS(nn.Module):
             for term in terms.values()
         ):
             raise ValueError(
-                "automatic smoothing-parameter estimation requires fit_rs()"
+                "automatic smoothing-parameter estimation requires fit_rs() or fit_cg()"
             )
 
         parameters = list(self.parameters())
@@ -622,16 +622,18 @@ class GAMLSS(nn.Module):
         *,
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         initial_parameters: Mapping[str, Any] | None = None,
         control: CGControl | None = None,
     ) -> CGFitResult:
-        """Fit parametric predictors with Cole-Green joint cycles."""
+        """Fit linear or additive predictors with Cole-Green joint cycles."""
         return fit_cg(
             self,
             response,
             design_matrices,
             weights=weights,
             offsets=offsets,
+            smooth_covariates=smooth_covariates,
             initial_parameters=initial_parameters,
             control=control,
         )

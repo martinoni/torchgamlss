@@ -36,7 +36,7 @@ The current implementation contains:
   values for RS and CG fitting;
 - Rigby-Stasinopoulos fitting cycles for linear and additive predictors;
 - Cole-Green joint fitting with cross-parameter working weights for
-  parametric predictors;
+  linear and additive predictors;
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
@@ -55,10 +55,9 @@ The current implementation contains:
   links, derivatives, starting values, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-CG backfitting for smooth terms and broader graphical diagnostics are planned
-work. The L-BFGS path remains a Torch-native numerical baseline and requires
-fixed smoothing parameters. Inference for penalized smooth terms is not yet
-supported.
+Broader graphical diagnostics are planned work. The L-BFGS path remains a
+Torch-native numerical baseline and requires fixed smoothing parameters.
+Inference for penalized smooth terms is not yet supported.
 
 ## Development
 

@@ -157,13 +157,19 @@ documented numerical tolerance rather than bitwise equality.
 
 ## Cole-Green fitting
 
-The parametric CG fixtures compare the joint cross-derivative cycles in
-TorchGAMLSS with `gamlss(..., method=CG())`. They cover:
+The CG fixtures compare the joint cross-derivative cycles and additive
+backfitting in TorchGAMLSS with `gamlss(..., method=CG())`. They cover:
 
 - a weighted Beta model with offsets in both predictors and default starting
   values;
 - a weighted BCT model with seven coefficients, explicit parameter-scale
   starts, and all six cross-derivative blocks;
+- a weighted Beta model combining cross derivatives, offsets, and a
+  fixed-lambda `pb()` term;
+- Normal `pb()` fits with fixed and ML-selected smoothing parameters;
+- target-EDF, local GAIC, and local GCV smoothing-parameter selection;
+- smooth coefficients and fitted contributions, fitted distribution
+  parameters, smoothing parameters, and effective degrees of freedom;
 - coefficients, deviance, likelihood, convergence, and outer iteration
   counts.
 
@@ -172,6 +178,11 @@ automatic step halving in both implementations because the R final-iteration
 halving path can leave its saved coefficients out of sync with its fitted
 predictors. With that path excluded, the four-parameter coefficients agree to
 approximately `1e-11` and the deviance to float64 precision.
+
+The fixed-lambda CG fits and the ML case reproduce R's outer iteration counts.
+For target-EDF, GAIC, and GCV, parity is based on the selected smoothing
+parameter and final fit. Root-finder and optimizer paths can produce different
+cycle counts; the same convention is used for the corresponding RS fixtures.
 
 ## Diagnostics and quantile residuals
 
@@ -228,7 +239,8 @@ equations and current scope.
 
 The target-EDF fixture compares final numerical results rather than requiring
 the same outer iteration count. R's finite-tolerance `uniroot()` updates can
-produce a longer RS convergence path even when the final fit agrees.
+produce a longer classical-fitting convergence path even when the final fit
+agrees.
 
 The GAIC and GCV fixtures follow the same final-result convention.
 TorchGAMLSS uses bounded Brent minimization on `log(lambda)`, while R uses

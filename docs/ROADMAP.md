@@ -26,8 +26,8 @@ as supported.
 
 - [x] Linear unpenalized RS core
 - [x] RS backfitting with smooth and penalized terms
-- [x] Parametric CG algorithm with cross-parameter working weights
-- [ ] CG backfitting and smoothing-parameter updates
+- [x] CG algorithm with cross-parameter working weights
+- [x] CG backfitting and smoothing-parameter updates
 - [x] Penalized weighted least squares
 - [x] P-splines with fixed smoothing parameters
 - [x] Automatic ML smoothing-parameter selection

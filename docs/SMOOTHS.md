@@ -86,6 +86,10 @@ edf = result.smooth_effective_degrees_of_freedom["mu"]["x"]
 estimated_lambda = result.smoothing_parameters["mu"]["x"]
 ```
 
+The same smooth terms and selection modes work with `fit_cg()` and
+`CGControl`; CG performs one `additive.fit()`-style pass per parameter update
+inside its joint Gauss-Seidel cycle.
+
 The explicit linear `x` column mirrors the parametric component that R keeps
 for `pb(x)`. Smooth terms may be configured independently for every family
 parameter, and multiple named terms can be attached to the same parameter.
@@ -130,7 +134,7 @@ gcv_term = PSpline.from_data(
 - Parametric covariance and Wald inference are available only for models
   without smooth terms. Joint uncertainty for spline coefficients and
   smoothing-parameter estimation is not yet available.
-- Automatic smoothing selection is available through `fit_rs()`; joint
-  L-BFGS fitting requires fixed smoothing parameters.
+- Automatic smoothing selection is available through `fit_rs()` and
+  `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity
   with R's natural-spline prediction helper has not been verified.

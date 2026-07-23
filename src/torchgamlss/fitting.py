@@ -24,6 +24,13 @@ class CGControl:
     max_outer_iterations: int = 20
     inner_tolerance: float = 1e-3
     max_inner_iterations: int = 50
+    backfitting_tolerance: float = 1e-3
+    smoothing_tolerance: float = 1e-7
+    max_smoothing_iterations: int = 50
+    edf_tolerance: float = 1.220703125e-4
+    max_edf_iterations: int = 1000
+    criterion_tolerance: float = 1e-8
+    max_criterion_iterations: int = 100
     mu_step: float = 1.0
     sigma_step: float = 1.0
     nu_step: float = 1.0
@@ -37,9 +44,23 @@ class CGControl:
             or self.outer_tolerance <= 0
             or not math.isfinite(self.inner_tolerance)
             or self.inner_tolerance <= 0
+            or not math.isfinite(self.backfitting_tolerance)
+            or self.backfitting_tolerance <= 0
+            or not math.isfinite(self.smoothing_tolerance)
+            or self.smoothing_tolerance <= 0
+            or not math.isfinite(self.edf_tolerance)
+            or self.edf_tolerance <= 0
+            or not math.isfinite(self.criterion_tolerance)
+            or self.criterion_tolerance <= 0
         ):
             raise ValueError("CG tolerances must be positive")
-        if self.max_outer_iterations < 1 or self.max_inner_iterations < 1:
+        if (
+            self.max_outer_iterations < 1
+            or self.max_inner_iterations < 1
+            or self.max_smoothing_iterations < 1
+            or self.max_edf_iterations < 1
+            or self.max_criterion_iterations < 1
+        ):
             raise ValueError("CG iteration limits must be at least 1")
         if any(
             not 0 < step <= 1
@@ -52,13 +73,18 @@ class CGControl:
 
 @dataclass(frozen=True)
 class CGFitResult:
-    """Summary of a parametric Cole-Green fit."""
+    """Summary of a linear or additive Cole-Green fit."""
 
     global_deviance: float
     outer_iterations: int
     inner_iterations: tuple[int, ...]
     converged: bool
     deviance_history: tuple[float, ...]
+    backfitting_iterations: Mapping[str, int]
+    smooth_effective_degrees_of_freedom: Mapping[str, Mapping[str, float]]
+    smoothing_parameters: Mapping[str, Mapping[str, float]]
+    smoothing_iterations: Mapping[str, Mapping[str, int]]
+    parameter_effective_degrees_of_freedom: Mapping[str, float]
     effective_degrees_of_freedom: float
 
     @property
@@ -169,20 +195,17 @@ def fit_cg(
     *,
     weights: Tensor | None = None,
     offsets: Mapping[str, Tensor] | None = None,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     initial_parameters: Mapping[str, Any] | None = None,
     control: CGControl | None = None,
 ) -> CGFitResult:
-    """Fit parametric predictors using the R GAMLSS Cole-Green equations."""
+    """Fit additive predictors using the R GAMLSS Cole-Green equations."""
     control = control or CGControl()
-    if any(model.smooth_terms[parameter] for parameter in model.family.parameter_names):
-        raise NotImplementedError(
-            "CG fitting currently supports parametric predictors only"
-        )
     _validate_classical_inputs(
         model,
         response,
         design_matrices,
-        None,
+        smooth_covariates,
         algorithm="CG",
     )
     case_weights = model._validated_weights(response, weights)
@@ -198,6 +221,26 @@ def fit_cg(
         name: coefficient.detach().clone()
         for name, coefficient in model.coefficients.items()
     }
+    smooth_coefficients = {
+        parameter: {
+            name: term.coefficients.detach().clone()
+            for name, term in model.smooth_terms[parameter].items()
+        }
+        for parameter in parameter_names
+    }
+    smoothing_parameters = {
+        parameter: {
+            name: term.smoothing_parameter
+            for name, term in model.smooth_terms[parameter].items()
+        }
+        for parameter in parameter_names
+    }
+    backfitting_iterations = {name: 0 for name in parameter_names}
+    smoothing_iterations: dict[str, dict[str, int]] = {
+        parameter: {name: 0 for name in model.smooth_terms[parameter]}
+        for parameter in parameter_names
+    }
+    smooth_edf: dict[str, dict[str, float]] = {name: {} for name in parameter_names}
     global_deviance = _global_deviance(model, response, parameters, case_weights)
     history = [float(global_deviance)]
     inner_iterations = []
@@ -209,6 +252,13 @@ def fit_cg(
             old_global_deviance = global_deviance
             old_coefficients = {
                 name: value.detach().clone() for name, value in coefficients.items()
+            }
+            old_smooth_coefficients = {
+                parameter: {
+                    name: value.detach().clone()
+                    for name, value in smooth_coefficients[parameter].items()
+                }
+                for parameter in parameter_names
             }
             old_eta = {
                 name: model.family.links[name](parameters[name])
@@ -273,14 +323,46 @@ def fit_cg(
                     adjusted_response = (
                         working_responses[name] - adjustment / working_weights[name]
                     )
-                    coefficient = _weighted_least_squares(
-                        design_matrices[name],
-                        adjusted_response,
-                        working_weights[name] * case_weights,
-                    )
+                    combined_weights = working_weights[name] * case_weights
+                    smooth_terms = model.smooth_terms[name]
+                    if smooth_terms:
+                        additive_fit = _additive_fit(
+                            design_matrices[name],
+                            adjusted_response,
+                            combined_weights,
+                            smooth_terms,
+                            (smooth_covariates or {}).get(name, {}),
+                            smooth_coefficients[name],
+                            smoothing_parameters[name],
+                            control,
+                            max_iterations=1,
+                        )
+                        coefficient = additive_fit.linear_coefficient
+                        smooth_coefficients[name] = additive_fit.smooth_coefficients
+                        smoothing_parameters[name] = additive_fit.smoothing_parameters
+                        smooth_edf[name] = additive_fit.smooth_edf
+                        backfitting_iterations[name] += additive_fit.iterations
+                        for (
+                            term_name,
+                            iteration_count,
+                        ) in additive_fit.smoothing_iterations.items():
+                            smoothing_iterations[name][term_name] += iteration_count
+                    else:
+                        coefficient = _weighted_least_squares(
+                            design_matrices[name],
+                            adjusted_response,
+                            combined_weights,
+                        )
                     coefficients[name] = coefficient
                     eta[name] = (
-                        design_matrices[name] @ coefficient + parameter_offsets[name]
+                        _additive_predictor(
+                            design_matrices[name],
+                            coefficient,
+                            smooth_terms,
+                            (smooth_covariates or {}).get(name, {}),
+                            smooth_coefficients[name],
+                        )
+                        + parameter_offsets[name]
                     )
                     parameters[name] = model.family.links[name].inverse(eta[name])
 
@@ -315,8 +397,22 @@ def fit_cg(
                         coefficients[name] = (
                             coefficients[name] + old_coefficients[name]
                         ) / 2.0
+                        smooth_coefficients[name] = {
+                            term_name: (
+                                smooth_coefficients[name][term_name]
+                                + old_smooth_coefficients[name][term_name]
+                            )
+                            / 2.0
+                            for term_name in model.smooth_terms[name]
+                        }
                         eta[name] = (
-                            design_matrices[name] @ coefficients[name]
+                            _additive_predictor(
+                                design_matrices[name],
+                                coefficients[name],
+                                model.smooth_terms[name],
+                                (smooth_covariates or {}).get(name, {}),
+                                smooth_coefficients[name],
+                            )
                             + parameter_offsets[name]
                         )
                         parameters[name] = model.family.links[name].inverse(eta[name])
@@ -349,16 +445,32 @@ def fit_cg(
 
         for name, coefficient in coefficients.items():
             model.coefficients[name].copy_(coefficient)
+            for term_name, term_coefficient in smooth_coefficients[name].items():
+                model.smooth_terms[name][term_name].coefficients.copy_(term_coefficient)
+                model.smooth_terms[name][term_name]._set_fitted_smoothing_parameter(
+                    smoothing_parameters[name][term_name]
+                )
 
+    parameter_edf = {
+        parameter: float(model.coefficients[parameter].numel())
+        + sum(
+            smooth_edf[parameter][name] - term.penalty_nullity
+            for name, term in model.smooth_terms[parameter].items()
+        )
+        for parameter in parameter_names
+    }
     return CGFitResult(
         global_deviance=float(global_deviance),
         outer_iterations=outer_iterations,
         inner_iterations=tuple(inner_iterations),
         converged=converged,
         deviance_history=tuple(history),
-        effective_degrees_of_freedom=float(
-            sum(coefficient.numel() for coefficient in coefficients.values())
-        ),
+        backfitting_iterations=backfitting_iterations,
+        smooth_effective_degrees_of_freedom=smooth_edf,
+        smoothing_parameters=smoothing_parameters,
+        smoothing_iterations=smoothing_iterations,
+        parameter_effective_degrees_of_freedom=parameter_edf,
+        effective_degrees_of_freedom=sum(parameter_edf.values()),
     )
 
 
@@ -724,7 +836,9 @@ def _additive_fit(
     smooth_covariates: Mapping[str, Tensor],
     initial_coefficients: Mapping[str, Tensor],
     initial_smoothing_parameters: Mapping[str, float],
-    control: RSControl,
+    control: RSControl | CGControl,
+    *,
+    max_iterations: int | None = None,
 ) -> _AdditiveFitResult:
     """Alternate parametric and penalized terms as in ``additive.fit()``."""
     bases = {
@@ -741,7 +855,10 @@ def _additive_fit(
     )
     effective_degrees_of_freedom: dict[str, float] = {}
 
-    for iteration in range(1, control.max_backfitting_iterations + 1):
+    iteration_limit = (
+        control.max_backfitting_iterations if max_iterations is None else max_iterations
+    )
+    for iteration in range(1, iteration_limit + 1):
         partial_response = residuals + linear_fit
         linear_coefficient = _weighted_least_squares(
             design_matrix, partial_response, weights
@@ -792,7 +909,7 @@ def _additive_fit(
     return _AdditiveFitResult(
         linear_coefficient=linear_coefficient,
         smooth_coefficients=coefficients,
-        iterations=control.max_backfitting_iterations,
+        iterations=iteration_limit,
         smooth_edf=effective_degrees_of_freedom,
         smoothing_parameters=smoothing_parameters,
         smoothing_iterations=smoothing_iterations,
@@ -805,7 +922,7 @@ def _fit_smooth_term(
     response: Tensor,
     weights: Tensor,
     starting_smoothing_parameter: float,
-    control: RSControl,
+    control: RSControl | CGControl,
 ) -> _SmoothFitResult:
     if term.estimates_smoothing_parameter:
         if term.smoothing_method == "DF":
@@ -880,7 +997,7 @@ def _select_smoothing_parameter_by_criterion(
     method: str,
     criterion_penalty: float,
     starting_smoothing_parameter: float,
-    control: RSControl,
+    control: RSControl | CGControl,
 ) -> _SmoothFitResult:
     """Minimize the local GAIC or GCV criterion used by ``gamlss.pb()``."""
 
@@ -1006,7 +1123,7 @@ def _select_smoothing_parameter_for_edf(
     weights: Tensor,
     penalty: Tensor,
     target_effective_degrees_of_freedom: float,
-    control: RSControl,
+    control: RSControl | CGControl,
 ) -> _SmoothFitResult:
     """Invert the P-spline hat-matrix trace as in ``pb(x, df=...)``."""
 
@@ -1125,7 +1242,7 @@ def _estimate_ml_smoothing_parameter(
     penalty: Tensor,
     penalty_nullity: int,
     starting_smoothing_parameter: float,
-    control: RSControl,
+    control: RSControl | CGControl,
 ) -> _SmoothFitResult:
     """Apply the variance-component ML update used by ``gamlss.pb()``."""
     smoothing_parameter = starting_smoothing_parameter
