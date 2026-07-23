@@ -16,7 +16,14 @@ from torchgamlss.diagnostics import (
     quantile_residuals,
 )
 from torchgamlss.families import Family
-from torchgamlss.fitting import RSControl, RSFitResult, fit_rs
+from torchgamlss.fitting import (
+    CGControl,
+    CGFitResult,
+    RSControl,
+    RSFitResult,
+    fit_cg,
+    fit_rs,
+)
 from torchgamlss.formula import FormulaData, FormulaEncoder
 from torchgamlss.inference import InferenceResult, coefficient_inference
 from torchgamlss.smooths import PSpline, SmoothTerm
@@ -195,6 +202,28 @@ class GAMLSS(nn.Module):
             weights=case_weights,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            initial_parameters=parameter_starts,
+            control=control,
+        )
+
+    def fit_cg_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        initial_parameters: Mapping[str, Any] | None = None,
+        control: CGControl | None = None,
+    ) -> CGFitResult:
+        """Fit a parametric formula model from tabular data with CG cycles."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        parameter_starts = self._formula_initial_parameters(data, initial_parameters)
+        return self.fit_cg(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
             initial_parameters=parameter_starts,
             control=control,
         )
@@ -582,6 +611,27 @@ class GAMLSS(nn.Module):
             weights=weights,
             offsets=offsets,
             smooth_covariates=smooth_covariates,
+            initial_parameters=initial_parameters,
+            control=control,
+        )
+
+    def fit_cg(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        initial_parameters: Mapping[str, Any] | None = None,
+        control: CGControl | None = None,
+    ) -> CGFitResult:
+        """Fit parametric predictors with Cole-Green joint cycles."""
+        return fit_cg(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
             initial_parameters=initial_parameters,
             control=control,
         )

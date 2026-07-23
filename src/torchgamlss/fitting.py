@@ -17,6 +17,56 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class CGControl:
+    """Controls for the Cole-Green fitting algorithm."""
+
+    outer_tolerance: float = 1e-3
+    max_outer_iterations: int = 20
+    inner_tolerance: float = 1e-3
+    max_inner_iterations: int = 50
+    mu_step: float = 1.0
+    sigma_step: float = 1.0
+    nu_step: float = 1.0
+    tau_step: float = 1.0
+    autostep: bool = True
+    deviance_tolerance: float = float("inf")
+
+    def __post_init__(self) -> None:
+        if (
+            not math.isfinite(self.outer_tolerance)
+            or self.outer_tolerance <= 0
+            or not math.isfinite(self.inner_tolerance)
+            or self.inner_tolerance <= 0
+        ):
+            raise ValueError("CG tolerances must be positive")
+        if self.max_outer_iterations < 1 or self.max_inner_iterations < 1:
+            raise ValueError("CG iteration limits must be at least 1")
+        if any(
+            not 0 < step <= 1
+            for step in (self.mu_step, self.sigma_step, self.nu_step, self.tau_step)
+        ):
+            raise ValueError("CG parameter steps must be in the interval (0, 1]")
+        if math.isnan(self.deviance_tolerance) or self.deviance_tolerance < 0:
+            raise ValueError("deviance_tolerance must be non-negative")
+
+
+@dataclass(frozen=True)
+class CGFitResult:
+    """Summary of a parametric Cole-Green fit."""
+
+    global_deviance: float
+    outer_iterations: int
+    inner_iterations: tuple[int, ...]
+    converged: bool
+    deviance_history: tuple[float, ...]
+    effective_degrees_of_freedom: float
+
+    @property
+    def negative_log_likelihood(self) -> float:
+        return self.global_deviance / 2.0
+
+
+@dataclass(frozen=True)
 class RSControl:
     """Controls for the Rigby-Stasinopoulos fitting algorithm."""
 
@@ -112,6 +162,234 @@ class _SmoothFitResult:
     smoothing_iterations: int
 
 
+def fit_cg(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    initial_parameters: Mapping[str, Any] | None = None,
+    control: CGControl | None = None,
+) -> CGFitResult:
+    """Fit parametric predictors using the R GAMLSS Cole-Green equations."""
+    control = control or CGControl()
+    if any(model.smooth_terms[parameter] for parameter in model.family.parameter_names):
+        raise NotImplementedError(
+            "CG fitting currently supports parametric predictors only"
+        )
+    _validate_classical_inputs(
+        model,
+        response,
+        design_matrices,
+        None,
+        algorithm="CG",
+    )
+    case_weights = model._validated_weights(response, weights)
+    parameter_offsets = _parameter_offsets(model, response, offsets)
+    parameter_names = model.family.parameter_names
+    parameters = {
+        name: value.detach().clone()
+        for name, value in model.family.initial_parameters(
+            response, initial_parameters
+        ).items()
+    }
+    coefficients = {
+        name: coefficient.detach().clone()
+        for name, coefficient in model.coefficients.items()
+    }
+    global_deviance = _global_deviance(model, response, parameters, case_weights)
+    history = [float(global_deviance)]
+    inner_iterations = []
+    converged = False
+    outer_iterations = 0
+
+    with torch.no_grad():
+        for outer_iteration in range(1, control.max_outer_iterations + 1):
+            old_global_deviance = global_deviance
+            old_coefficients = {
+                name: value.detach().clone() for name, value in coefficients.items()
+            }
+            old_eta = {
+                name: model.family.links[name](parameters[name])
+                for name in parameter_names
+            }
+            eta = {name: value.detach().clone() for name, value in old_eta.items()}
+            scores = model.family.score(response, parameters)
+            second = model.family.expected_second_derivatives(response, parameters)
+            derivatives = {
+                name: model.family.links[name]
+                .inverse_derivative(old_eta[name])
+                .reciprocal()
+                for name in parameter_names
+            }
+            working_weights = {
+                name: -second[(name, name)] / derivatives[name].square()
+                for name in parameter_names
+            }
+            for name, values in working_weights.items():
+                if not torch.isfinite(values).all() or (values <= 0).any():
+                    raise FloatingPointError(
+                        f"CG working weights for {name!r} must be finite and positive"
+                    )
+            working_responses = {
+                name: old_eta[name]
+                - parameter_offsets[name]
+                + _cg_step(control, name)
+                * scores[name]
+                / (derivatives[name] * working_weights[name])
+                for name in parameter_names
+            }
+            cross_weights = {}
+            for index, left in enumerate(parameter_names):
+                for right in parameter_names[index + 1 :]:
+                    cross_second = _cross_derivative(second, left, right)
+                    cross_weights[(left, right)] = -cross_second / (
+                        derivatives[left] * derivatives[right]
+                    )
+            if any(not values.isfinite().all() for values in cross_weights.values()):
+                raise FloatingPointError(
+                    "CG cross-parameter working weights must be finite"
+                )
+
+            previous_inner_deviance = global_deviance + 1.0
+            inner_deviance = global_deviance
+            inner_iteration = 0
+            while (
+                abs(float(previous_inner_deviance - inner_deviance))
+                > control.inner_tolerance
+                and inner_iteration < control.max_inner_iterations
+            ):
+                previous_inner_deviance = inner_deviance
+                for index, name in enumerate(parameter_names):
+                    adjustment = torch.zeros_like(response)
+                    for other_index, other in enumerate(parameter_names):
+                        if other == name:
+                            continue
+                        pair = (name, other) if index < other_index else (other, name)
+                        adjustment = adjustment + cross_weights[pair] * (
+                            eta[other] - old_eta[other]
+                        )
+                    adjusted_response = (
+                        working_responses[name] - adjustment / working_weights[name]
+                    )
+                    coefficient = _weighted_least_squares(
+                        design_matrices[name],
+                        adjusted_response,
+                        working_weights[name] * case_weights,
+                    )
+                    coefficients[name] = coefficient
+                    eta[name] = (
+                        design_matrices[name] @ coefficient + parameter_offsets[name]
+                    )
+                    parameters[name] = model.family.links[name].inverse(eta[name])
+
+                inner_deviance = _global_deviance(
+                    model,
+                    response,
+                    parameters,
+                    case_weights,
+                )
+                inner_iteration += 1
+                if not torch.isfinite(inner_deviance):
+                    raise FloatingPointError(
+                        "global deviance is not finite during CG fitting"
+                    )
+                if (
+                    outer_iteration > 2
+                    and inner_deviance
+                    > previous_inner_deviance + control.deviance_tolerance
+                ):
+                    raise RuntimeError(
+                        "global deviance increased during the inner CG loop"
+                    )
+
+            global_deviance = inner_deviance
+            if (
+                control.autostep
+                and outer_iteration > 2
+                and global_deviance > old_global_deviance
+            ):
+                for _ in range(5):
+                    for name in parameter_names:
+                        coefficients[name] = (
+                            coefficients[name] + old_coefficients[name]
+                        ) / 2.0
+                        eta[name] = (
+                            design_matrices[name] @ coefficients[name]
+                            + parameter_offsets[name]
+                        )
+                        parameters[name] = model.family.links[name].inverse(eta[name])
+                    global_deviance = _global_deviance(
+                        model,
+                        response,
+                        parameters,
+                        case_weights,
+                    )
+                    if global_deviance < old_global_deviance:
+                        break
+
+            history.append(float(global_deviance))
+            inner_iterations.append(inner_iteration)
+            outer_iterations = outer_iteration
+            if not torch.isfinite(global_deviance):
+                raise FloatingPointError(
+                    "global deviance is not finite during CG fitting"
+                )
+            if (
+                outer_iteration > 2
+                and global_deviance > old_global_deviance + control.deviance_tolerance
+            ):
+                raise RuntimeError("global deviance increased during CG fitting")
+            if abs(float(old_global_deviance - global_deviance)) < (
+                control.outer_tolerance
+            ):
+                converged = True
+                break
+
+        for name, coefficient in coefficients.items():
+            model.coefficients[name].copy_(coefficient)
+
+    return CGFitResult(
+        global_deviance=float(global_deviance),
+        outer_iterations=outer_iterations,
+        inner_iterations=tuple(inner_iterations),
+        converged=converged,
+        deviance_history=tuple(history),
+        effective_degrees_of_freedom=float(
+            sum(coefficient.numel() for coefficient in coefficients.values())
+        ),
+    )
+
+
+def _cg_step(control: CGControl, parameter: str) -> float:
+    try:
+        return {
+            "mu": control.mu_step,
+            "sigma": control.sigma_step,
+            "nu": control.nu_step,
+            "tau": control.tau_step,
+        }[parameter]
+    except KeyError as error:
+        raise NotImplementedError(
+            f"CG does not define a step control for parameter {parameter!r}"
+        ) from error
+
+
+def _cross_derivative(
+    derivatives: Mapping[tuple[str, str], Tensor],
+    left: str,
+    right: str,
+) -> Tensor:
+    if (left, right) in derivatives:
+        return derivatives[(left, right)]
+    if (right, left) in derivatives:
+        return derivatives[(right, left)]
+    raise KeyError(
+        f"family does not provide the CG cross derivative for {left!r}, {right!r}"
+    )
+
+
 def fit_rs(
     model: GAMLSS,
     response: Tensor,
@@ -125,7 +403,13 @@ def fit_rs(
 ) -> RSFitResult:
     """Fit additive predictors using the R GAMLSS RS equations."""
     control = control or RSControl()
-    _validate_rs_inputs(model, response, design_matrices, smooth_covariates)
+    _validate_classical_inputs(
+        model,
+        response,
+        design_matrices,
+        smooth_covariates,
+        algorithm="RS",
+    )
     case_weights = model._validated_weights(response, weights)
     parameter_offsets = _parameter_offsets(model, response, offsets)
     parameters = {
@@ -428,7 +712,7 @@ def _weighted_least_squares(
     weighted_response = response * square_root_weights
     result = torch.linalg.lstsq(weighted_design, weighted_response)
     if result.rank.numel() and int(result.rank) < design_matrix.shape[1]:
-        raise ValueError("RS design matrix is rank deficient")
+        raise ValueError("weighted least-squares design matrix is rank deficient")
     return result.solution
 
 
@@ -985,21 +1269,25 @@ def _parameter_offsets(
     return result
 
 
-def _validate_rs_inputs(
+def _validate_classical_inputs(
     model: GAMLSS,
     response: Tensor,
     design_matrices: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None,
+    *,
+    algorithm: str,
 ) -> None:
     if response.ndim != 1:
-        raise ValueError("RS fitting currently requires a one-dimensional response")
+        raise ValueError(
+            f"{algorithm} fitting currently requires a one-dimensional response"
+        )
     if not torch.isfinite(response).all():
-        raise ValueError("RS response must be finite")
+        raise ValueError(f"{algorithm} response must be finite")
     model_parameter = next(model.parameters())
     if response.dtype != model_parameter.dtype or response.device != (
         model_parameter.device
     ):
-        raise ValueError("RS response dtype and device must match the model")
+        raise ValueError(f"{algorithm} response dtype and device must match the model")
     expected = set(model.family.parameter_names)
     received = set(design_matrices)
     if expected != received:

@@ -65,12 +65,14 @@ nbi_rs_reference_path <- file.path(reference_dir, "nbi_rs_reference.csv")
 be_reference_path <- file.path(reference_dir, "be_reference.csv")
 be_fit_data_path <- file.path(reference_dir, "be_fit_data.csv")
 be_rs_reference_path <- file.path(reference_dir, "be_rs_reference.csv")
+be_cg_reference_path <- file.path(reference_dir, "be_cg_reference.csv")
 bccg_reference_path <- file.path(reference_dir, "bccg_reference.csv")
 bccg_fit_data_path <- file.path(reference_dir, "bccg_fit_data.csv")
 bccg_rs_reference_path <- file.path(reference_dir, "bccg_rs_reference.csv")
 bct_reference_path <- file.path(reference_dir, "bct_reference.csv")
 bct_fit_data_path <- file.path(reference_dir, "bct_fit_data.csv")
 bct_rs_reference_path <- file.path(reference_dir, "bct_rs_reference.csv")
+bct_cg_reference_path <- file.path(reference_dir, "bct_cg_reference.csv")
 bcpe_reference_path <- file.path(reference_dir, "bcpe_reference.csv")
 bcpe_fit_data_path <- file.path(reference_dir, "bcpe_fit_data.csv")
 bcpe_rs_reference_path <- file.path(reference_dir, "bcpe_rs_reference.csv")
@@ -750,6 +752,29 @@ be_rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+be_cg_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  weights = weight,
+  family = BE(),
+  method = CG(),
+  data = be_fit_data,
+  control = gamlss.control(c.crit = 1e-9, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(cc = 1e-9, cyc = 200)
+)
+be_cg_reference <- data.frame(
+  mu_intercept = unname(coef(be_cg_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(be_cg_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(be_cg_fit, what = "sigma")[[1]]),
+  sigma_z = unname(coef(be_cg_fit, what = "sigma")[[2]]),
+  global_deviance = unname(deviance(be_cg_fit)),
+  negative_log_likelihood = -as.numeric(logLik(be_cg_fit)),
+  outer_iterations = be_cg_fit$iter,
+  converged = be_cg_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
 bccg_n <- 120
 bccg_x <- seq(-1, 1, length.out = bccg_n)
 bccg_z <- cos(seq(0, 2 * pi, length.out = bccg_n))
@@ -858,6 +883,43 @@ bct_rs_reference <- data.frame(
   negative_log_likelihood = -as.numeric(logLik(bct_rs_fit)),
   outer_iterations = bct_rs_fit$iter,
   converged = bct_rs_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+bct_cg_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  nu.formula = ~ w + offset(nu_offset),
+  tau.formula = ~ 1,
+  weights = weight,
+  family = BCT(),
+  method = CG(),
+  data = bct_fit_data,
+  mu.start = bct_mu,
+  sigma.start = bct_sigma,
+  nu.start = bct_nu,
+  tau.start = bct_tau,
+  control = gamlss.control(
+    c.crit = 1e-9,
+    n.cyc = 200,
+    trace = FALSE,
+    autostep = FALSE
+  ),
+  i.control = glim.control(cc = 1e-9, cyc = 200)
+)
+bct_cg_reference <- data.frame(
+  mu_intercept = unname(coef(bct_cg_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(bct_cg_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(bct_cg_fit, what = "sigma")[[1]]),
+  sigma_z = unname(coef(bct_cg_fit, what = "sigma")[[2]]),
+  nu_intercept = unname(coef(bct_cg_fit, what = "nu")[[1]]),
+  nu_w = unname(coef(bct_cg_fit, what = "nu")[[2]]),
+  tau_intercept = unname(coef(bct_cg_fit, what = "tau")[[1]]),
+  global_deviance = unname(deviance(bct_cg_fit)),
+  negative_log_likelihood = -as.numeric(logLik(bct_cg_fit)),
+  outer_iterations = bct_cg_fit$iter,
+  converged = bct_cg_fit$converged,
   gamlss_version = as.character(packageVersion("gamlss")),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
@@ -1353,12 +1415,14 @@ if (check_only) {
   assert_close(be_reference, be_reference_path, tolerance = 1e-12)
   assert_close(be_fit_data, be_fit_data_path, tolerance = 1e-12)
   assert_close(be_rs_reference, be_rs_reference_path, tolerance = 1e-6)
+  assert_close(be_cg_reference, be_cg_reference_path, tolerance = 1e-9)
   assert_close(bccg_reference, bccg_reference_path, tolerance = 1e-10)
   assert_close(bccg_fit_data, bccg_fit_data_path, tolerance = 1e-12)
   assert_close(bccg_rs_reference, bccg_rs_reference_path, tolerance = 1e-6)
   assert_close(bct_reference, bct_reference_path, tolerance = 1e-9)
   assert_close(bct_fit_data, bct_fit_data_path, tolerance = 1e-12)
   assert_close(bct_rs_reference, bct_rs_reference_path, tolerance = 1e-6)
+  assert_close(bct_cg_reference, bct_cg_reference_path, tolerance = 1e-8)
   assert_close(bcpe_reference, bcpe_reference_path, tolerance = 1e-9)
   assert_close(bcpe_fit_data, bcpe_fit_data_path, tolerance = 1e-12)
   assert_close(bcpe_rs_reference, bcpe_rs_reference_path, tolerance = 1e-6)
@@ -1458,12 +1522,14 @@ if (check_only) {
   write_csv_lf(be_reference, be_reference_path)
   write_csv_lf(be_fit_data, be_fit_data_path)
   write_csv_lf(be_rs_reference, be_rs_reference_path)
+  write_csv_lf(be_cg_reference, be_cg_reference_path)
   write_csv_lf(bccg_reference, bccg_reference_path)
   write_csv_lf(bccg_fit_data, bccg_fit_data_path)
   write_csv_lf(bccg_rs_reference, bccg_rs_reference_path)
   write_csv_lf(bct_reference, bct_reference_path)
   write_csv_lf(bct_fit_data, bct_fit_data_path)
   write_csv_lf(bct_rs_reference, bct_rs_reference_path)
+  write_csv_lf(bct_cg_reference, bct_cg_reference_path)
   write_csv_lf(bcpe_reference, bcpe_reference_path)
   write_csv_lf(bcpe_fit_data, bcpe_fit_data_path)
   write_csv_lf(bcpe_rs_reference, bcpe_rs_reference_path)

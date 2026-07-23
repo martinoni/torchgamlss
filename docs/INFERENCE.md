@@ -66,8 +66,8 @@ Inference is evaluated at the model's current coefficients, so fit the model
 before calling it. The Hessian must be finite and positive definite; singular
 or non-identifiable designs are rejected rather than pseudo-inverted.
 
-This first implementation supports linear parametric models, fitted by either
-RS or Torch L-BFGS. Models containing smooth terms are rejected because
+This first implementation supports linear parametric models, fitted by RS,
+CG, or Torch L-BFGS. Models containing smooth terms are rejected because
 conditioning on fitted smooth contributions would omit smoothing and spline
 coefficient uncertainty. Joint inference for penalized terms is separate
 future work.

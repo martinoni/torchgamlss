@@ -15,7 +15,7 @@ from torchgamlss.families import (
     Normal,
     Poisson,
 )
-from torchgamlss.fitting import RSControl, RSFitResult
+from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
 from torchgamlss.inference import InferenceResult
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
@@ -30,6 +30,8 @@ __all__ = [
     "BoxCoxColeGreen",
     "BoxCoxPowerExponential",
     "BoxCoxT",
+    "CGControl",
+    "CGFitResult",
     "Family",
     "FitResult",
     "FormulaData",

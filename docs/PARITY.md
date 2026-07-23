@@ -155,6 +155,24 @@ R obtains the Hessian numerically with `optimHess`; TorchGAMLSS obtains it
 through Torch automatic differentiation. Parity is therefore defined to the
 documented numerical tolerance rather than bitwise equality.
 
+## Cole-Green fitting
+
+The parametric CG fixtures compare the joint cross-derivative cycles in
+TorchGAMLSS with `gamlss(..., method=CG())`. They cover:
+
+- a weighted Beta model with offsets in both predictors and default starting
+  values;
+- a weighted BCT model with seven coefficients, explicit parameter-scale
+  starts, and all six cross-derivative blocks;
+- coefficients, deviance, likelihood, convergence, and outer iteration
+  counts.
+
+The Beta results agree at float64 precision. The BCT fixture disables
+automatic step halving in both implementations because the R final-iteration
+halving path can leave its saved coefficients out of sync with its fitted
+predictors. With that path excluded, the four-parameter coefficients agree to
+approximately `1e-11` and the deviance to float64 precision.
+
 ## Diagnostics and quantile residuals
 
 Diagnostics fixtures cover all eight supported families and a fixed-lambda
@@ -201,11 +219,12 @@ changing files and compares them with explicit tolerances.
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
 
-The RS implementation follows the working-response and Fisher-weight updates
-in `gamlss` 5.5-0, `R/gamlss-5.R`. Additive backfitting and P-splines
-follow `R/add.r` and `R/pb.R`; the latter is also the reference for ML,
-target-EDF, GAIC, and GCV smoothing selection. See [`RS.md`](RS.md) and
-[`SMOOTHS.md`](SMOOTHS.md) for the equations and current scope.
+The RS and CG implementations follow the working-response, diagonal, and
+cross-parameter Fisher-weight updates in `gamlss` 5.5-0, `R/gamlss-5.R`.
+Additive backfitting and P-splines follow `R/add.r` and `R/pb.R`; the latter
+is also the reference for ML, target-EDF, GAIC, and GCV smoothing selection.
+See [`RS.md`](RS.md), [`CG.md`](CG.md), and [`SMOOTHS.md`](SMOOTHS.md) for the
+equations and current scope.
 
 The target-EDF fixture compares final numerical results rather than requiring
 the same outer iteration count. R's finite-tolerance `uniroot()` updates can

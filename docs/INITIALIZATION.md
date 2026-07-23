@@ -1,8 +1,8 @@
-# RS starting values
+# Classical fitting starting values
 
 Every family defines R-compatible default starting values on the distribution
-parameter scale. `fit_rs()` validates and expands them before the first RS
-cycle.
+parameter scale. `fit_rs()` and `fit_cg()` validate and expand them before the
+first classical fitting cycle.
 
 Any subset can be overridden with scalars or one-dimensional tensors:
 
@@ -39,6 +39,6 @@ An override replaces only that parameter's default. For example, a constant
 Normal response has no default sample standard deviation, but supplying a
 positive `sigma` still retains the automatic `mu`.
 
-This protocol belongs to the classical RS fitter. Torch L-BFGS currently
-starts from the model's coefficient tensors, which advanced callers can set
-directly before `fit()` or `fit_data()`.
+The same overrides are accepted by `fit_cg()` and `fit_cg_data()`. Torch
+L-BFGS currently starts from the model's coefficient tensors, which advanced
+callers can set directly before `fit()` or `fit_data()`.

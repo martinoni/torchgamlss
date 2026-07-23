@@ -40,6 +40,25 @@ result = model.fit_rs_data(
 See [`INITIALIZATION.md`](INITIALIZATION.md) for validation and default
 behavior.
 
+Parametric formula models can instead use the joint Cole-Green cycles:
+
+```python
+from torchgamlss import CGControl
+
+cg_model = GAMLSS.from_formula(
+    Gamma(),
+    {
+        "mu": "y ~ x + C(group) + offset(mu_offset)",
+        "sigma": "~ z + offset(sigma_offset)",
+    },
+    data,
+)
+result = cg_model.fit_cg_data(data, control=CGControl())
+```
+
+CG does not yet support formulas containing `pb()` terms. See
+[`CG.md`](CG.md).
+
 `fit_data()` provides the corresponding Torch L-BFGS path:
 
 ```python

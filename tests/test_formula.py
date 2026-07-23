@@ -349,3 +349,5 @@ def test_formula_methods_require_a_formula_model():
 
     with pytest.raises(RuntimeError, match="from_formula"):
         model.predict_data({"x": [1.0]})
+    with pytest.raises(RuntimeError, match="from_formula"):
+        model.fit_cg_data({"y": [1.0]})

@@ -33,8 +33,10 @@ The current implementation contains:
 - full-batch joint fitting with Torch L-BFGS;
 - likelihood weights and offsets for every distribution parameter;
 - R-compatible family defaults and user-supplied parameter-scale starting
-  values for RS fitting;
+  values for RS and CG fitting;
 - Rigby-Stasinopoulos fitting cycles for linear and additive predictors;
+- Cole-Green joint fitting with cross-parameter working weights for
+  parametric predictors;
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
@@ -53,9 +55,9 @@ The current implementation contains:
   links, derivatives, starting values, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-The CG algorithm and broader graphical diagnostics are planned work. The
-L-BFGS path remains a Torch-native numerical baseline and requires fixed
-smoothing parameters. Inference for penalized smooth terms is not yet
+CG backfitting for smooth terms and broader graphical diagnostics are planned
+work. The L-BFGS path remains a Torch-native numerical baseline and requires
+fixed smoothing parameters. Inference for penalized smooth terms is not yet
 supported.
 
 ## Development
@@ -80,10 +82,12 @@ P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
 parameterization. Poisson, NBI, and Beta are described in
 [`docs/FAMILIES.md`](docs/FAMILIES.md), BCCG in
 [`docs/BCCG.md`](docs/BCCG.md), BCT in [`docs/BCT.md`](docs/BCT.md), and BCPE
-in [`docs/BCPE.md`](docs/BCPE.md). RS starting values are documented in
-[`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). The prediction interface
-is documented in [`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular
-formula API in [`docs/FORMULAS.md`](docs/FORMULAS.md). See
+in [`docs/BCPE.md`](docs/BCPE.md). Classical starting values are documented in
+[`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). Classical fitting is
+described in [`docs/RS.md`](docs/RS.md) and [`docs/CG.md`](docs/CG.md). The
+prediction interface is documented in
+[`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular formula API in
+[`docs/FORMULAS.md`](docs/FORMULAS.md). See
 [`docs/INFERENCE.md`](docs/INFERENCE.md) for covariance and Wald inference.
 Likelihood criteria, model comparison, and quantile residuals are documented
 in [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md).
