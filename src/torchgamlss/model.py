@@ -10,6 +10,7 @@ from torch import Tensor, nn
 from torch.distributions import Distribution
 
 from torchgamlss.families import Family
+from torchgamlss.fitting import RSControl, RSFitResult, fit_rs
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,9 @@ class GAMLSS(nn.Module):
         )
 
     def linear_predictors(
-        self, design_matrices: Mapping[str, Tensor]
+        self,
+        design_matrices: Mapping[str, Tensor],
+        offsets: Mapping[str, Tensor] | None = None,
     ) -> dict[str, Tensor]:
         """Calculate one linear predictor for each distribution parameter."""
         expected = set(self.family.parameter_names)
@@ -72,33 +75,71 @@ class GAMLSS(nn.Module):
                 f"extra={sorted(received - expected)}"
             )
 
-        return {
-            parameter: design_matrices[parameter] @ self.coefficients[parameter]
-            for parameter in self.family.parameter_names
-        }
+        offsets = offsets or {}
+        extra_offsets = set(offsets).difference(expected)
+        if extra_offsets:
+            raise ValueError(
+                f"Offsets contain unknown parameters: {sorted(extra_offsets)}"
+            )
 
-    def distribution(self, design_matrices: Mapping[str, Tensor]) -> Distribution:
+        predictors = {}
+        for parameter in self.family.parameter_names:
+            design_matrix = design_matrices[parameter]
+            if (
+                design_matrix.ndim != 2
+                or design_matrix.shape[1] != self.coefficients[parameter].numel()
+            ):
+                raise ValueError(
+                    f"design matrix for {parameter!r} has an invalid shape"
+                )
+            predictor = design_matrix @ self.coefficients[parameter]
+            if parameter in offsets:
+                try:
+                    offset = torch.broadcast_to(offsets[parameter], predictor.shape)
+                except RuntimeError as error:
+                    raise ValueError(
+                        f"offset for {parameter!r} cannot be broadcast to its predictor"
+                    ) from error
+                if not torch.isfinite(offset).all():
+                    raise ValueError(f"offset for {parameter!r} must be finite")
+                predictor = predictor + offset
+            predictors[parameter] = predictor
+        return predictors
+
+    def distribution(
+        self,
+        design_matrices: Mapping[str, Tensor],
+        offsets: Mapping[str, Tensor] | None = None,
+    ) -> Distribution:
         """Build the fitted conditional response distribution."""
-        predictors = self.linear_predictors(design_matrices)
+        predictors = self.linear_predictors(design_matrices, offsets)
         parameters = self.family.parameters_from_predictors(predictors)
         return self.family.distribution(parameters)
 
-    def forward(self, design_matrices: Mapping[str, Tensor]) -> Distribution:
-        return self.distribution(design_matrices)
+    def forward(
+        self,
+        design_matrices: Mapping[str, Tensor],
+        offsets: Mapping[str, Tensor] | None = None,
+    ) -> Distribution:
+        return self.distribution(design_matrices, offsets)
 
     def negative_log_likelihood(
         self,
         response: Tensor,
         design_matrices: Mapping[str, Tensor],
         *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
         reduction: str = "sum",
     ) -> Tensor:
         """Return the negative log-likelihood with sum, mean, or no reduction."""
-        losses = -self.distribution(design_matrices).log_prob(response)
+        losses = -self.distribution(design_matrices, offsets).log_prob(response)
+        observation_weights = self._validated_weights(losses, weights)
+        losses = losses * observation_weights
         if reduction == "sum":
             return losses.sum()
         if reduction == "mean":
-            return losses.mean()
+            return losses.sum() / observation_weights.sum()
         if reduction == "none":
             return losses
         raise ValueError("reduction must be one of: 'sum', 'mean', 'none'")
@@ -108,6 +149,8 @@ class GAMLSS(nn.Module):
         response: Tensor,
         design_matrices: Mapping[str, Tensor],
         *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
         max_iter: int = 100,
         tolerance_grad: float = 1e-9,
         tolerance_change: float = 1e-12,
@@ -132,7 +175,12 @@ class GAMLSS(nn.Module):
 
         def closure() -> Tensor:
             optimizer.zero_grad()
-            loss = self.negative_log_likelihood(response, design_matrices)
+            loss = self.negative_log_likelihood(
+                response,
+                design_matrices,
+                weights=weights,
+                offsets=offsets,
+            )
             if not torch.isfinite(loss):
                 raise FloatingPointError("negative log-likelihood is not finite")
             loss.backward()
@@ -156,3 +204,40 @@ class GAMLSS(nn.Module):
             gradient_max=gradient_max,
             converged=bool(torch.isfinite(final_loss) and iterations < max_iter),
         )
+
+    def fit_rs(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        control: RSControl | None = None,
+    ) -> RSFitResult:
+        """Fit linear parameter predictors with Rigby-Stasinopoulos cycles."""
+        return fit_rs(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            control=control,
+        )
+
+    @staticmethod
+    def _validated_weights(losses: Tensor, weights: Tensor | None) -> Tensor:
+        if weights is None:
+            return torch.ones_like(losses)
+        if weights.device != losses.device:
+            raise ValueError("weights must be on the same device as the response")
+        try:
+            observation_weights = torch.broadcast_to(weights, losses.shape)
+        except RuntimeError as error:
+            raise ValueError("weights are not broadcastable to the response") from error
+        if not torch.isfinite(observation_weights).all():
+            raise ValueError("weights must be finite")
+        if (observation_weights < 0).any():
+            raise ValueError("weights must be non-negative")
+        if observation_weights.sum() <= 0:
+            raise ValueError("at least one observation weight must be positive")
+        return observation_weights

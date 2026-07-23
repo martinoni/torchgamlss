@@ -58,3 +58,7 @@ class Family(ABC):
         self, response: Tensor, parameters: Mapping[str, Tensor]
     ) -> dict[tuple[str, str], Tensor]:
         """Return GAMLSS expected second derivatives on the parameter scale."""
+
+    @abstractmethod
+    def initial_parameters(self, response: Tensor) -> dict[str, Tensor]:
+        """Return the family-specific starting values used by R GAMLSS."""

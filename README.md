@@ -28,14 +28,18 @@ The first vertical slice contains:
 - a normal GAMLSS family with predictors for `mu` and `sigma`;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
+- likelihood weights and offsets for every distribution parameter;
+- a linear, unpenalized implementation of the Rigby-Stasinopoulos fitting
+  cycles;
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for the `NO` density, links, derivatives, and a
   fitted model;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Formula parsing, RS/CG fitting, penalized splines, smoothing-parameter
-selection, inference, and diagnostics are planned work. The L-BFGS path is a
-Torch-native numerical baseline and is not an implementation of RS or CG.
+Formula parsing, the CG algorithm, penalized splines, smoothing-parameter
+selection, inference, and diagnostics are planned work. The current RS path is
+limited to linear design matrices; the L-BFGS path remains a Torch-native
+numerical baseline.
 
 ## Development
 

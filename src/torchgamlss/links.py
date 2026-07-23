@@ -21,6 +21,10 @@ class Link(ABC):
     def inverse(self, predictor: Tensor) -> Tensor:
         """Transform a predictor to the distribution-parameter scale."""
 
+    @abstractmethod
+    def inverse_derivative(self, predictor: Tensor) -> Tensor:
+        """Return the derivative of the inverse link with respect to eta."""
+
     def __call__(self, parameter: Tensor) -> Tensor:
         return self.forward(parameter)
 
@@ -36,6 +40,9 @@ class IdentityLink(Link):
     def inverse(self, predictor: Tensor) -> Tensor:
         return predictor
 
+    def inverse_derivative(self, predictor: Tensor) -> Tensor:
+        return torch.ones_like(predictor)
+
 
 class LogLink(Link):
     """Log link for strictly positive parameters."""
@@ -46,6 +53,9 @@ class LogLink(Link):
         return torch.log(parameter)
 
     def inverse(self, predictor: Tensor) -> Tensor:
+        return torch.exp(predictor)
+
+    def inverse_derivative(self, predictor: Tensor) -> Tensor:
         return torch.exp(predictor)
 
 
@@ -59,3 +69,7 @@ class LogitLink(Link):
 
     def inverse(self, predictor: Tensor) -> Tensor:
         return torch.sigmoid(predictor)
+
+    def inverse_derivative(self, predictor: Tensor) -> Tensor:
+        parameter = torch.sigmoid(predictor)
+        return parameter * (1.0 - parameter)

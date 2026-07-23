@@ -54,3 +54,83 @@ def test_invalid_reduction_is_rejected():
         assert "reduction" in str(error)
     else:
         raise AssertionError("invalid reduction was accepted")
+
+
+def test_weights_and_offsets_are_applied_to_the_likelihood():
+    dtype = torch.float64
+    model = GAMLSS(Normal(), {"mu": 1, "sigma": 1}, dtype=dtype)
+    design = {
+        "mu": torch.ones((3, 1), dtype=dtype),
+        "sigma": torch.ones((3, 1), dtype=dtype),
+    }
+    offsets = {
+        "mu": torch.tensor([0.5, -0.5, 1.0], dtype=dtype),
+        "sigma": torch.log(torch.tensor([2.0, 1.0, 0.5], dtype=dtype)),
+    }
+    response = torch.tensor([1.0, -1.0, 2.0], dtype=dtype)
+    weights = torch.tensor([1.0, 2.0, 3.0], dtype=dtype)
+    expected = (
+        -torch.distributions.Normal(offsets["mu"], offsets["sigma"].exp()).log_prob(
+            response
+        )
+        * weights
+    )
+
+    actual = model.negative_log_likelihood(
+        response,
+        design,
+        weights=weights,
+        offsets=offsets,
+        reduction="none",
+    )
+
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(
+        model.negative_log_likelihood(
+            response, design, weights=weights, offsets=offsets
+        ),
+        expected.sum(),
+    )
+    torch.testing.assert_close(
+        model.negative_log_likelihood(
+            response,
+            design,
+            weights=weights,
+            offsets=offsets,
+            reduction="mean",
+        ),
+        expected.sum() / weights.sum(),
+    )
+
+
+def test_invalid_likelihood_weights_are_rejected():
+    model, design = _example()
+    response = torch.tensor([1.0, 2.0, 4.0], dtype=torch.float64)
+
+    for weights in (
+        torch.tensor([1.0, -1.0, 1.0], dtype=torch.float64),
+        torch.zeros(3, dtype=torch.float64),
+        torch.tensor([1.0, float("nan"), 1.0], dtype=torch.float64),
+    ):
+        try:
+            model.negative_log_likelihood(response, design, weights=weights)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid weights were accepted")
+
+
+def test_unknown_parameter_offset_is_rejected():
+    model, design = _example()
+    response = torch.tensor([1.0, 2.0, 4.0], dtype=torch.float64)
+
+    try:
+        model.negative_log_likelihood(
+            response,
+            design,
+            offsets={"nu": torch.zeros(3, dtype=torch.float64)},
+        )
+    except ValueError as error:
+        assert "Offsets" in str(error)
+    else:
+        raise AssertionError("unknown offset was accepted")

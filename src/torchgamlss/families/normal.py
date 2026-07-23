@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import torch
 from torch import Tensor
 from torch.distributions import Normal as TorchNormal
 
@@ -64,6 +65,18 @@ class Normal(Family):
             ("mu", "mu"): -inverse_variance,
             ("sigma", "sigma"): -2.0 * inverse_variance,
             ("mu", "sigma"): response.new_zeros(response.shape),
+        }
+
+    def initial_parameters(self, response: Tensor) -> dict[str, Tensor]:
+        """Match the starting expressions in ``gamlss.dist::NO``."""
+        if response.ndim != 1 or response.numel() < 2:
+            raise ValueError("NO initialization requires at least two observations")
+        sigma = response.std(correction=1)
+        if not torch.isfinite(sigma) or sigma <= 0:
+            raise ValueError("NO initialization requires a non-constant response")
+        return {
+            "mu": (response + response.mean()) / 2.0,
+            "sigma": torch.full_like(response, sigma),
         }
 
     def _broadcast(

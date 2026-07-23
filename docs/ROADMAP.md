@@ -15,7 +15,7 @@ as supported.
 
 ## Phase 1 — parametric core
 
-- [ ] Weighted observations and offsets
+- [x] Weighted observations and offsets
 - [ ] Formula/design-matrix interface
 - [ ] Starting-value protocol
 - [ ] Normal, Gamma, Poisson, beta, and negative-binomial families
@@ -24,7 +24,8 @@ as supported.
 
 ## Phase 2 — classical GAMLSS fitting
 
-- [ ] RS algorithm
+- [x] Linear unpenalized RS core
+- [ ] RS backfitting with smooth and penalized terms
 - [ ] CG algorithm
 - [ ] Penalized weighted least squares
 - [ ] P-splines with fixed smoothing parameters

@@ -15,3 +15,30 @@ from torchgamlss.links import IdentityLink, LogitLink, LogLink
 def test_link_round_trip(link, values):
     recovered = link.inverse(link(values))
     torch.testing.assert_close(recovered, values)
+
+
+@pytest.mark.parametrize(
+    ("link", "predictors", "expected"),
+    [
+        (
+            IdentityLink(),
+            torch.tensor([-2.0, 0.0, 3.0], dtype=torch.float64),
+            torch.ones(3, dtype=torch.float64),
+        ),
+        (
+            LogLink(),
+            torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64),
+            torch.exp(torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64)),
+        ),
+        (
+            LogitLink(),
+            torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64),
+            torch.sigmoid(torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64))
+            * (
+                1.0 - torch.sigmoid(torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64))
+            ),
+        ),
+    ],
+)
+def test_inverse_link_derivative(link, predictors, expected):
+    torch.testing.assert_close(link.inverse_derivative(predictors), expected)

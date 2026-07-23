@@ -18,6 +18,9 @@ The committed fixtures cover:
 - `d2ldm2`, `d2ldd2`, and `d2ldmdd`, the expected second derivatives supplied
   to the GAMLSS fitting algorithm;
 - a joint fit of `mu ~ x` and `sigma ~ 1` using `gamlss(..., family = NO())`.
+- a weighted RS fit with parameter-specific offsets, `mu ~ x` and
+  `sigma ~ z`, including coefficients, iteration count, log likelihood, and
+  global deviance.
 
 The expected sigma-sigma derivative supplied by `NO()` is Fisher-scoring
 information, not the observation-wise second derivative of the normal log
@@ -46,3 +49,7 @@ changing files and compares them with explicit tolerances.
   <https://cran.r-project.org/package=gamlss>
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
+
+The linear RS implementation follows the working-response and Fisher-weight
+updates in `gamlss` 5.5-0, `R/gamlss-5.R`. See [`RS.md`](RS.md) for the
+equations and current scope.
