@@ -117,3 +117,26 @@ def test_automatic_pspline_smoothing_state_is_serialized():
 def test_invalid_automatic_smoothing_configuration_is_rejected(kwargs):
     with pytest.raises(ValueError):
         PSpline(0.0, 1.0, None, **kwargs)
+
+
+def test_pspline_target_degrees_of_freedom_uses_r_pb_semantics():
+    covariate = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
+    term = PSpline.from_data(covariate, degrees_of_freedom=3.0)
+
+    assert term.estimates_smoothing_parameter
+    assert term.smoothing_method == "DF"
+    assert term.target_effective_degrees_of_freedom == pytest.approx(5.0)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"smoothing_parameter": 1.0, "degrees_of_freedom": 3.0},
+        {"degrees_of_freedom": -1.0},
+        {"degrees_of_freedom": float("inf")},
+        {"degrees_of_freedom": 21.0},
+    ],
+)
+def test_invalid_target_degrees_of_freedom_is_rejected(kwargs):
+    with pytest.raises(ValueError):
+        PSpline(0.0, 1.0, **kwargs)

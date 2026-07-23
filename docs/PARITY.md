@@ -28,6 +28,9 @@ The committed fixtures cover:
 - the same additive fit using `mu ~ pb(x)`, including the automatically
   ML-selected smoothing parameter and its resulting effective degrees of
   freedom.
+- a target-EDF fit using `mu ~ pb(x, df=3)`. The R convention adds the two
+  unpenalized dimensions, producing total EDF 5; the fixture covers the
+  selected smoothing parameter, coefficients, fitted values, and deviance.
 
 The expected sigma-sigma derivative supplied by `NO()` is Fisher-scoring
 information, not the observation-wise second derivative of the normal log
@@ -62,3 +65,7 @@ in `gamlss` 5.5-0, `R/gamlss-5.R`. Additive backfitting and P-splines
 follow `R/add.r` and `R/pb.R`; the latter is also the reference for the ML
 smoothing update. See [`RS.md`](RS.md) and
 [`SMOOTHS.md`](SMOOTHS.md) for the equations and current scope.
+
+The target-EDF fixture compares final numerical results rather than requiring
+the same outer iteration count. R's finite-tolerance `uniroot()` updates can
+produce a longer RS convergence path even when the final fit agrees.

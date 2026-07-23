@@ -30,6 +30,12 @@ lambda  = sigma^2 / max(tau^2, 1e-7).
 `lambda` is clipped to `[1e-7, 1e7]` and iterated from the default starting
 value 10. These equations and safeguards follow `gamlss.pb()`.
 
+Alternatively, `degrees_of_freedom` selects `lambda` by inverting the
+hat-matrix trace on the same log-lambda interval used by R. Its semantics match
+the `df` argument of `pb()`: the requested value is the nonlinear degrees of
+freedom, and two unpenalized dimensions are added to obtain the target total
+EDF.
+
 ## Example
 
 ```python
@@ -82,10 +88,18 @@ To keep `lambda` fixed, pass it explicitly:
 term = PSpline.from_data(x, smoothing_parameter=12.0)
 ```
 
+To request the equivalent of `pb(x, df=3)`:
+
+```python
+term = PSpline.from_data(x, degrees_of_freedom=3.0)
+# The target total EDF is 5.
+```
+
+`smoothing_parameter` and `degrees_of_freedom` are mutually exclusive.
+
 ## Current limitations
 
-- GAIC, GCV, and target-EDF selection are not implemented; automatic selection
-  currently supports ML only.
+- GAIC and GCV selection are not implemented.
 - Only one-dimensional, equally spaced P-spline bases are available.
 - Standard errors and covariance matrices are not available.
 - Automatic smoothing selection is available through `fit_rs()`; joint

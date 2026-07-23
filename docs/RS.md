@@ -57,3 +57,9 @@ A third fixture omits `lambda` and uses the variance-component ML update from
 `pb()`. TorchGAMLSS matches the estimated smoothing parameter, effective
 degrees of freedom, coefficients, fitted values, global deviance, and four
 outer RS cycles.
+
+A fourth fixture requests `pb(x, df=3)`. Following the R convention, this
+means three nonlinear degrees of freedom and a target total EDF of five. The
+final smoothing parameter, EDF, coefficients, fitted values, and deviance
+match R. TorchGAMLSS solves the EDF root more stably, so its number of outer
+RS cycles can differ from R for very tight convergence tolerances.

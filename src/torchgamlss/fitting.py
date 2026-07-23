@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import math
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,8 @@ class RSControl:
     max_backfitting_iterations: int = 30
     smoothing_tolerance: float = 1e-7
     max_smoothing_iterations: int = 50
+    edf_tolerance: float = 1.220703125e-4
+    max_edf_iterations: int = 1000
     step: float = 1.0
     autostep: bool = True
     deviance_tolerance: float = float("inf")
@@ -37,6 +40,7 @@ class RSControl:
             or self.inner_tolerance <= 0
             or self.backfitting_tolerance <= 0
             or self.smoothing_tolerance <= 0
+            or self.edf_tolerance <= 0
         ):
             raise ValueError("RS tolerances must be positive")
         if (
@@ -44,6 +48,7 @@ class RSControl:
             or self.max_inner_iterations < 1
             or self.max_backfitting_iterations < 1
             or self.max_smoothing_iterations < 1
+            or self.max_edf_iterations < 1
         ):
             raise ValueError("RS iteration limits must be at least 1")
         if not 0 < self.step <= 1:
@@ -500,23 +505,36 @@ def _fit_smooth_term(
     control: RSControl,
 ) -> _SmoothFitResult:
     if term.estimates_smoothing_parameter:
-        if term.smoothing_method != "ML":
-            raise NotImplementedError(
-                f"Unsupported smoothing method: {term.smoothing_method!r}"
-            )
-        if starting_smoothing_parameter <= 1e-7 or (
-            starting_smoothing_parameter >= 1e7
-        ):
-            smoothing_parameter = min(max(starting_smoothing_parameter, 1e-7), 1e7)
-        else:
-            return _estimate_ml_smoothing_parameter(
+        if term.smoothing_method == "DF":
+            target_edf = term.target_effective_degrees_of_freedom
+            if target_edf is None:
+                raise RuntimeError("EDF smoothing selection requires a target EDF")
+            return _select_smoothing_parameter_for_edf(
                 basis,
                 response,
                 weights,
                 term.penalty_matrix(),
-                term.penalty_nullity,
-                starting_smoothing_parameter,
+                target_edf,
                 control,
+            )
+        if term.smoothing_method == "ML":
+            if starting_smoothing_parameter <= 1e-7 or (
+                starting_smoothing_parameter >= 1e7
+            ):
+                smoothing_parameter = min(max(starting_smoothing_parameter, 1e-7), 1e7)
+            else:
+                return _estimate_ml_smoothing_parameter(
+                    basis,
+                    response,
+                    weights,
+                    term.penalty_matrix(),
+                    term.penalty_nullity,
+                    starting_smoothing_parameter,
+                    control,
+                )
+        else:
+            raise NotImplementedError(
+                f"Unsupported smoothing method: {term.smoothing_method!r}"
             )
     else:
         smoothing_parameter = starting_smoothing_parameter
@@ -537,6 +555,124 @@ def _fit_smooth_term(
         effective_degrees_of_freedom=float(edf),
         smoothing_iterations=0,
     )
+
+
+def _select_smoothing_parameter_for_edf(
+    basis: Tensor,
+    response: Tensor,
+    weights: Tensor,
+    penalty: Tensor,
+    target_effective_degrees_of_freedom: float,
+    control: RSControl,
+) -> _SmoothFitResult:
+    """Invert the P-spline hat-matrix trace as in ``pb(x, df=...)``."""
+
+    def difference(log_smoothing_parameter: float) -> float:
+        edf = _effective_degrees_of_freedom(
+            basis,
+            weights,
+            math.exp(log_smoothing_parameter),
+            penalty,
+        )
+        return float(edf) - target_effective_degrees_of_freedom
+
+    lower = -30.0
+    upper = 30.0
+    lower_difference = difference(lower)
+    upper_difference = difference(upper)
+    iterations = 0
+
+    if lower_difference * upper_difference > 0:
+        log_smoothing_parameter = upper
+    else:
+        log_smoothing_parameter, iterations = _brent_root(
+            difference,
+            lower,
+            upper,
+            lower_difference,
+            upper_difference,
+            tolerance=control.edf_tolerance,
+            max_iterations=control.max_edf_iterations,
+        )
+
+    smoothing_parameter = math.exp(log_smoothing_parameter)
+    coefficient = _penalized_least_squares(
+        basis, response, weights, smoothing_parameter, penalty
+    )
+    edf = _effective_degrees_of_freedom(basis, weights, smoothing_parameter, penalty)
+    return _SmoothFitResult(
+        coefficient=coefficient,
+        smoothing_parameter=smoothing_parameter,
+        effective_degrees_of_freedom=float(edf),
+        smoothing_iterations=iterations,
+    )
+
+
+def _brent_root(
+    function: Callable[[float], float],
+    lower: float,
+    upper: float,
+    lower_value: float,
+    upper_value: float,
+    *,
+    tolerance: float,
+    max_iterations: int,
+) -> tuple[float, int]:
+    """Find a bracketed root with the Brent-Dekker method used by uniroot."""
+    if lower_value == 0:
+        return lower, 0
+    if upper_value == 0:
+        return upper, 0
+    if lower_value * upper_value > 0:
+        raise ValueError("Brent root requires values with opposite signs")
+
+    a, b = lower, upper
+    fa, fb = lower_value, upper_value
+    if abs(fa) < abs(fb):
+        a, b = b, a
+        fa, fb = fb, fa
+    c, fc = a, fa
+    d = c
+    used_bisection = True
+
+    for iteration in range(1, max_iterations + 1):
+        if fa != fc and fb != fc:
+            candidate = (
+                a * fb * fc / ((fa - fb) * (fa - fc))
+                + b * fa * fc / ((fb - fa) * (fb - fc))
+                + c * fa * fb / ((fc - fa) * (fc - fb))
+            )
+        else:
+            candidate = b - fb * (b - a) / (fb - fa)
+
+        boundary = (3.0 * a + b) / 4.0
+        outside_bracket = not (min(boundary, b) < candidate < max(boundary, b))
+        insufficient_progress = (
+            used_bisection and abs(candidate - b) >= abs(b - c) / 2.0
+        ) or (not used_bisection and abs(candidate - b) >= abs(c - d) / 2.0)
+        bracket_is_small = (used_bisection and abs(b - c) < tolerance) or (
+            not used_bisection and abs(c - d) < tolerance
+        )
+        if outside_bracket or insufficient_progress or bracket_is_small:
+            candidate = (a + b) / 2.0
+            used_bisection = True
+        else:
+            used_bisection = False
+
+        candidate_value = function(candidate)
+        d, c = c, b
+        fc = fb
+        if fa * candidate_value < 0:
+            b, fb = candidate, candidate_value
+        else:
+            a, fa = candidate, candidate_value
+        if abs(fa) < abs(fb):
+            a, b = b, a
+            fa, fb = fb, fa
+        if fb == 0 or abs(b - a) < tolerance:
+            return b, iteration
+
+    return b, max_iterations
 
 
 def _estimate_ml_smoothing_parameter(

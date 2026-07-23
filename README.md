@@ -33,6 +33,7 @@ The first vertical slice contains:
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
+- target-EDF P-splines compatible with `pb(x, df=...)`;
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for the `NO` density, links, derivatives, and a
   fitted model;

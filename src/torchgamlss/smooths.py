@@ -38,6 +38,11 @@ class SmoothTerm(nn.Module, ABC):
         return None
 
     @property
+    def target_effective_degrees_of_freedom(self) -> float | None:
+        """Return the requested total EDF, when lambda is selected by EDF."""
+        return None
+
+    @property
     def penalty_nullity(self) -> int:
         """Return the dimension of the unpenalized coefficient subspace."""
         return self.coefficients.numel() - self.penalty_matrix().shape[0]
@@ -75,8 +80,8 @@ class SmoothTerm(nn.Module, ABC):
 class PSpline(SmoothTerm):
     """Eilers-Marx P-spline with an equally spaced B-spline basis.
 
-    The basis, difference penalty, and optional ML smoothing update follow
-    ``gamlss::pb()``.
+    The basis, difference penalty, ML smoothing update, and target-EDF mode
+    follow ``gamlss::pb()``.
     """
 
     def __init__(
@@ -85,6 +90,7 @@ class PSpline(SmoothTerm):
         upper_bound: float,
         smoothing_parameter: float | None = None,
         *,
+        degrees_of_freedom: float | None = None,
         initial_smoothing_parameter: float = 10.0,
         smoothing_method: str = "ML",
         intervals: int = 20,
@@ -103,6 +109,15 @@ class PSpline(SmoothTerm):
                 raise ValueError("smoothing_parameter must be finite")
             if smoothing_parameter < 0:
                 raise ValueError("smoothing_parameter must be non-negative")
+        if smoothing_parameter is not None and degrees_of_freedom is not None:
+            raise ValueError(
+                "Specify either smoothing_parameter or degrees_of_freedom, not both"
+            )
+        if degrees_of_freedom is not None:
+            if not math.isfinite(degrees_of_freedom):
+                raise ValueError("degrees_of_freedom must be finite")
+            if degrees_of_freedom < 0:
+                raise ValueError("degrees_of_freedom must be non-negative")
         if not math.isfinite(initial_smoothing_parameter):
             raise ValueError("initial_smoothing_parameter must be finite")
         if initial_smoothing_parameter <= 0:
@@ -121,6 +136,10 @@ class PSpline(SmoothTerm):
         basis_size = intervals + degree
         if penalty_order >= basis_size:
             raise ValueError("penalty_order must be smaller than the basis size")
+        if degrees_of_freedom is not None and degrees_of_freedom >= basis_size - 2:
+            raise ValueError(
+                "degrees_of_freedom must be smaller than basis size minus 2"
+            )
 
         data_range = upper_bound - lower_bound
         left = lower_bound - 0.01 * data_range
@@ -153,7 +172,12 @@ class PSpline(SmoothTerm):
         self.degree = degree
         self.penalty_order = penalty_order
         self._estimates_smoothing_parameter = smoothing_parameter is None
-        self._smoothing_method = smoothing_method
+        self._smoothing_method = (
+            "DF" if degrees_of_freedom is not None else smoothing_method
+        )
+        self._target_effective_degrees_of_freedom = (
+            None if degrees_of_freedom is None else float(degrees_of_freedom + 2)
+        )
         smoothing_value = (
             initial_smoothing_parameter
             if smoothing_parameter is None
@@ -176,6 +200,7 @@ class PSpline(SmoothTerm):
         covariate: Tensor,
         smoothing_parameter: float | None = None,
         *,
+        degrees_of_freedom: float | None = None,
         initial_smoothing_parameter: float = 10.0,
         smoothing_method: str = "ML",
         intervals: int = 20,
@@ -207,6 +232,7 @@ class PSpline(SmoothTerm):
             float(covariate.min()),
             float(covariate.max()),
             smoothing_parameter,
+            degrees_of_freedom=degrees_of_freedom,
             initial_smoothing_parameter=initial_smoothing_parameter,
             smoothing_method=smoothing_method,
             intervals=effective_intervals,
@@ -227,6 +253,10 @@ class PSpline(SmoothTerm):
     @property
     def smoothing_method(self) -> str | None:
         return self._smoothing_method if self.estimates_smoothing_parameter else None
+
+    @property
+    def target_effective_degrees_of_freedom(self) -> float | None:
+        return self._target_effective_degrees_of_freedom
 
     def _set_fitted_smoothing_parameter(self, value: float) -> None:
         if not math.isfinite(value) or value < 0:
