@@ -30,6 +30,8 @@ class RSControl:
     max_smoothing_iterations: int = 50
     edf_tolerance: float = 1.220703125e-4
     max_edf_iterations: int = 1000
+    criterion_tolerance: float = 1e-8
+    max_criterion_iterations: int = 100
     step: float = 1.0
     autostep: bool = True
     deviance_tolerance: float = float("inf")
@@ -41,6 +43,7 @@ class RSControl:
             or self.backfitting_tolerance <= 0
             or self.smoothing_tolerance <= 0
             or self.edf_tolerance <= 0
+            or self.criterion_tolerance <= 0
         ):
             raise ValueError("RS tolerances must be positive")
         if (
@@ -49,6 +52,7 @@ class RSControl:
             or self.max_backfitting_iterations < 1
             or self.max_smoothing_iterations < 1
             or self.max_edf_iterations < 1
+            or self.max_criterion_iterations < 1
         ):
             raise ValueError("RS iteration limits must be at least 1")
         if not 0 < self.step <= 1:
@@ -517,6 +521,17 @@ def _fit_smooth_term(
                 target_edf,
                 control,
             )
+        if term.smoothing_method in {"GAIC", "GCV"}:
+            return _select_smoothing_parameter_by_criterion(
+                basis,
+                response,
+                weights,
+                term.penalty_matrix(),
+                method=term.smoothing_method,
+                criterion_penalty=term.criterion_penalty,
+                starting_smoothing_parameter=starting_smoothing_parameter,
+                control=control,
+            )
         if term.smoothing_method == "ML":
             if starting_smoothing_parameter <= 1e-7 or (
                 starting_smoothing_parameter >= 1e7
@@ -555,6 +570,135 @@ def _fit_smooth_term(
         effective_degrees_of_freedom=float(edf),
         smoothing_iterations=0,
     )
+
+
+def _select_smoothing_parameter_by_criterion(
+    basis: Tensor,
+    response: Tensor,
+    weights: Tensor,
+    penalty: Tensor,
+    *,
+    method: str,
+    criterion_penalty: float,
+    starting_smoothing_parameter: float,
+    control: RSControl,
+) -> _SmoothFitResult:
+    """Minimize the local GAIC or GCV criterion used by ``gamlss.pb()``."""
+
+    def objective(log_smoothing_parameter: float) -> float:
+        smoothing_parameter = math.exp(log_smoothing_parameter)
+        coefficient = _penalized_least_squares(
+            basis, response, weights, smoothing_parameter, penalty
+        )
+        fitted = basis @ coefficient
+        edf = _effective_degrees_of_freedom(
+            basis, weights, smoothing_parameter, penalty
+        )
+        residual_sum_of_squares = float((weights * (response - fitted).square()).sum())
+        if method == "GAIC":
+            return residual_sum_of_squares + criterion_penalty * float(edf)
+        denominator = basis.shape[0] - criterion_penalty * float(edf)
+        if denominator == 0:
+            return float("inf")
+        return basis.shape[0] * residual_sum_of_squares / denominator**2
+
+    log_smoothing_parameter, iterations = _brent_minimize(
+        objective,
+        math.log(1e-7),
+        math.log(1e7),
+        initial=math.log(min(max(starting_smoothing_parameter, 1e-7), 1e7)),
+        tolerance=control.criterion_tolerance,
+        max_iterations=control.max_criterion_iterations,
+    )
+    smoothing_parameter = math.exp(log_smoothing_parameter)
+    coefficient = _penalized_least_squares(
+        basis, response, weights, smoothing_parameter, penalty
+    )
+    edf = _effective_degrees_of_freedom(basis, weights, smoothing_parameter, penalty)
+    return _SmoothFitResult(
+        coefficient=coefficient,
+        smoothing_parameter=smoothing_parameter,
+        effective_degrees_of_freedom=float(edf),
+        smoothing_iterations=iterations,
+    )
+
+
+def _brent_minimize(
+    function: Callable[[float], float],
+    lower: float,
+    upper: float,
+    *,
+    initial: float,
+    tolerance: float,
+    max_iterations: int,
+) -> tuple[float, int]:
+    """Bounded Brent minimization with a caller-supplied starting value."""
+    golden_complement = (3.0 - math.sqrt(5.0)) / 2.0
+    x = w = v = min(max(initial, lower), upper)
+    x_value = w_value = v_value = function(x)
+    step = previous_step = 0.0
+
+    for iteration in range(1, max_iterations + 1):
+        midpoint = (lower + upper) / 2.0
+        local_tolerance = tolerance * abs(x) + 1e-12
+        doubled_tolerance = 2.0 * local_tolerance
+        if abs(x - midpoint) <= doubled_tolerance - (upper - lower) / 2.0:
+            return x, iteration
+
+        if abs(previous_step) > local_tolerance:
+            first = (x - w) * (x_value - v_value)
+            second = (x - v) * (x_value - w_value)
+            numerator = (x - v) * second - (x - w) * first
+            denominator = 2.0 * (second - first)
+            if denominator > 0:
+                numerator = -numerator
+            denominator = abs(denominator)
+            old_previous_step = previous_step
+            previous_step = step
+            if (
+                abs(numerator) < abs(0.5 * denominator * old_previous_step)
+                and numerator > denominator * (lower - x)
+                and numerator < denominator * (upper - x)
+            ):
+                step = numerator / denominator
+                candidate = x + step
+                if candidate - lower < doubled_tolerance or (
+                    upper - candidate < doubled_tolerance
+                ):
+                    step = math.copysign(local_tolerance, midpoint - x)
+            else:
+                previous_step = lower - x if x >= midpoint else upper - x
+                step = golden_complement * previous_step
+        else:
+            previous_step = lower - x if x >= midpoint else upper - x
+            step = golden_complement * previous_step
+
+        candidate = (
+            x + step
+            if abs(step) >= local_tolerance
+            else x + math.copysign(local_tolerance, step)
+        )
+        candidate_value = function(candidate)
+        if candidate_value <= x_value:
+            if candidate >= x:
+                lower = x
+            else:
+                upper = x
+            v, w, x = w, x, candidate
+            v_value, w_value, x_value = w_value, x_value, candidate_value
+        else:
+            if candidate < x:
+                lower = candidate
+            else:
+                upper = candidate
+            if candidate_value <= w_value or w == x:
+                v, w = w, candidate
+                v_value, w_value = w_value, candidate_value
+            elif candidate_value <= v_value or v == x or v == w:
+                v = candidate
+                v_value = candidate_value
+
+    return x, max_iterations
 
 
 def _select_smoothing_parameter_for_edf(

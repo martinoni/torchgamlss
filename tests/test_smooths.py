@@ -106,12 +106,28 @@ def test_automatic_pspline_smoothing_state_is_serialized():
     assert restored.smoothing_parameter == pytest.approx(3.25)
 
 
+@pytest.mark.parametrize("method", ["GAIC", "GCV"])
+def test_pspline_supports_criterion_smoothing_selection(method):
+    covariate = torch.linspace(-1.0, 1.0, 30, dtype=torch.float64)
+    term = PSpline.from_data(
+        covariate,
+        smoothing_method=method,
+        criterion_penalty=3.0,
+    )
+
+    assert term.estimates_smoothing_parameter
+    assert term.smoothing_method == method
+    assert term.criterion_penalty == pytest.approx(3.0)
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
         {"initial_smoothing_parameter": 0.0},
         {"initial_smoothing_parameter": float("inf")},
         {"smoothing_method": "REML"},
+        {"criterion_penalty": 0.0},
+        {"criterion_penalty": float("inf")},
     ],
 )
 def test_invalid_automatic_smoothing_configuration_is_rejected(kwargs):

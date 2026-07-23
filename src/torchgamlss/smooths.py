@@ -43,6 +43,11 @@ class SmoothTerm(nn.Module, ABC):
         return None
 
     @property
+    def criterion_penalty(self) -> float:
+        """Return the GAIC/GCV effective-degrees-of-freedom multiplier."""
+        return 2.0
+
+    @property
     def penalty_nullity(self) -> int:
         """Return the dimension of the unpenalized coefficient subspace."""
         return self.coefficients.numel() - self.penalty_matrix().shape[0]
@@ -80,8 +85,8 @@ class SmoothTerm(nn.Module, ABC):
 class PSpline(SmoothTerm):
     """Eilers-Marx P-spline with an equally spaced B-spline basis.
 
-    The basis, difference penalty, ML smoothing update, and target-EDF mode
-    follow ``gamlss::pb()``.
+    The basis, difference penalty, and ML, target-EDF, GAIC, and GCV smoothing
+    selection modes follow ``gamlss::pb()``.
     """
 
     def __init__(
@@ -93,6 +98,7 @@ class PSpline(SmoothTerm):
         degrees_of_freedom: float | None = None,
         initial_smoothing_parameter: float = 10.0,
         smoothing_method: str = "ML",
+        criterion_penalty: float = 2.0,
         intervals: int = 20,
         degree: int = 3,
         penalty_order: int = 2,
@@ -122,8 +128,10 @@ class PSpline(SmoothTerm):
             raise ValueError("initial_smoothing_parameter must be finite")
         if initial_smoothing_parameter <= 0:
             raise ValueError("initial_smoothing_parameter must be positive")
-        if smoothing_method != "ML":
-            raise ValueError("smoothing_method currently must be 'ML'")
+        if smoothing_method not in {"ML", "GAIC", "GCV"}:
+            raise ValueError("smoothing_method must be 'ML', 'GAIC', or 'GCV'")
+        if not math.isfinite(criterion_penalty) or criterion_penalty <= 0:
+            raise ValueError("criterion_penalty must be finite and positive")
         if intervals < 1:
             raise ValueError("intervals must be at least 1")
         if degree < 1:
@@ -178,6 +186,7 @@ class PSpline(SmoothTerm):
         self._target_effective_degrees_of_freedom = (
             None if degrees_of_freedom is None else float(degrees_of_freedom + 2)
         )
+        self._criterion_penalty = float(criterion_penalty)
         smoothing_value = (
             initial_smoothing_parameter
             if smoothing_parameter is None
@@ -203,6 +212,7 @@ class PSpline(SmoothTerm):
         degrees_of_freedom: float | None = None,
         initial_smoothing_parameter: float = 10.0,
         smoothing_method: str = "ML",
+        criterion_penalty: float = 2.0,
         intervals: int = 20,
         degree: int = 3,
         penalty_order: int = 2,
@@ -235,6 +245,7 @@ class PSpline(SmoothTerm):
             degrees_of_freedom=degrees_of_freedom,
             initial_smoothing_parameter=initial_smoothing_parameter,
             smoothing_method=smoothing_method,
+            criterion_penalty=criterion_penalty,
             intervals=effective_intervals,
             degree=degree,
             penalty_order=penalty_order,
@@ -257,6 +268,10 @@ class PSpline(SmoothTerm):
     @property
     def target_effective_degrees_of_freedom(self) -> float | None:
         return self._target_effective_degrees_of_freedom
+
+    @property
+    def criterion_penalty(self) -> float:
+        return self._criterion_penalty
 
     def _set_fitted_smoothing_parameter(self, value: float) -> None:
         if not math.isfinite(value) or value < 0:

@@ -31,6 +31,9 @@ The committed fixtures cover:
 - a target-EDF fit using `mu ~ pb(x, df=3)`. The R convention adds the two
   unpenalized dimensions, producing total EDF 5; the fixture covers the
   selected smoothing parameter, coefficients, fitted values, and deviance.
+- local GAIC and GCV fits using `pb.control(method=..., k=2)`, including
+  selected smoothing parameters, effective degrees of freedom, coefficients,
+  fitted values, and deviances.
 
 The expected sigma-sigma derivative supplied by `NO()` is Fisher-scoring
 information, not the observation-wise second derivative of the normal log
@@ -62,10 +65,15 @@ changing files and compares them with explicit tolerances.
 
 The RS implementation follows the working-response and Fisher-weight updates
 in `gamlss` 5.5-0, `R/gamlss-5.R`. Additive backfitting and P-splines
-follow `R/add.r` and `R/pb.R`; the latter is also the reference for the ML
-smoothing update. See [`RS.md`](RS.md) and
+follow `R/add.r` and `R/pb.R`; the latter is also the reference for ML,
+target-EDF, GAIC, and GCV smoothing selection. See [`RS.md`](RS.md) and
 [`SMOOTHS.md`](SMOOTHS.md) for the equations and current scope.
 
 The target-EDF fixture compares final numerical results rather than requiring
 the same outer iteration count. R's finite-tolerance `uniroot()` updates can
 produce a longer RS convergence path even when the final fit agrees.
+
+The GAIC and GCV fixtures follow the same final-result convention.
+TorchGAMLSS uses bounded Brent minimization on `log(lambda)`, while R uses
+`nlminb()` on `lambda`; optimizer and outer-cycle counts may differ even when
+the selected smoothing parameter and final fit agree.

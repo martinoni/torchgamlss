@@ -34,14 +34,16 @@ The first vertical slice contains:
   backfitting, and effective degrees of freedom;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
 - target-EDF P-splines compatible with `pb(x, df=...)`;
+- local GAIC and GCV P-spline smoothing-parameter selection compatible with
+  `pb.control(method=...)`;
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for the `NO` density, links, derivatives, and a
   fitted model;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Formula parsing, the CG algorithm, alternative smoothing selection methods,
-inference, and diagnostics are planned work. The L-BFGS path remains a
-Torch-native numerical baseline and requires fixed smoothing parameters.
+Formula parsing, the CG algorithm, inference, and diagnostics are planned
+work. The L-BFGS path remains a Torch-native numerical baseline and requires
+fixed smoothing parameters.
 
 ## Development
 

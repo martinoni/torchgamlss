@@ -31,6 +31,20 @@ pb_df_fitted_reference_path <- file.path(
 pb_df_coefficient_reference_path <- file.path(
   reference_dir, "no_pb_df_coefficient_reference.csv"
 )
+pb_gaic_reference_path <- file.path(reference_dir, "no_pb_gaic_reference.csv")
+pb_gaic_fitted_reference_path <- file.path(
+  reference_dir, "no_pb_gaic_fitted_reference.csv"
+)
+pb_gaic_coefficient_reference_path <- file.path(
+  reference_dir, "no_pb_gaic_coefficient_reference.csv"
+)
+pb_gcv_reference_path <- file.path(reference_dir, "no_pb_gcv_reference.csv")
+pb_gcv_fitted_reference_path <- file.path(
+  reference_dir, "no_pb_gcv_fitted_reference.csv"
+)
+pb_gcv_coefficient_reference_path <- file.path(
+  reference_dir, "no_pb_gcv_coefficient_reference.csv"
+)
 
 family <- NO()
 cases <- read.csv(cases_path)
@@ -204,6 +218,74 @@ pb_df_coefficient_reference <- data.frame(
   coefficient = drop(pb_df_smooth$coef)
 )
 
+pb_gaic_fit <- gamlss(
+  y ~ pb(x, control = pb.control(method = "GAIC", k = 2)),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = RS(),
+  data = pb_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-10, cyc = 200, bf.tol = 1e-10, bf.cyc = 200
+  )
+)
+pb_gaic_smooth <- getSmo(pb_gaic_fit, parameter = "mu", which = 1)
+pb_gaic_reference <- data.frame(
+  mu_intercept = unname(coef(pb_gaic_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(pb_gaic_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(pb_gaic_fit, what = "sigma")[[1]]),
+  criterion_penalty = 2,
+  smoothing_parameter = unname(pb_gaic_smooth$lambda),
+  smooth_edf = unname(pb_gaic_smooth$edf),
+  global_deviance = unname(deviance(pb_gaic_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pb_gaic_fit)),
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pb_gaic_fitted_reference <- data.frame(
+  mu = fitted(pb_gaic_fit, what = "mu"),
+  sigma = fitted(pb_gaic_fit, what = "sigma"),
+  mu_linear_predictor = pb_gaic_fit$mu.lp,
+  mu_smooth = drop(pb_gaic_fit$mu.s[, 1])
+)
+pb_gaic_coefficient_reference <- data.frame(
+  coefficient = drop(pb_gaic_smooth$coef)
+)
+
+pb_gcv_fit <- gamlss(
+  y ~ pb(x, control = pb.control(method = "GCV", k = 2)),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = RS(),
+  data = pb_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-10, cyc = 200, bf.tol = 1e-10, bf.cyc = 200
+  )
+)
+pb_gcv_smooth <- getSmo(pb_gcv_fit, parameter = "mu", which = 1)
+pb_gcv_reference <- data.frame(
+  mu_intercept = unname(coef(pb_gcv_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(pb_gcv_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(pb_gcv_fit, what = "sigma")[[1]]),
+  criterion_penalty = 2,
+  smoothing_parameter = unname(pb_gcv_smooth$lambda),
+  smooth_edf = unname(pb_gcv_smooth$edf),
+  global_deviance = unname(deviance(pb_gcv_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pb_gcv_fit)),
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pb_gcv_fitted_reference <- data.frame(
+  mu = fitted(pb_gcv_fit, what = "mu"),
+  sigma = fitted(pb_gcv_fit, what = "sigma"),
+  mu_linear_predictor = pb_gcv_fit$mu.lp,
+  mu_smooth = drop(pb_gcv_fit$mu.s[, 1])
+)
+pb_gcv_coefficient_reference <- data.frame(
+  coefficient = drop(pb_gcv_smooth$coef)
+)
+
 assert_close <- function(actual, expected_path, tolerance) {
   expected <- read.csv(expected_path, check.names = FALSE)
   if (!identical(names(actual), names(expected))) {
@@ -223,6 +305,22 @@ assert_close <- function(actual, expected_path, tolerance) {
       !identical(actual[character_columns], expected[character_columns])) {
     stop("Reference package versions differ in ", expected_path)
   }
+}
+
+write_csv_lf <- function(data, path) {
+  connection <- file(path, open = "wb")
+  on.exit(close(connection))
+  write.table(
+    data,
+    connection,
+    row.names = FALSE,
+    col.names = TRUE,
+    sep = ",",
+    quote = FALSE,
+    eol = "\n",
+    na = "NA",
+    dec = "."
+  )
 }
 
 if (check_only) {
@@ -254,6 +352,26 @@ if (check_only) {
     pb_df_coefficient_reference,
     pb_df_coefficient_reference_path,
     tolerance = 1e-7
+  )
+  assert_close(pb_gaic_reference, pb_gaic_reference_path, tolerance = 1e-6)
+  assert_close(
+    pb_gaic_fitted_reference,
+    pb_gaic_fitted_reference_path,
+    tolerance = 1e-6
+  )
+  assert_close(
+    pb_gaic_coefficient_reference,
+    pb_gaic_coefficient_reference_path,
+    tolerance = 1e-6
+  )
+  assert_close(pb_gcv_reference, pb_gcv_reference_path, tolerance = 1e-6)
+  assert_close(
+    pb_gcv_fitted_reference, pb_gcv_fitted_reference_path, tolerance = 1e-6
+  )
+  assert_close(
+    pb_gcv_coefficient_reference,
+    pb_gcv_coefficient_reference_path,
+    tolerance = 1e-6
   )
   message("R reference parity checks passed")
 } else {
@@ -287,9 +405,7 @@ if (check_only) {
     row.names = FALSE,
     quote = FALSE
   )
-  write.csv(
-    pb_df_reference, pb_df_reference_path, row.names = FALSE, quote = FALSE
-  )
+  write_csv_lf(pb_df_reference, pb_df_reference_path)
   write.csv(
     pb_df_fitted_reference,
     pb_df_fitted_reference_path,
@@ -301,6 +417,21 @@ if (check_only) {
     pb_df_coefficient_reference_path,
     row.names = FALSE,
     quote = FALSE
+  )
+  write_csv_lf(pb_gaic_reference, pb_gaic_reference_path)
+  write_csv_lf(
+    pb_gaic_fitted_reference,
+    pb_gaic_fitted_reference_path
+  )
+  write_csv_lf(
+    pb_gaic_coefficient_reference,
+    pb_gaic_coefficient_reference_path
+  )
+  write_csv_lf(pb_gcv_reference, pb_gcv_reference_path)
+  write_csv_lf(pb_gcv_fitted_reference, pb_gcv_fitted_reference_path)
+  write_csv_lf(
+    pb_gcv_coefficient_reference,
+    pb_gcv_coefficient_reference_path
   )
   message("Wrote R reference fixtures to ", reference_dir)
 }

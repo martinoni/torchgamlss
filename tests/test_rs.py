@@ -389,6 +389,94 @@ def test_rs_target_edf_pspline_matches_r_gamlss_pb():
     )
 
 
+@pytest.mark.parametrize(
+    ("method", "fixture_prefix"),
+    [("GAIC", "no_pb_gaic"), ("GCV", "no_pb_gcv")],
+)
+def test_rs_criterion_pspline_matches_r_gamlss_pb(method, fixture_prefix):
+    rows = _read_rows("no_pb_fit_data.csv")
+    reference = _read_rows(f"{fixture_prefix}_reference.csv")[0]
+    fitted_reference = _read_rows(f"{fixture_prefix}_fitted_reference.csv")
+    coefficient_reference = _read_rows(f"{fixture_prefix}_coefficient_reference.csv")
+    x = _column(rows, "x")
+    response = _column(rows, "y")
+    term = PSpline.from_data(
+        x,
+        smoothing_method=method,
+        criterion_penalty=float(reference["criterion_penalty"]),
+    )
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        smooth_terms={"mu": {"x": term}},
+        dtype=torch.float64,
+    )
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x)),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+    smooth_covariates = {"mu": {"x": x}}
+
+    result = model.fit_rs(
+        response,
+        design,
+        smooth_covariates=smooth_covariates,
+        control=RSControl(
+            outer_tolerance=1e-8,
+            max_outer_iterations=200,
+            inner_tolerance=1e-10,
+            max_inner_iterations=200,
+            backfitting_tolerance=1e-10,
+            max_backfitting_iterations=200,
+        ),
+    )
+
+    assert result.converged
+    assert result.smoothing_iterations["mu"]["x"] > 0
+    torch.testing.assert_close(
+        model.coefficients["mu"],
+        torch.tensor(
+            [float(reference["mu_intercept"]), float(reference["mu_x"])],
+            dtype=torch.float64,
+        ),
+        rtol=5e-7,
+        atol=5e-7,
+    )
+    torch.testing.assert_close(
+        model.coefficients["sigma"],
+        torch.tensor([float(reference["sigma_intercept"])], dtype=torch.float64),
+        rtol=5e-7,
+        atol=5e-7,
+    )
+    torch.testing.assert_close(
+        term.coefficients,
+        _column(coefficient_reference, "coefficient"),
+        rtol=5e-7,
+        atol=5e-7,
+    )
+    predictors = model.linear_predictors(design, smooth_covariates=smooth_covariates)
+    parameters = model.family.parameters_from_predictors(predictors)
+    torch.testing.assert_close(
+        parameters["mu"],
+        _column(fitted_reference, "mu"),
+        rtol=5e-7,
+        atol=5e-7,
+    )
+    expected_lambda = float(reference["smoothing_parameter"])
+    assert term.smoothing_parameter == pytest.approx(
+        expected_lambda, rel=3e-7, abs=5e-6
+    )
+    assert result.smoothing_parameters["mu"]["x"] == pytest.approx(
+        expected_lambda, rel=3e-7, abs=5e-6
+    )
+    assert result.smooth_effective_degrees_of_freedom["mu"]["x"] == pytest.approx(
+        float(reference["smooth_edf"]), rel=3e-7, abs=3e-7
+    )
+    assert result.global_deviance == pytest.approx(
+        float(reference["global_deviance"]), rel=1e-8, abs=5e-7
+    )
+
+
 def test_rs_supports_multiple_smooth_terms_for_one_parameter():
     x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
     z = torch.cos(torch.linspace(0.0, 3.0 * torch.pi, 80, dtype=torch.float64))
@@ -435,6 +523,8 @@ def test_rs_supports_multiple_smooth_terms_for_one_parameter():
         {"max_smoothing_iterations": 0},
         {"edf_tolerance": 0.0},
         {"max_edf_iterations": 0},
+        {"criterion_tolerance": 0.0},
+        {"max_criterion_iterations": 0},
         {"step": 0.0},
         {"step": 1.1},
         {"deviance_tolerance": -1.0},

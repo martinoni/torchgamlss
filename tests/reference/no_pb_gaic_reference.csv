@@ -1,0 +1,2 @@
+mu_intercept,mu_x,sigma_intercept,criterion_penalty,smoothing_parameter,smooth_edf,global_deviance,negative_log_likelihood,gamlss_version,gamlss_dist_version
+0.69685457099222,1.80119146846637,-2.10229907860609,2,21.7625103984756,6.59738583605179,-54.6688436321136,-27.3344218160568,5.5.0,6.1.1

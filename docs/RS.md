@@ -2,7 +2,7 @@
 
 TorchGAMLSS includes an initial translation of the Rigby-Stasinopoulos (RS)
 algorithm used by the R `gamlss` package. It fits linear terms and fixed-lambda
-or ML-selected P-splines through additive backfitting.
+or automatically selected P-splines through additive backfitting.
 
 ## Working iteration
 
@@ -29,10 +29,11 @@ global deviance.
 
 ## Controls
 
-`RSControl` exposes separate outer, inner, backfitting, and smoothing-update
-tolerances and iteration limits, a step length, automatic step halving, and an
-allowed deviance increase. Its defaults match `gamlss.control()`,
-`glim.control()`, and `pb()` where applicable.
+`RSControl` exposes separate outer, inner, backfitting, ML smoothing-update,
+target-EDF root, and GAIC/GCV minimization tolerances and iteration limits, a
+step length, automatic step halving, and an allowed deviance increase. Its
+defaults match `gamlss.control()`, `glim.control()`, and `pb()` where
+applicable.
 
 ## Verified scope
 
@@ -63,3 +64,9 @@ means three nonlinear degrees of freedom and a target total EDF of five. The
 final smoothing parameter, EDF, coefficients, fitted values, and deviance
 match R. TorchGAMLSS solves the EDF root more stably, so its number of outer
 RS cycles can differ from R for very tight convergence tolerances.
+
+Fifth and sixth fixtures select `lambda` using local GAIC and GCV with
+`k=2`. TorchGAMLSS matches the R smoothing parameters, EDF, coefficients,
+fitted values, and deviances. The bounded Brent optimizer and R's `nlminb()`
+can take different optimization and outer-RS paths, so parity is defined by
+the final numerical fit rather than identical iteration counts.

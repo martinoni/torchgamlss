@@ -31,7 +31,7 @@ as supported.
 - [x] P-splines with fixed smoothing parameters
 - [x] Automatic ML smoothing-parameter selection
 - [x] Target-EDF smoothing-parameter selection
-- [ ] GAIC and GCV smoothing-parameter selection
+- [x] GAIC and GCV smoothing-parameter selection
 - [x] Effective degrees of freedom for fixed-lambda P-splines
 
 ## Phase 3 — compatibility and diagnostics

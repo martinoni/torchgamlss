@@ -36,6 +36,20 @@ the `df` argument of `pb()`: the requested value is the nonlinear degrees of
 freedom, and two unpenalized dimensions are added to obtain the target total
 EDF.
 
+Local GAIC and GCV selection are also available. For penalty multiplier `k`,
+weighted residual sum of squares `RSS`, sample size `n`, and effective degrees
+of freedom `EDF`, they minimize
+
+```text
+GAIC(lambda) = RSS(lambda) + k EDF(lambda)
+GCV(lambda)  = n RSS(lambda) / (n - k EDF(lambda))^2.
+```
+
+The default `k=2`, bounds `[1e-7, 1e7]`, and local working-response criteria
+match `pb.control()`. TorchGAMLSS uses bounded Brent minimization on
+`log(lambda)` instead of R's `nlminb()` on `lambda`; both target the same
+criterion minimum.
+
 ## Example
 
 ```python
@@ -95,11 +109,21 @@ term = PSpline.from_data(x, degrees_of_freedom=3.0)
 # The target total EDF is 5.
 ```
 
+To select `lambda` with local GAIC or GCV:
+
+```python
+gaic_term = PSpline.from_data(
+    x, smoothing_method="GAIC", criterion_penalty=2.0
+)
+gcv_term = PSpline.from_data(
+    x, smoothing_method="GCV", criterion_penalty=2.0
+)
+```
+
 `smoothing_parameter` and `degrees_of_freedom` are mutually exclusive.
 
 ## Current limitations
 
-- GAIC and GCV selection are not implemented.
 - Only one-dimensional, equally spaced P-spline bases are available.
 - Standard errors and covariance matrices are not available.
 - Automatic smoothing selection is available through `fit_rs()`; joint
