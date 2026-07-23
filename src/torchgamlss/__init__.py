@@ -3,9 +3,11 @@
 from torchgamlss.diagnostics import ModelDiagnostics, compare_models
 from torchgamlss.families import (
     BCCG,
+    BCPE,
     BCT,
     Beta,
     BoxCoxColeGreen,
+    BoxCoxPowerExponential,
     BoxCoxT,
     Family,
     Gamma,
@@ -23,8 +25,10 @@ from torchgamlss.smooths import PSpline, SmoothTerm
 __all__ = [
     "BCCG",
     "BCT",
+    "BCPE",
     "Beta",
     "BoxCoxColeGreen",
+    "BoxCoxPowerExponential",
     "BoxCoxT",
     "Family",
     "FitResult",

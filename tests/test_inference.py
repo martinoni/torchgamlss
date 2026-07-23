@@ -7,6 +7,7 @@ import torch
 
 from torchgamlss import (
     BCCG,
+    BCPE,
     BCT,
     GAMLSS,
     Beta,
@@ -105,6 +106,18 @@ def _covariance(family: str, size: int) -> torch.Tensor:
             },
             1e-7,
         ),
+        (
+            "BCPE",
+            "bcpe",
+            BCPE(),
+            {
+                "mu": "y ~ x + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+                "nu": "~ w + offset(nu_offset)",
+                "tau": "~ 1",
+            },
+            1e-7,
+        ),
     ],
 )
 def test_full_hessian_inference_matches_r_gamlss(
@@ -125,6 +138,17 @@ def test_full_hessian_inference_matches_r_gamlss(
 
     result = model.inference_data(data, weights="weight")
     rows = _table_rows(family_code)
+    # R's optimHess uses finite differences. Its BCPE Hessian is slightly less
+    # accurate than our autograd Hessian even though the fitted coefficients
+    # agree to machine precision.
+    if family_code == "BCPE":
+        covariance_tolerances = {"rtol": 8e-3, "atol": 1e-4}
+        derived_tolerances = {"rtol": 8e-3, "atol": 2e-6}
+        p_value_tolerances = {"rtol": 2e-3, "atol": 3e-7}
+    else:
+        covariance_tolerances = {"rtol": 5e-6, "atol": 5e-7}
+        derived_tolerances = {"rtol": 5e-6, "atol": 5e-7}
+        p_value_tolerances = {"rtol": 2e-4, "atol": 3e-7}
     expected = {
         column: torch.tensor(
             [float(row[column]) for row in rows],
@@ -153,32 +177,29 @@ def test_full_hessian_inference_matches_r_gamlss(
     torch.testing.assert_close(
         result.covariance_matrix,
         _covariance(family_code, len(rows)),
-        rtol=5e-6,
-        atol=5e-7,
+        **covariance_tolerances,
     )
     torch.testing.assert_close(
         result.standard_errors,
         expected["standard_error"],
-        rtol=5e-6,
-        atol=5e-7,
+        **derived_tolerances,
     )
     torch.testing.assert_close(
         result.statistics,
         expected["statistic"],
-        rtol=1e-5,
-        atol=2e-6,
+        rtol=max(1e-5, derived_tolerances["rtol"]),
+        atol=max(2e-6, derived_tolerances["atol"]),
     )
     torch.testing.assert_close(
         result.p_values,
         expected["p_value"],
-        rtol=2e-4,
-        atol=3e-7,
+        **p_value_tolerances,
     )
     torch.testing.assert_close(
         result.confidence_intervals,
         torch.column_stack((expected["ci_lower"], expected["ci_upper"])),
-        rtol=5e-6,
-        atol=1e-6,
+        rtol=derived_tolerances["rtol"],
+        atol=max(1e-6, derived_tolerances["atol"]),
     )
     torch.testing.assert_close(
         result.correlation_matrix,

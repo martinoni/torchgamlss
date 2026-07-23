@@ -41,7 +41,7 @@ as supported.
 - [x] Deviance, AIC, AICc, GAIC, SBC/BIC, and model comparison
 - [x] Three-parameter BCCG family
 - [x] First four-parameter family: BCT
-- [ ] BCPE four-parameter family
+- [x] BCPE four-parameter family
 - [ ] R-to-Python API and numerical compatibility guide
 - [ ] Joint covariance and uncertainty for penalized smooth terms
 

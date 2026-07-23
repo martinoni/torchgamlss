@@ -119,6 +119,7 @@ determines the residual uniquely.
 The Normal, Gamma, Poisson, NBI, and Beta CDF implementations use SciPy as a
 non-differentiable numerical backend and return a tensor with the model's
 original dtype and device, so GPU inputs incur a CPU round trip. BCCG uses a
-Torch-native normal CDF, while BCT uses a differentiable Torch Student t CDF.
-Quantile residuals are a post-fit diagnostic API; callers should not rely on
-differentiation through them.
+Torch-native normal CDF, BCT uses a differentiable Torch Student t CDF, and
+BCPE uses a differentiable Torch power-exponential CDF. Quantile residuals are
+a post-fit diagnostic API; callers should not rely on differentiation through
+them.

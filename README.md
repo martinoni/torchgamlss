@@ -26,8 +26,9 @@ The current implementation contains:
 
 - identity, inverse, log, and logit links;
 - Normal (`NO`), Gamma (`GA`), Poisson (`PO`), negative-binomial type I
-  (`NBI`), Beta (`BE`), and three-parameter Box-Cox Cole-Green (`BCCG`)
-  and four-parameter Box-Cox t (`BCT`) GAMLSS families;
+  (`NBI`), Beta (`BE`), three-parameter Box-Cox Cole-Green (`BCCG`), and
+  four-parameter Box-Cox t (`BCT`) and Box-Cox power-exponential (`BCPE`)
+  families;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - likelihood weights and offsets for every distribution parameter;
@@ -78,8 +79,8 @@ conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
 P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
 parameterization. Poisson, NBI, and Beta are described in
 [`docs/FAMILIES.md`](docs/FAMILIES.md), BCCG in
-[`docs/BCCG.md`](docs/BCCG.md), BCT in [`docs/BCT.md`](docs/BCT.md), and RS
-starting values in
+[`docs/BCCG.md`](docs/BCCG.md), BCT in [`docs/BCT.md`](docs/BCT.md), and BCPE
+in [`docs/BCPE.md`](docs/BCPE.md). RS starting values are documented in
 [`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). The prediction interface
 is documented in [`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular
 formula API in [`docs/FORMULAS.md`](docs/FORMULAS.md). See

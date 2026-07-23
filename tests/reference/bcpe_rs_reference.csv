@@ -1,0 +1,2 @@
+mu_intercept,mu_x,sigma_intercept,sigma_z,nu_intercept,nu_w,tau_intercept,global_deviance,negative_log_likelihood,outer_iterations,converged,gamlss_version,gamlss_dist_version
+2.9967238576296,0.648532704549506,-1.51647049023343,0.147701828623084,0.324261893492457,0.432871515387421,0.477868034065478,413.6280562291,206.81402811455,7,TRUE,5.5.0,6.1.1

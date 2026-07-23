@@ -36,6 +36,13 @@ beta continued fraction while preserving the R parameterization, truncation,
 working scores, and limiting behavior. This translation remains under
 GPL-3.0-only.
 
+The Box-Cox power-exponential implementation and fixtures are derived from and
+tested against the BCPE family, dBCPE(), pBCPE(), and qBCPE() definitions in
+gamlss.dist 6.1-1. The differentiable power-exponential CDF uses an
+independently implemented regularized incomplete gamma calculation while
+preserving the R parameterization, truncation, working scores, and limiting
+behavior. This translation remains under GPL-3.0-only.
+
 The linear RS fitting implementation is translated from the algorithm in
 gamlss 5.5-0, R/gamlss-5.R, by Mikis Stasinopoulos, Robert Rigby, and
 contributors. The translated implementation remains under GPL-3.0-only.

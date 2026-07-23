@@ -116,11 +116,33 @@ float64 precision. For RS, the `tau` working score retains R's finite
 difference of `0.01`; autograd of the likelihood uses the differentiable CDF
 itself.
 
+## Box-Cox power-exponential family (`BCPE`)
+
+The second four-parameter slice targets `BCPE(mu, sigma, nu, tau)`. Its
+fixtures cover:
+
+- `dBCPE(..., log=TRUE)`, `pBCPE()`, and the
+  identity/log/identity/log links;
+- all four parameter scores and all ten expected second-derivative entries
+  supplied by `BCPE()`;
+- a converged weighted RS fit with separate predictors for `mu`, `sigma`, and
+  `nu`, plus an estimated `tau` intercept;
+- formula prediction, seven-coefficient full-Hessian inference, information
+  criteria, and continuous quantile residuals.
+
+The power-exponential CDF is evaluated through a differentiable regularized
+incomplete gamma implementation. Its values agree with both R and SciPy at
+float64 precision, including gradients with respect to the gamma shape. BCPE
+uses R's finite difference of `0.001` for the RS `tau` working score, while
+autograd differentiates the likelihood CDF directly. Tests also verify the
+`nu=0` log-power-exponential limit and the exact `tau=2` BCCG limit.
+
 ## Coefficient inference
 
 Inference fixtures compare TorchGAMLSS with `vcov.gamlss(type="all")` and the
 default `summary.gamlss(type="vcov")` calculations for weighted, offset models
-from the `NO`, `PO`, `NBI`, `BE`, `BCCG`, and `BCT` families. They cover:
+from the `NO`, `PO`, `NBI`, `BE`, `BCCG`, `BCT`, and `BCPE` families. They
+cover:
 
 - the full observed-Hessian covariance matrix, including cross-parameter
   entries;
@@ -135,7 +157,7 @@ documented numerical tolerance rather than bitwise equality.
 
 ## Diagnostics and quantile residuals
 
-Diagnostics fixtures cover all seven supported families and a fixed-lambda
+Diagnostics fixtures cover all eight supported families and a fixed-lambda
 Normal P-spline fit. They compare:
 
 - log likelihood and global deviance;
@@ -150,9 +172,10 @@ penalty. This reproduces `fit$df.fit` without counting the unpenalized
 polynomial subspace twice.
 
 Quantile-residual fixtures compare the `pNO`, `pGA`, `pPO`, `pNBI`, `pBE`,
-`pBCCG`, and `pBCT` CDFs and normal-score transformations. The discrete PO
-and NBI fixtures use committed uniform values inside `[F(y-1), F(y)]`, making
-the randomized Dunn-Smyth calculation exactly reproducible.
+`pBCCG`, `pBCT`, and `pBCPE` CDFs and normal-score transformations. The
+discrete PO and NBI fixtures use committed uniform values inside
+`[F(y-1), F(y)]`, making the randomized Dunn-Smyth calculation exactly
+reproducible.
 
 ## Reproducing the fixtures
 
