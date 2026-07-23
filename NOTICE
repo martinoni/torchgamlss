@@ -1,0 +1,10 @@
+TorchGAMLSS
+Copyright (C) 2026 TorchGAMLSS contributors
+
+This project is intended to translate and extend ideas and implementation
+behavior from the R packages gamlss and gamlss.dist by Mikis Stasinopoulos,
+Robert Rigby, and contributors. Those packages are distributed under the GNU
+General Public License, version 2 or version 3.
+
+TorchGAMLSS is not affiliated with or endorsed by the original authors.
+
