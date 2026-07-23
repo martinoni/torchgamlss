@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from torch import Tensor, nn
@@ -12,7 +12,8 @@ from torch.distributions import Distribution
 
 from torchgamlss.families import Family
 from torchgamlss.fitting import RSControl, RSFitResult, fit_rs
-from torchgamlss.smooths import SmoothTerm
+from torchgamlss.formula import FormulaData, FormulaEncoder
+from torchgamlss.smooths import PSpline, SmoothTerm
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class GAMLSS(nn.Module):
         *,
         smooth_terms: Mapping[str, Mapping[str, SmoothTerm]] | None = None,
         dtype: torch.dtype = torch.float64,
+        device: torch.device | str | None = None,
     ) -> None:
         super().__init__()
 
@@ -74,10 +76,11 @@ class GAMLSS(nn.Module):
         self.family = family
         self.coefficients = nn.ParameterDict(
             {
-                parameter: nn.Parameter(torch.zeros(size, dtype=dtype))
+                parameter: nn.Parameter(torch.zeros(size, dtype=dtype, device=device))
                 for parameter, size in design_sizes.items()
             }
         )
+        model_device = next(iter(self.coefficients.values())).device
         smooth_terms = smooth_terms or {}
         extra_smooth_parameters = set(smooth_terms).difference(expected)
         if extra_smooth_parameters:
@@ -93,10 +96,138 @@ class GAMLSS(nn.Module):
                     "Smooth-term names must be non-empty and contain no dots"
                 )
             if any(
-                term.coefficients.dtype != dtype for term in parameter_terms.values()
+                term.coefficients.dtype != dtype
+                or term.coefficients.device != model_device
+                for term in parameter_terms.values()
             ):
-                raise ValueError("Smooth terms must match the model dtype")
+                raise ValueError("Smooth terms must match the model dtype and device")
             self.smooth_terms[parameter] = nn.ModuleDict(dict(parameter_terms))
+        self._formula_encoder: FormulaEncoder | None = None
+
+    @classmethod
+    def from_formula(
+        cls,
+        family: Family,
+        formulas: Mapping[str, str],
+        data: Any,
+        *,
+        dtype: torch.dtype = torch.float64,
+        device: torch.device | str | None = None,
+    ) -> GAMLSS:
+        """Construct a model and fitted tabular encodings from formulas."""
+        encoder = FormulaEncoder.fit(family.parameter_names, formulas, data)
+        prepared = encoder.transform(
+            data,
+            dtype=dtype,
+            device=device,
+            include_response=True,
+        )
+        smooth_terms = {
+            parameter: {
+                spec.name: PSpline.from_data(
+                    prepared.smooth_covariates[parameter][spec.name],
+                    **dict(spec.options),
+                )
+                for spec in encoder.smooth_specs[parameter]
+            }
+            for parameter in family.parameter_names
+        }
+        model = cls(
+            family,
+            {
+                parameter: design.shape[1]
+                for parameter, design in prepared.design_matrices.items()
+            },
+            smooth_terms=smooth_terms,
+            dtype=dtype,
+            device=device,
+        )
+        model._formula_encoder = encoder
+        return model
+
+    @property
+    def formula_column_names(self) -> Mapping[str, tuple[str, ...]]:
+        """Return fitted design-matrix column names for a formula model."""
+        return dict(self._require_formula_encoder().design_columns)
+
+    @property
+    def formula_response_name(self) -> str:
+        """Return the untransformed response column used by a formula model."""
+        return self._require_formula_encoder().response_name
+
+    def prepare_formula_data(
+        self,
+        data: Any,
+        *,
+        include_response: bool = False,
+    ) -> FormulaData:
+        """Materialize stored formulas into model-compatible tensors."""
+        model_parameter = next(self.parameters())
+        return self._require_formula_encoder().transform(
+            data,
+            dtype=model_parameter.dtype,
+            device=model_parameter.device,
+            include_response=include_response,
+        )
+
+    def fit_rs_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        control: RSControl | None = None,
+    ) -> RSFitResult:
+        """Fit a formula model from tabular data with RS cycles."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        return self.fit_rs(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            control=control,
+        )
+
+    def fit_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        max_iter: int = 100,
+        tolerance_grad: float = 1e-9,
+        tolerance_change: float = 1e-12,
+    ) -> FitResult:
+        """Fit a formula model from tabular data with Torch L-BFGS."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        return self.fit(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            max_iter=max_iter,
+            tolerance_grad=tolerance_grad,
+            tolerance_change=tolerance_change,
+        )
+
+    def predict_data(
+        self,
+        data: Any,
+        *,
+        type: Literal["link", "response", "terms"] = "response",
+    ) -> dict[str, Tensor] | dict[str, TermContributions]:
+        """Predict from tabular data using the fitted formula encodings."""
+        prepared = self.prepare_formula_data(data)
+        return self.predict(
+            prepared.design_matrices,
+            prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            type=type,
+        )
 
     def linear_predictors(
         self,
@@ -425,6 +556,29 @@ class GAMLSS(nn.Module):
                     "must have one value per predictor"
                 )
         return supplied
+
+    def _require_formula_encoder(self) -> FormulaEncoder:
+        if self._formula_encoder is None:
+            raise RuntimeError(
+                "This operation requires a model constructed with from_formula()"
+            )
+        return self._formula_encoder
+
+    def _formula_tensor(
+        self,
+        data: Any,
+        value: Any,
+        *,
+        context: str,
+    ) -> Tensor | None:
+        model_parameter = next(self.parameters())
+        return self._require_formula_encoder().tensor(
+            data,
+            value,
+            dtype=model_parameter.dtype,
+            device=model_parameter.device,
+            context=context,
+        )
 
     @staticmethod
     def _validated_weights(losses: Tensor, weights: Tensor | None) -> Tensor:

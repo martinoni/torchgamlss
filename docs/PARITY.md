@@ -58,6 +58,11 @@ effective degrees of freedom, fitted distribution parameters, and P-spline
 coefficients where applicable. Public response-scale prediction is exercised
 against the fitted Gamma P-spline fixture.
 
+The formula layer is tested against the same committed R fits: weighted
+Normal RS with parameter offsets, Normal L-BFGS, and Gamma RS with a fixed
+P-spline. This verifies that formula materialization reaches the same
+coefficients and likelihood as the corresponding tensor inputs.
+
 ## Reproducing the fixtures
 
 From the repository root:

@@ -85,3 +85,7 @@ The stored P-spline basis can evaluate covariates outside the training range,
 but exact parity with the natural-spline extrapolation helper used by R has
 not yet been established. For strict R compatibility, keep prediction
 covariates inside the fitted range for now.
+
+Models constructed with `GAMLSS.from_formula()` can use `predict_data()` to
+materialize these inputs directly from a pandas DataFrame or compatible
+mapping. See [`FORMULAS.md`](FORMULAS.md).

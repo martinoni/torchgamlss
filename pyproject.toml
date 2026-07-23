@@ -20,7 +20,9 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = [
+  "formulaic>=1.2,<2",
   "numpy>=1.26",
+  "pandas>=2.2",
   "torch>=2.4",
 ]
 

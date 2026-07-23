@@ -8,6 +8,10 @@ General Public License, version 2 or version 3.
 
 TorchGAMLSS is not affiliated with or endorsed by the original authors.
 
+Formula parsing and categorical encoding use Formulaic by Matthew Wardrop,
+distributed under the MIT License. TorchGAMLSS adds its own GAMLSS-specific
+handling for pb() and offset() terms.
+
 The Normal and Gamma family parity implementations and fixtures are derived
 from and tested against gamlss.dist 6.1-1, in particular R/NO.r and R/GA.R,
 and gamlss 5.5-0. Both source packages are distributed by CRAN under GPL-2 or

@@ -16,7 +16,7 @@ as supported.
 ## Phase 1 — parametric core
 
 - [x] Weighted observations and offsets
-- [ ] Formula/design-matrix interface
+- [x] Formula/design-matrix interface
 - [ ] Starting-value protocol
 - [x] Normal and Gamma families
 - [ ] Poisson, beta, and negative-binomial families

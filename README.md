@@ -38,14 +38,16 @@ The current implementation contains:
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with
   `pb.control(method=...)`;
 - prediction on response, link, and additive-term scales, including new data;
+- Wilkinson formulas for tabular fitting and prediction, including categorical
+  variables, `offset()`, and `pb()`;
 - independent design matrices for each distribution parameter;
-- R-generated parity fixtures for the `NO` density, links, derivatives, and a
-  fitted model;
+- R-generated parity fixtures for the `NO` and `GA` densities, links,
+  derivatives, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Formula parsing, the CG algorithm, inference, and diagnostics are planned
-work. The L-BFGS path remains a Torch-native numerical baseline and requires
-fixed smoothing parameters.
+The CG algorithm, inference, and diagnostics are planned work. The L-BFGS path
+remains a Torch-native numerical baseline and requires fixed smoothing
+parameters.
 
 ## Development
 
@@ -67,7 +69,8 @@ See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
 P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
 parameterization. The supported prediction interface is documented in
-[`docs/PREDICTION.md`](docs/PREDICTION.md).
+[`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular formula API in
+[`docs/FORMULAS.md`](docs/FORMULAS.md).
 
 ## Attribution and license
 
