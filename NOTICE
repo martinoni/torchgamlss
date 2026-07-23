@@ -8,3 +8,6 @@ General Public License, version 2 or version 3.
 
 TorchGAMLSS is not affiliated with or endorsed by the original authors.
 
+The Normal family parity implementation and fixtures are derived from and
+tested against gamlss.dist 6.1-1, in particular R/NO.r, and gamlss 5.5-0.
+Both source packages are distributed by CRAN under GPL-2 or GPL-3.

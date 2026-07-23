@@ -42,3 +42,19 @@ class Family(ABC):
     @abstractmethod
     def distribution(self, parameters: Mapping[str, Tensor]) -> Distribution:
         """Construct the response distribution from linked parameters."""
+
+    def log_prob(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
+        """Evaluate the observation-wise log density or log mass."""
+        return self.distribution(parameters).log_prob(response)
+
+    @abstractmethod
+    def score(
+        self, response: Tensor, parameters: Mapping[str, Tensor]
+    ) -> dict[str, Tensor]:
+        """Return first log-likelihood derivatives on the parameter scale."""
+
+    @abstractmethod
+    def expected_second_derivatives(
+        self, response: Tensor, parameters: Mapping[str, Tensor]
+    ) -> dict[tuple[str, str], Tensor]:
+        """Return GAMLSS expected second derivatives on the parameter scale."""

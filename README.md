@@ -27,11 +27,15 @@ The first vertical slice contains:
 - identity, log, and logit links;
 - a normal GAMLSS family with predictors for `mu` and `sigma`;
 - a differentiable negative log-likelihood;
+- full-batch joint fitting with Torch L-BFGS;
 - independent design matrices for each distribution parameter;
-- tests for parameter recovery, gradients, and link round trips.
+- R-generated parity fixtures for the `NO` density, links, derivatives, and a
+  fitted model;
+- tests for parameter recovery, gradients, link round trips, and R parity.
 
 Formula parsing, RS/CG fitting, penalized splines, smoothing-parameter
-selection, inference, diagnostics, and R parity tests are planned work.
+selection, inference, and diagnostics are planned work. The L-BFGS path is a
+Torch-native numerical baseline and is not an implementation of RS or CG.
 
 ## Development
 
@@ -40,6 +44,17 @@ python -m venv .venv
 python -m pip install -e ".[test]"
 python -m pytest
 ```
+
+To regenerate and validate the reference values with R:
+
+```bash
+Rscript tools/install_r_dependencies.R
+Rscript tools/generate_no_reference.R
+Rscript tools/generate_no_reference.R --check
+```
+
+See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
+conventions and provenance.
 
 ## Attribution and license
 
@@ -55,4 +70,3 @@ by the original GAMLSS authors.
 Rigby, R. A. and Stasinopoulos, D. M. (2005). Generalized additive models for
 location, scale and shape. *Applied Statistics*, 54(3), 507–554.
 https://doi.org/10.1111/j.1467-9876.2005.00510.x
-

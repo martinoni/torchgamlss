@@ -10,8 +10,8 @@ as supported.
 - [x] Link protocol and identity, log, and logit links
 - [x] Normal family with independent `mu` and `sigma` predictors
 - [x] Differentiable full-batch negative log-likelihood
-- [ ] R reference-data generator
-- [ ] Numerical tolerances and parity-test conventions
+- [x] R reference-data generator
+- [x] Numerical tolerances and parity-test conventions
 
 ## Phase 1 — parametric core
 
@@ -19,7 +19,7 @@ as supported.
 - [ ] Formula/design-matrix interface
 - [ ] Starting-value protocol
 - [ ] Normal, Gamma, Poisson, beta, and negative-binomial families
-- [ ] Joint optimizer and convergence diagnostics
+- [x] Initial joint L-BFGS optimizer and convergence diagnostics
 - [ ] Covariance matrix and standard errors
 
 ## Phase 2 — classical GAMLSS fitting
@@ -45,4 +45,3 @@ as supported.
 - [ ] Neural predictors for selected distribution parameters
 - [ ] Shared representations across distribution parameters
 - [ ] CPU/GPU benchmarks and reproducibility guidance
-

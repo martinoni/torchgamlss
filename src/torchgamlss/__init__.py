@@ -2,10 +2,11 @@
 
 from torchgamlss.families import Family, Normal
 from torchgamlss.links import IdentityLink, Link, LogitLink, LogLink
-from torchgamlss.model import GAMLSS
+from torchgamlss.model import GAMLSS, FitResult
 
 __all__ = [
     "Family",
+    "FitResult",
     "GAMLSS",
     "IdentityLink",
     "Link",
