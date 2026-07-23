@@ -83,4 +83,3 @@ Committed R fixtures cover:
 Sampling and an inverse-CDF method are not yet exposed by the custom Torch
 distribution. The implemented surface covers fitting, prediction, inference,
 and post-fit diagnostics.
-
