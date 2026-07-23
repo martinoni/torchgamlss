@@ -59,6 +59,21 @@ class LogLink(Link):
         return torch.exp(predictor)
 
 
+class InverseLink(Link):
+    """Reciprocal link used by positive GAMLSS parameters."""
+
+    name = "inverse"
+
+    def forward(self, parameter: Tensor) -> Tensor:
+        return parameter.reciprocal()
+
+    def inverse(self, predictor: Tensor) -> Tensor:
+        return predictor.reciprocal()
+
+    def inverse_derivative(self, predictor: Tensor) -> Tensor:
+        return -predictor.square().reciprocal()
+
+
 class LogitLink(Link):
     """Logit link for parameters in the open unit interval."""
 

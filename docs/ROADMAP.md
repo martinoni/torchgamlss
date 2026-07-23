@@ -7,7 +7,7 @@ as supported.
 ## Phase 0 — foundation
 
 - [x] Package skeleton and GPL-3.0-only licensing
-- [x] Link protocol and identity, log, and logit links
+- [x] Link protocol and identity, inverse, log, and logit links
 - [x] Normal family with independent `mu` and `sigma` predictors
 - [x] Differentiable full-batch negative log-likelihood
 - [x] R reference-data generator
@@ -18,7 +18,8 @@ as supported.
 - [x] Weighted observations and offsets
 - [ ] Formula/design-matrix interface
 - [ ] Starting-value protocol
-- [ ] Normal, Gamma, Poisson, beta, and negative-binomial families
+- [x] Normal and Gamma families
+- [ ] Poisson, beta, and negative-binomial families
 - [x] Initial joint L-BFGS optimizer and convergence diagnostics
 - [ ] Covariance matrix and standard errors
 

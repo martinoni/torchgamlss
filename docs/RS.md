@@ -70,3 +70,9 @@ Fifth and sixth fixtures select `lambda` using local GAIC and GCV with
 fitted values, and deviances. The bounded Brent optimizer and R's `nlminb()`
 can take different optimization and outer-RS paths, so parity is defined by
 the final numerical fit rather than identical iteration counts.
+
+The Gamma fixtures verify that the same RS core works beyond the Normal
+family. They cover a weighted heteroscedastic `GA` model with offsets in both
+predictors and an additive fit with a fixed-lambda P-spline for `mu`.
+Coefficients, fitted parameters, effective degrees of freedom, deviances, and
+outer iteration counts match R.

@@ -39,14 +39,32 @@ The expected sigma-sigma derivative supplied by `NO()` is Fisher-scoring
 information, not the observation-wise second derivative of the normal log
 density. The Python API names this distinction explicitly.
 
+## Gamma family (`GA`)
+
+The Gamma slice uses the `GA(mu, sigma)` parameterization in which `mu` is the
+mean and `sigma` is the coefficient of variation. Its fixtures cover:
+
+- `dGA(..., log = TRUE)` and both default log links;
+- the parameter-scale scores and expected second derivatives supplied by
+  `GA()`;
+- mean `mu` and variance `sigma^2 mu^2`;
+- a weighted RS fit of `mu ~ x + offset(mu_offset)` and
+  `sigma ~ z + offset(sigma_offset)`;
+- the corresponding joint Torch L-BFGS fit;
+- an additive RS fit using `mu ~ pb(x, lambda=12) + offset(mu_offset)`.
+
+The fitted-model fixtures compare coefficients, likelihood or deviance,
+effective degrees of freedom, fitted distribution parameters, and P-spline
+coefficients where applicable.
+
 ## Reproducing the fixtures
 
 From the repository root:
 
 ```powershell
 Rscript tools/install_r_dependencies.R
-Rscript tools/generate_no_reference.R
-Rscript tools/generate_no_reference.R --check
+Rscript tools/generate_r_references.R
+Rscript tools/generate_r_references.R --check
 python -m pytest
 ```
 

@@ -477,6 +477,99 @@ def test_rs_criterion_pspline_matches_r_gamlss_pb(method, fixture_prefix):
     )
 
 
+def test_rs_gaic_handles_zero_weights_and_custom_edf_penalty():
+    rows = _read_rows("no_pb_fit_data.csv")
+    x = _column(rows, "x")
+    response = _column(rows, "y")
+    weights = torch.ones_like(x)
+    weights[::7] = 0.0
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x)),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+    selected_lambdas = []
+
+    for criterion_penalty in (2.0, 4.0):
+        term = PSpline.from_data(
+            x,
+            smoothing_method="GAIC",
+            criterion_penalty=criterion_penalty,
+        )
+        model = GAMLSS(
+            Normal(),
+            {"mu": 2, "sigma": 1},
+            smooth_terms={"mu": {"x": term}},
+            dtype=torch.float64,
+        )
+        result = model.fit_rs(
+            response,
+            design,
+            weights=weights,
+            smooth_covariates={"mu": {"x": x}},
+            control=RSControl(
+                outer_tolerance=1e-8,
+                max_outer_iterations=100,
+                inner_tolerance=1e-10,
+                max_inner_iterations=100,
+                backfitting_tolerance=1e-9,
+                max_backfitting_iterations=100,
+            ),
+        )
+
+        assert result.converged
+        assert torch.isfinite(term.coefficients).all()
+        selected_lambdas.append(term.smoothing_parameter)
+
+    assert selected_lambdas[1] > selected_lambdas[0]
+
+
+def test_rs_supports_multiple_automatically_selected_smooth_terms():
+    x = torch.linspace(-1.0, 1.0, 20, dtype=torch.float64)
+    z = x.roll(7)
+    response = (
+        0.5
+        + 0.7 * x
+        - 0.4 * z
+        + 0.25 * torch.sin(torch.pi * x)
+        + 0.15 * torch.cos(torch.pi * z)
+    )
+    x_term = PSpline(-1.0, 1.0, None, intervals=4)
+    z_term = PSpline(-1.0, 1.0, None, intervals=4)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 3, "sigma": 1},
+        smooth_terms={"mu": {"x": x_term, "z": z_term}},
+        dtype=torch.float64,
+    )
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x, z)),
+        "sigma": torch.ones((x.numel(), 1), dtype=x.dtype),
+    }
+
+    result = model.fit_rs(
+        response,
+        design,
+        smooth_covariates={"mu": {"x": x, "z": z}},
+        control=RSControl(
+            outer_tolerance=1e-4,
+            max_outer_iterations=20,
+            inner_tolerance=1e-4,
+            max_inner_iterations=20,
+            backfitting_tolerance=1e-4,
+            max_backfitting_iterations=20,
+        ),
+    )
+
+    assert result.converged
+    assert set(result.smoothing_parameters["mu"]) == {"x", "z"}
+    assert result.smoothing_iterations["mu"]["x"] > 0
+    assert result.smoothing_iterations["mu"]["z"] > 0
+    assert 1e-7 <= x_term.smoothing_parameter <= 1e7
+    assert z_term.smoothing_parameter == pytest.approx(1e7)
+    assert torch.isfinite(x_term.coefficients).all()
+    assert torch.isfinite(z_term.coefficients).all()
+
+
 def test_rs_supports_multiple_smooth_terms_for_one_parameter():
     x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
     z = torch.cos(torch.linspace(0.0, 3.0 * torch.pi, 80, dtype=torch.float64))

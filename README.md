@@ -22,10 +22,11 @@ theta_k = inverse_link_k(eta_k)
 Y | X ~ D(theta_1, ..., theta_K)
 ```
 
-The first vertical slice contains:
+The current implementation contains:
 
-- identity, log, and logit links;
-- a normal GAMLSS family with predictors for `mu` and `sigma`;
+- identity, inverse, log, and logit links;
+- normal (`NO`) and Gamma (`GA`) GAMLSS families with predictors for `mu`
+  and `sigma`;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - likelihood weights and offsets for every distribution parameter;
@@ -57,13 +58,14 @@ To regenerate and validate the reference values with R:
 
 ```bash
 Rscript tools/install_r_dependencies.R
-Rscript tools/generate_no_reference.R
-Rscript tools/generate_no_reference.R --check
+Rscript tools/generate_r_references.R
+Rscript tools/generate_r_references.R --check
 ```
 
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
-P-spline API.
+P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
+parameterization.
 
 ## Attribution and license
 
