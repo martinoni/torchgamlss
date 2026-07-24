@@ -94,7 +94,8 @@ The explicit linear `x` column mirrors the parametric component that R keeps
 for `pb(x)`. Smooth terms may be configured independently for every family
 parameter, and multiple named terms can be attached to the same parameter.
 The same names must be supplied in `smooth_covariates` during fitting and
-prediction.
+prediction. CG parity fixtures cover both configurations: smooths in `mu` and
+`sigma` simultaneously, and two smooths attached to `mu`.
 
 `PSpline.from_data()` reproduces the range expansion and small-sample interval
 rules used by `pb()`. The knots, penalty, and coefficients are registered in

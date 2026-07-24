@@ -168,6 +168,9 @@ backfitting in TorchGAMLSS with `gamlss(..., method=CG())`. They cover:
   fixed-lambda `pb()` term;
 - Normal `pb()` fits with fixed and ML-selected smoothing parameters;
 - target-EDF, local GAIC, and local GCV smoothing-parameter selection;
+- simultaneous Beta `mu` and `sigma` smooths, including independent interior
+  ML smoothing-parameter estimates;
+- two fixed-lambda smooths in one `mu` predictor;
 - smooth coefficients and fitted contributions, fitted distribution
   parameters, smoothing parameters, and effective degrees of freedom;
 - coefficients, deviance, likelihood, convergence, and outer iteration
@@ -183,6 +186,8 @@ The fixed-lambda CG fits and the ML case reproduce R's outer iteration counts.
 For target-EDF, GAIC, and GCV, parity is based on the selected smoothing
 parameter and final fit. Root-finder and optimizer paths can produce different
 cycle counts; the same convention is used for the corresponding RS fixtures.
+The simultaneous-smooth fixtures additionally compare every separate smooth
+contribution and coefficient vector, not only their summed predictors.
 
 ## Diagnostics and quantile residuals
 

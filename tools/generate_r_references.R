@@ -68,6 +68,27 @@ cg_smooth_fitted_reference_path <- file.path(
 cg_smooth_coefficient_reference_path <- file.path(
   reference_dir, "cg_smooth_coefficient_reference.csv"
 )
+cg_multi_smooth_reference_path <- file.path(
+  reference_dir, "cg_multi_smooth_reference.csv"
+)
+cg_multi_smooth_fit_data_path <- file.path(
+  reference_dir, "cg_multi_smooth_fit_data.csv"
+)
+cg_multi_smooth_linear_reference_path <- file.path(
+  reference_dir, "cg_multi_smooth_linear_reference.csv"
+)
+cg_multi_smooth_fitted_reference_path <- file.path(
+  reference_dir, "cg_multi_smooth_fitted_reference.csv"
+)
+cg_multi_smooth_term_reference_path <- file.path(
+  reference_dir, "cg_multi_smooth_term_reference.csv"
+)
+cg_multi_smooth_coefficient_reference_path <- file.path(
+  reference_dir, "cg_multi_smooth_coefficient_reference.csv"
+)
+cg_multi_smooth_contribution_reference_path <- file.path(
+  reference_dir, "cg_multi_smooth_contribution_reference.csv"
+)
 po_reference_path <- file.path(reference_dir, "po_reference.csv")
 po_fit_data_path <- file.path(reference_dir, "po_fit_data.csv")
 po_rs_reference_path <- file.path(reference_dir, "po_rs_reference.csv")
@@ -1475,6 +1496,239 @@ rownames(cg_smooth_linear_reference) <- NULL
 rownames(cg_smooth_fitted_reference) <- NULL
 rownames(cg_smooth_coefficient_reference) <- NULL
 
+cg_multi_smooth_control <- gamlss.control(
+  c.crit = 1e-9, n.cyc = 500, trace = FALSE
+)
+cg_multi_smooth_inner_control <- glim.control(
+  cc = 1e-9, cyc = 500, bf.tol = 1e-9, bf.cyc = 500
+)
+cg_multi_smooth_n <- 80
+cg_multi_smooth_x <- seq(-1, 1, length.out = cg_multi_smooth_n)
+cg_multi_smooth_z <- cos(
+  seq(0, 4 * pi, length.out = cg_multi_smooth_n)
+)
+cg_multi_smooth_mu_offset <- 0.03 * sin(
+  seq(0, 3 * pi, length.out = cg_multi_smooth_n)
+)
+cg_multi_smooth_sigma_offset <- 0.025 * cos(
+  seq(0, 5 * pi, length.out = cg_multi_smooth_n)
+)
+cg_multi_smooth_weight <- rep(
+  c(1, 1.5, 2, 0.75), length.out = cg_multi_smooth_n
+)
+cg_multi_smooth_mu <- plogis(
+  -0.2 + 0.75 * cg_multi_smooth_x +
+    0.6 * sin(pi * cg_multi_smooth_x) +
+    cg_multi_smooth_mu_offset
+)
+cg_multi_smooth_sigma <- plogis(
+  -1.5 + 0.18 * cg_multi_smooth_z +
+    0.55 * cos(pi * cg_multi_smooth_z) +
+    cg_multi_smooth_sigma_offset
+)
+cg_multi_smooth_probability <- (
+  ((seq_len(cg_multi_smooth_n) * 37) %% cg_multi_smooth_n) + 0.5
+) / cg_multi_smooth_n
+cg_multi_smooth_fit_data <- data.frame(
+  x = cg_multi_smooth_x,
+  z = cg_multi_smooth_z,
+  y = qBE(
+    cg_multi_smooth_probability,
+    mu = cg_multi_smooth_mu,
+    sigma = cg_multi_smooth_sigma
+  ),
+  weight = cg_multi_smooth_weight,
+  mu_offset = cg_multi_smooth_mu_offset,
+  sigma_offset = cg_multi_smooth_sigma_offset
+)
+be_cg_both_smooth_fit <- gamlss(
+  y ~ pb(x, lambda = 12) + offset(mu_offset),
+  sigma.formula = ~ pb(z, lambda = 15) + offset(sigma_offset),
+  weights = weight,
+  family = BE(),
+  method = CG(),
+  data = be_fit_data,
+  control = cg_multi_smooth_control,
+  i.control = cg_multi_smooth_inner_control
+)
+be_cg_two_mu_smooth_fit <- gamlss(
+  y ~ pb(x, lambda = 12) + pb(z, lambda = 15) + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  weights = weight,
+  family = BE(),
+  method = CG(),
+  data = be_fit_data,
+  control = cg_multi_smooth_control,
+  i.control = cg_multi_smooth_inner_control
+)
+be_cg_both_ml_smooth_fit <- gamlss(
+  y ~ pb(x) + offset(mu_offset),
+  sigma.formula = ~ pb(z) + offset(sigma_offset),
+  weights = weight,
+  family = BE(),
+  method = CG(),
+  data = cg_multi_smooth_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8, cyc = 300, bf.tol = 1e-8, bf.cyc = 300
+  )
+)
+cg_multi_smooth_fits <- list(
+  BOTH_PARAMETERS = be_cg_both_smooth_fit,
+  TWO_MU_TERMS = be_cg_two_mu_smooth_fit,
+  BOTH_ML = be_cg_both_ml_smooth_fit
+)
+cg_multi_smooth_specs <- list(
+  BOTH_PARAMETERS = data.frame(
+    parameter = c("mu", "sigma"),
+    term = c("x", "z"),
+    which = c(1, 1),
+    selection = c("FIXED", "FIXED")
+  ),
+  TWO_MU_TERMS = data.frame(
+    parameter = c("mu", "mu"),
+    term = c("x", "z"),
+    which = c(1, 2),
+    selection = c("FIXED", "FIXED")
+  ),
+  BOTH_ML = data.frame(
+    parameter = c("mu", "sigma"),
+    term = c("x", "z"),
+    which = c(1, 1),
+    selection = c("ML", "ML")
+  )
+)
+cg_multi_smooth_reference <- do.call(
+  rbind,
+  lapply(names(cg_multi_smooth_fits), function(case_name) {
+    fit <- cg_multi_smooth_fits[[case_name]]
+    data.frame(
+      case = case_name,
+      mu_df = fit$mu.df,
+      sigma_df = fit$sigma.df,
+      total_df = fit$df.fit,
+      global_deviance = unname(deviance(fit)),
+      negative_log_likelihood = -as.numeric(logLik(fit)),
+      outer_iterations = fit$iter,
+      converged = fit$converged,
+      gamlss_version = as.character(packageVersion("gamlss")),
+      gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+    )
+  })
+)
+cg_multi_smooth_linear_reference <- do.call(
+  rbind,
+  lapply(names(cg_multi_smooth_fits), function(case_name) {
+    fit <- cg_multi_smooth_fits[[case_name]]
+    do.call(
+      rbind,
+      lapply(fit$parameters, function(parameter) {
+        coefficients <- unname(coef(fit, what = parameter))
+        data.frame(
+          case = case_name,
+          parameter = parameter,
+          coefficient_index = seq_along(coefficients) - 1,
+          coefficient = coefficients
+        )
+      })
+    )
+  })
+)
+cg_multi_smooth_fitted_reference <- do.call(
+  rbind,
+  lapply(names(cg_multi_smooth_fits), function(case_name) {
+    fit <- cg_multi_smooth_fits[[case_name]]
+    data.frame(
+      case = case_name,
+      observation_index = seq_along(fitted(fit, what = "mu")) - 1,
+      mu = fitted(fit, what = "mu"),
+      sigma = fitted(fit, what = "sigma")
+    )
+  })
+)
+cg_multi_smooth_term_reference <- do.call(
+  rbind,
+  lapply(names(cg_multi_smooth_fits), function(case_name) {
+    fit <- cg_multi_smooth_fits[[case_name]]
+    specs <- cg_multi_smooth_specs[[case_name]]
+    do.call(
+      rbind,
+      lapply(seq_len(nrow(specs)), function(index) {
+        parameter <- specs$parameter[[index]]
+        smooth <- getSmo(
+          fit,
+          parameter = parameter,
+          which = specs$which[[index]]
+        )
+        data.frame(
+          case = case_name,
+          parameter = parameter,
+          term = specs$term[[index]],
+          selection = specs$selection[[index]],
+          smoothing_parameter = unname(smooth$lambda),
+          smooth_edf = unname(smooth$edf)
+        )
+      })
+    )
+  })
+)
+cg_multi_smooth_coefficient_reference <- do.call(
+  rbind,
+  lapply(names(cg_multi_smooth_fits), function(case_name) {
+    fit <- cg_multi_smooth_fits[[case_name]]
+    specs <- cg_multi_smooth_specs[[case_name]]
+    do.call(
+      rbind,
+      lapply(seq_len(nrow(specs)), function(index) {
+        parameter <- specs$parameter[[index]]
+        coefficients <- drop(
+          getSmo(
+            fit,
+            parameter = parameter,
+            which = specs$which[[index]]
+          )$coef
+        )
+        data.frame(
+          case = case_name,
+          parameter = parameter,
+          term = specs$term[[index]],
+          coefficient_index = seq_along(coefficients) - 1,
+          coefficient = coefficients
+        )
+      })
+    )
+  })
+)
+cg_multi_smooth_contribution_reference <- do.call(
+  rbind,
+  lapply(names(cg_multi_smooth_fits), function(case_name) {
+    fit <- cg_multi_smooth_fits[[case_name]]
+    specs <- cg_multi_smooth_specs[[case_name]]
+    do.call(
+      rbind,
+      lapply(seq_len(nrow(specs)), function(index) {
+        parameter <- specs$parameter[[index]]
+        contribution <- drop(
+          fit[[paste0(parameter, ".s")]][, specs$which[[index]]]
+        )
+        data.frame(
+          case = case_name,
+          parameter = parameter,
+          term = specs$term[[index]],
+          observation_index = seq_along(contribution) - 1,
+          contribution = contribution
+        )
+      })
+    )
+  })
+)
+rownames(cg_multi_smooth_reference) <- NULL
+rownames(cg_multi_smooth_linear_reference) <- NULL
+rownames(cg_multi_smooth_fitted_reference) <- NULL
+rownames(cg_multi_smooth_term_reference) <- NULL
+rownames(cg_multi_smooth_coefficient_reference) <- NULL
+rownames(cg_multi_smooth_contribution_reference) <- NULL
+
 assert_close <- function(actual, expected_path, tolerance) {
   expected <- read.csv(expected_path, check.names = FALSE)
   if (!identical(names(actual), names(expected))) {
@@ -1593,6 +1847,41 @@ if (check_only) {
     cg_smooth_coefficient_reference,
     cg_smooth_coefficient_reference_path,
     tolerance = 1e-5
+  )
+  assert_close(
+    cg_multi_smooth_reference,
+    cg_multi_smooth_reference_path,
+    tolerance = 1e-7
+  )
+  assert_close(
+    cg_multi_smooth_fit_data,
+    cg_multi_smooth_fit_data_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    cg_multi_smooth_linear_reference,
+    cg_multi_smooth_linear_reference_path,
+    tolerance = 1e-7
+  )
+  assert_close(
+    cg_multi_smooth_fitted_reference,
+    cg_multi_smooth_fitted_reference_path,
+    tolerance = 1e-7
+  )
+  assert_close(
+    cg_multi_smooth_term_reference,
+    cg_multi_smooth_term_reference_path,
+    tolerance = 1e-7
+  )
+  assert_close(
+    cg_multi_smooth_coefficient_reference,
+    cg_multi_smooth_coefficient_reference_path,
+    tolerance = 1e-7
+  )
+  assert_close(
+    cg_multi_smooth_contribution_reference,
+    cg_multi_smooth_contribution_reference_path,
+    tolerance = 1e-7
   )
   assert_close(po_reference, po_reference_path, tolerance = 1e-12)
   assert_close(po_fit_data, po_fit_data_path, tolerance = 1e-12)
@@ -1713,6 +2002,34 @@ if (check_only) {
   write_csv_lf(
     cg_smooth_coefficient_reference,
     cg_smooth_coefficient_reference_path
+  )
+  write_csv_lf(
+    cg_multi_smooth_reference,
+    cg_multi_smooth_reference_path
+  )
+  write_csv_lf(
+    cg_multi_smooth_fit_data,
+    cg_multi_smooth_fit_data_path
+  )
+  write_csv_lf(
+    cg_multi_smooth_linear_reference,
+    cg_multi_smooth_linear_reference_path
+  )
+  write_csv_lf(
+    cg_multi_smooth_fitted_reference,
+    cg_multi_smooth_fitted_reference_path
+  )
+  write_csv_lf(
+    cg_multi_smooth_term_reference,
+    cg_multi_smooth_term_reference_path
+  )
+  write_csv_lf(
+    cg_multi_smooth_coefficient_reference,
+    cg_multi_smooth_coefficient_reference_path
+  )
+  write_csv_lf(
+    cg_multi_smooth_contribution_reference,
+    cg_multi_smooth_contribution_reference_path
   )
   write_csv_lf(po_reference, po_reference_path)
   write_csv_lf(po_fit_data, po_fit_data_path)

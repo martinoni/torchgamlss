@@ -420,3 +420,169 @@ def test_cg_normal_pspline_selection_matches_r_gamlss_pb(
         rel=5e-7,
         abs=deviance_tolerance,
     )
+
+
+@pytest.mark.parametrize(
+    ("case", "data_name", "formulas", "fit_tolerance", "iteration_limit"),
+    [
+        (
+            "BOTH_PARAMETERS",
+            "be_fit_data.csv",
+            {
+                "mu": "y ~ pb(x, smoothing_parameter=12) + offset(mu_offset)",
+                "sigma": ("~ pb(z, smoothing_parameter=15) + offset(sigma_offset)"),
+            },
+            1e-9,
+            500,
+        ),
+        (
+            "TWO_MU_TERMS",
+            "be_fit_data.csv",
+            {
+                "mu": (
+                    "y ~ pb(x, smoothing_parameter=12)"
+                    " + pb(z, smoothing_parameter=15) + offset(mu_offset)"
+                ),
+                "sigma": "~ z + offset(sigma_offset)",
+            },
+            1e-9,
+            500,
+        ),
+        (
+            "BOTH_ML",
+            "cg_multi_smooth_fit_data.csv",
+            {
+                "mu": "y ~ pb(x) + offset(mu_offset)",
+                "sigma": "~ pb(z) + offset(sigma_offset)",
+            },
+            1e-8,
+            300,
+        ),
+    ],
+    ids=["smooths-in-mu-and-sigma", "two-mu-smooths", "two-ml-smooths"],
+)
+def test_cg_multiple_psplines_match_r_gamlss_additive_fit(
+    case,
+    data_name,
+    formulas,
+    fit_tolerance,
+    iteration_limit,
+):
+    data = pd.read_csv(REFERENCE_DIR / data_name)
+    reference = _case_rows("cg_multi_smooth_reference.csv", case).iloc[0]
+    linear_reference = _case_rows("cg_multi_smooth_linear_reference.csv", case)
+    fitted_reference = _case_rows("cg_multi_smooth_fitted_reference.csv", case)
+    term_reference = _case_rows("cg_multi_smooth_term_reference.csv", case)
+    coefficient_reference = _case_rows(
+        "cg_multi_smooth_coefficient_reference.csv", case
+    )
+    contribution_reference = _case_rows(
+        "cg_multi_smooth_contribution_reference.csv", case
+    )
+    model = GAMLSS.from_formula(Beta(), formulas, data)
+
+    result = model.fit_cg_data(
+        data,
+        weights="weight",
+        control=CGControl(
+            outer_tolerance=fit_tolerance,
+            max_outer_iterations=iteration_limit,
+            inner_tolerance=fit_tolerance,
+            max_inner_iterations=iteration_limit,
+            backfitting_tolerance=fit_tolerance,
+        ),
+    )
+
+    assert result.converged
+    assert result.outer_iterations == int(reference["outer_iterations"])
+    for parameter in model.family.parameter_names:
+        expected_terms = set(
+            term_reference.loc[
+                term_reference["parameter"] == parameter, "term"
+            ].tolist()
+        )
+        assert set(result.smoothing_parameters[parameter]) == expected_terms
+        if expected_terms:
+            assert result.backfitting_iterations[parameter] > 0
+        else:
+            assert result.backfitting_iterations[parameter] == 0
+
+    for parameter, rows in linear_reference.groupby("parameter", sort=False):
+        expected = torch.tensor(
+            rows.sort_values("coefficient_index")["coefficient"].to_numpy(),
+            dtype=torch.float64,
+        )
+        torch.testing.assert_close(
+            model.coefficients[parameter], expected, rtol=2e-6, atol=2e-6
+        )
+
+    for term_row in term_reference.itertuples():
+        term = model.smooth_terms[term_row.parameter][term_row.term]
+        assert result.smoothing_parameters[term_row.parameter][
+            term_row.term
+        ] == pytest.approx(float(term_row.smoothing_parameter), rel=1e-7, abs=1e-7)
+        if term_row.selection == "FIXED":
+            assert result.smoothing_iterations[term_row.parameter][term_row.term] == 0
+        else:
+            assert result.smoothing_iterations[term_row.parameter][term_row.term] > 0
+        assert result.smooth_effective_degrees_of_freedom[term_row.parameter][
+            term_row.term
+        ] == pytest.approx(float(term_row.smooth_edf), rel=1e-8, abs=1e-8)
+
+        expected_coefficients = coefficient_reference.loc[
+            (coefficient_reference["parameter"] == term_row.parameter)
+            & (coefficient_reference["term"] == term_row.term)
+        ].sort_values("coefficient_index")
+        torch.testing.assert_close(
+            term.coefficients,
+            torch.tensor(
+                expected_coefficients["coefficient"].to_numpy(),
+                dtype=torch.float64,
+            ),
+            rtol=2e-6,
+            atol=2e-6,
+        )
+
+        expected_contribution = contribution_reference.loc[
+            (contribution_reference["parameter"] == term_row.parameter)
+            & (contribution_reference["term"] == term_row.term)
+        ].sort_values("observation_index")
+        covariate = torch.tensor(data[term_row.term].to_numpy(), dtype=torch.float64)
+        torch.testing.assert_close(
+            term(covariate),
+            torch.tensor(
+                expected_contribution["contribution"].to_numpy(),
+                dtype=torch.float64,
+            ),
+            rtol=2e-6,
+            atol=2e-6,
+        )
+
+    predictions = model.predict_data(data)
+    torch.testing.assert_close(
+        predictions["mu"],
+        torch.tensor(fitted_reference["mu"].to_numpy(), dtype=torch.float64),
+        rtol=1e-8,
+        atol=1e-8,
+    )
+    torch.testing.assert_close(
+        predictions["sigma"],
+        torch.tensor(fitted_reference["sigma"].to_numpy(), dtype=torch.float64),
+        rtol=1e-8,
+        atol=1e-8,
+    )
+    assert result.parameter_effective_degrees_of_freedom["mu"] == pytest.approx(
+        float(reference["mu_df"]), rel=1e-8, abs=1e-8
+    )
+    assert result.parameter_effective_degrees_of_freedom["sigma"] == pytest.approx(
+        float(reference["sigma_df"]), rel=1e-8, abs=1e-8
+    )
+    assert result.effective_degrees_of_freedom == pytest.approx(
+        float(reference["total_df"]), rel=1e-8, abs=1e-8
+    )
+    assert result.global_deviance == pytest.approx(
+        float(reference["global_deviance"]), rel=1e-10, abs=1e-9
+    )
+    assert result.negative_log_likelihood == pytest.approx(
+        float(reference["negative_log_likelihood"]), rel=1e-10, abs=1e-9
+    )

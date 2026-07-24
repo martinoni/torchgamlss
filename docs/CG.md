@@ -85,6 +85,12 @@ than requiring identical cycle counts. R uses `uniroot()` or `nlminb()` on
 minimization. These paths can take different numbers of cycles while selecting
 the same smoothing level within numerical tolerance.
 
+When both parameter predictors contain smooths, R's separately stored linear
+and smooth component objects can differ from the reconstructed final
+predictor at its stopping tolerance. The committed fixture uses tighter
+controls: fitted parameters and deviance agree at float64 precision, while
+individual stored components agree within approximately `2e-6`.
+
 ## Verified scope
 
 Committed R fixtures cover:
@@ -96,6 +102,9 @@ Committed R fixtures cover:
   `pb()` term;
 - Normal additive models with fixed, ML-selected, target-EDF, GAIC-selected,
   and GCV-selected smoothing parameters;
+- simultaneous `pb()` terms for Beta `mu` and `sigma`, with fixed lambdas and
+  with independent ML selection;
+- two separate `pb()` terms in the same `mu` predictor;
 - linear and smooth coefficients, fitted parameter and smooth values,
   smoothing parameters, effective degrees of freedom, and global deviance;
 - coefficients, global deviance, negative log likelihood, convergence, and
