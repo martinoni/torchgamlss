@@ -84,7 +84,9 @@ parameterization. Poisson, NBI, and Beta are described in
 in [`docs/BCPE.md`](docs/BCPE.md). Classical starting values are documented in
 [`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). Classical fitting is
 described in [`docs/RS.md`](docs/RS.md) and [`docs/CG.md`](docs/CG.md). The
-prediction interface is documented in
+R-to-Python workflow mapping is in
+[`docs/R_TO_PYTHON.md`](docs/R_TO_PYTHON.md). The prediction interface is
+documented in
 [`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular formula API in
 [`docs/FORMULAS.md`](docs/FORMULAS.md). See
 [`docs/INFERENCE.md`](docs/INFERENCE.md) for covariance and Wald inference.

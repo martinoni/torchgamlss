@@ -4,7 +4,8 @@ TorchGAMLSS uses
 [`formulaic`](https://matthewwardrop.github.io/formulaic/) to compile
 Wilkinson formulas into design matrices. The fitted encodings are retained so
 categorical contrasts and column order remain identical when predicting new
-data.
+data. See [`R_TO_PYTHON.md`](R_TO_PYTHON.md) for a side-by-side translation
+from R `gamlss` calls.
 
 ## Constructing and fitting a model
 

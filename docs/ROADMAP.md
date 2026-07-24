@@ -43,7 +43,7 @@ as supported.
 - [x] Three-parameter BCCG family
 - [x] First four-parameter family: BCT
 - [x] BCPE four-parameter family
-- [ ] R-to-Python API and numerical compatibility guide
+- [x] R-to-Python API and numerical compatibility guide
 - [ ] Joint covariance and uncertainty for penalized smooth terms
 
 ## Phase 4 — Torch-native extensions
