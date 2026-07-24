@@ -17,6 +17,11 @@ from torch import Tensor
 
 if TYPE_CHECKING:
     from torchgamlss.fitting import CGControl, RSControl
+    from torchgamlss.functionals import (
+        SmoothCrossingBootstrapResult,
+        SmoothDerivedBootstrapResult,
+        SmoothExtremumBootstrapResult,
+    )
     from torchgamlss.model import GAMLSS
 
 
@@ -557,6 +562,72 @@ class SmoothJointBootstrapResult:
         scale = standard_errors.unsqueeze(1) * standard_errors.unsqueeze(0)
         correlation = covariance / scale
         return correlation.clamp(-1.0, 1.0)
+
+    def linear_contrast(
+        self,
+        coefficients: Mapping[tuple[str, str], float],
+        *,
+        name: str | None = None,
+    ) -> SmoothDerivedBootstrapResult:
+        """Return a fixed linear combination of aligned smooth curves."""
+        from torchgamlss.functionals import smooth_linear_contrast
+
+        return smooth_linear_contrast(self, coefficients, name=name)
+
+    def difference(
+        self,
+        first: tuple[str, str],
+        second: tuple[str, str],
+        *,
+        name: str | None = None,
+    ) -> SmoothDerivedBootstrapResult:
+        """Return the aligned pointwise difference between two smooths."""
+        if first == second:
+            raise ValueError("difference requires two distinct smooth terms")
+        return self.linear_contrast(
+            {first: 1.0, second: -1.0},
+            name=name or f"{first[0]}.{first[1]} - {second[0]}.{second[1]}",
+        )
+
+    def derivative(
+        self,
+        term: tuple[str, str],
+        *,
+        order: Literal[1, 2] = 1,
+        name: str | None = None,
+    ) -> SmoothDerivedBootstrapResult:
+        """Return first- or second-derivative bootstrap inference."""
+        from torchgamlss.functionals import smooth_derivative
+
+        return smooth_derivative(self, term, order=order, name=name)
+
+    def extremum(
+        self,
+        term: tuple[str, str],
+        *,
+        kind: Literal["maximum", "minimum"] = "maximum",
+    ) -> SmoothExtremumBootstrapResult:
+        """Return bootstrap inference for one curve's grid extremum."""
+        from torchgamlss.functionals import smooth_curve_result
+
+        return smooth_curve_result(self, term).extremum(kind=kind)
+
+    def crossing(
+        self,
+        term: tuple[str, str],
+        *,
+        level: float = 0.0,
+        direction: Literal["any", "increasing", "decreasing"] = "any",
+        which: Literal["first", "last"] = "first",
+    ) -> SmoothCrossingBootstrapResult:
+        """Return bootstrap inference for one curve's selected crossing."""
+        from torchgamlss.functionals import smooth_curve_result
+
+        return smooth_curve_result(self, term).crossing(
+            level=level,
+            direction=direction,
+            which=which,
+        )
 
     def simultaneous_confidence_bands(
         self,

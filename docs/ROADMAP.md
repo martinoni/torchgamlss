@@ -47,6 +47,7 @@ as supported.
 - [x] Within-curve covariance and conditional simultaneous smooth bands
 - [x] Parametric smooth bootstrap and bands with repeated lambda selection
 - [x] Joint bootstrap covariance and simultaneous multi-smooth bands
+- [x] Bootstrap smooth contrasts, derivatives, extrema, and crossings
 - [ ] Analytic joint covariance for penalized smooth terms
 
 ## Phase 4 — Torch-native extensions

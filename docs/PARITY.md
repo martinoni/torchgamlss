@@ -176,7 +176,9 @@ updates rather than reproducing a single `gamlss` return value. Seeded
 samplers for BCCG, BCT, and BCPE are checked through their fitted CDFs using
 the probability integral transform. Joint bootstrap covariance and
 multi-smooth max-|t| bands reuse the same aligned refits; they do not claim a
-direct R return-value counterpart.
+direct R return-value counterpart. Smooth contrasts, numerical derivatives,
+grid extrema, and interpolated crossings are likewise derived TorchGAMLSS
+extensions over those aligned bootstrap curves.
 
 ## Cole-Green fitting
 

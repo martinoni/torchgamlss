@@ -17,6 +17,12 @@ from torchgamlss.families import (
 )
 from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
+from torchgamlss.functionals import (
+    SmoothCrossingBootstrapResult,
+    SmoothDerivedBandResult,
+    SmoothDerivedBootstrapResult,
+    SmoothExtremumBootstrapResult,
+)
 from torchgamlss.inference import (
     InferenceResult,
     SmoothBootstrapResult,
@@ -58,6 +64,10 @@ __all__ = [
     "RSControl",
     "RSFitResult",
     "SmoothBootstrapResult",
+    "SmoothCrossingBootstrapResult",
+    "SmoothDerivedBandResult",
+    "SmoothDerivedBootstrapResult",
+    "SmoothExtremumBootstrapResult",
     "SmoothInferenceResult",
     "SmoothJointBandResult",
     "SmoothJointBootstrapResult",

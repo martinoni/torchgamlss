@@ -167,6 +167,21 @@ joint_bands = joint.simultaneous_confidence_bands()
 The full `covariance_matrix` follows `term_order` and `term_slices`.
 Joint bands use one max-|t| critical value over every selected curve point.
 
+Aligned refits can also be transformed without rerunning the bootstrap:
+
+```python
+difference = joint.difference(("mu", "x"), ("sigma", "x"))
+derivative = joint.derivative(("mu", "x"))
+peak = difference.extremum(kind="maximum")
+root = difference.crossing(level=0.0, which="first")
+```
+
+Contrasts require a common ordered evaluation grid. Derivatives and crossings
+additionally require that grid to be strictly increasing. Extrema are located
+on the supplied grid; crossings use linear interpolation between its points.
+See [`INFERENCE.md`](INFERENCE.md) for interval interpretation and
+missing-crossing diagnostics.
+
 The same smooth terms and selection modes work with `fit_cg()` and
 `CGControl`; CG performs one `additive.fit()`-style pass per parameter update
 inside its joint Gauss-Seidel cycle.

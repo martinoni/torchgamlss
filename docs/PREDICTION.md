@@ -130,3 +130,8 @@ percentile intervals from the refitted curves.
 replicate alignment across all fitted smooths. Its covariance blocks and
 joint max-|t| bands therefore describe their dependence on the requested
 prediction grid.
+
+Use a shared, sorted, sufficiently dense `new_data` grid before computing
+`joint.difference()`, `joint.derivative()`, extrema, or crossings. Derivative
+and crossing results describe this numerical grid; they do not extrapolate or
+optimize the underlying spline outside it.

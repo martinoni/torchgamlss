@@ -480,6 +480,18 @@ joint_bands = joint.simultaneous_confidence_bands()
 This exposes empirical covariance across curve points and selected `lambda`
 values and calibrates a single max-|t| band over several smooth terms.
 
+The same aligned result supports derived quantities:
+
+```python
+difference = joint.difference(("mu", "x"), ("sigma", "x"))
+slope = joint.derivative(("mu", "x"))
+peak = difference.extremum()
+crossing = difference.crossing(level=0.0)
+```
+
+These are TorchGAMLSS extensions built from the simulate-and-refit
+distribution, not direct translations of an R `gamlss` return object.
+
 See [`DIAGNOSTICS.md`](DIAGNOSTICS.md) and
 [`INFERENCE.md`](INFERENCE.md).
 

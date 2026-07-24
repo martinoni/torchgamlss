@@ -52,6 +52,8 @@ The current implementation contains:
   contributions, conditional on their smoothing parameters;
 - fixed-design parametric bootstrap intervals, cross-smooth covariance, and
   joint bands that refit RS or CG and repeat smoothing-parameter selection;
+- aligned bootstrap inference for smooth contrasts, differences, derivatives,
+  extrema, and linearly interpolated crossings;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
 - continuous and randomized discrete normal quantile residuals;
 - Wilkinson formulas for tabular fitting and prediction, including categorical

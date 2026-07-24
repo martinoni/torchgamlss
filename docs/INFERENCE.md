@@ -255,6 +255,75 @@ If a smoothing parameter is fixed in the formula, its bootstrap variance is
 zero and its correlations are undefined (`nan`). Its covariance with every
 other smoothing parameter is zero up to numerical precision.
 
+## Derived smooth functionals
+
+The joint result can transform all aligned replicates without another model
+fit. This supports direct inference for curve differences, derivatives,
+extrema, and crossings:
+
+```python
+difference = joint.difference(
+    ("mu", "x"),
+    ("sigma", "x"),
+)
+contrast = joint.linear_contrast(
+    {
+        ("mu", "x"): 2.0,
+        ("sigma", "x"): -0.5,
+    },
+    name="2 mu(x) - 0.5 sigma(x)",
+)
+
+first_derivative = joint.derivative(("mu", "x"))
+second_derivative = joint.derivative(("mu", "x"), order=2)
+
+difference.standard_errors
+difference.confidence_intervals
+difference_band = difference.simultaneous_confidence_band()
+
+peak = difference.extremum(kind="maximum")
+peak.estimate
+peak.location
+peak.confidence_interval
+peak.location_confidence_interval
+
+root = difference.crossing(
+    level=0.0,
+    direction="decreasing",
+    which="first",
+)
+root.estimate
+root.confidence_interval
+root.missing_rate
+```
+
+`difference()` and `linear_contrast()` require the source curves to be
+evaluated on the same covariate grid in the same order. Their pointwise
+intervals are percentile bootstrap intervals, while
+`simultaneous_confidence_band()` recalibrates max-|t| over the derived curve.
+Contrasts across distribution parameters operate on their additive predictor
+or link scales; only combine them when that contrast has a meaningful
+scientific interpretation.
+
+Derivatives use first-order finite differences at the boundaries and centered
+differences in the interior through `torch.gradient`. The evaluation
+covariate must contain at least three finite, strictly increasing points.
+First and second derivatives are supported. Derivative uncertainty includes
+the coefficient and smoothing-selection variability represented by the
+original bootstrap but not uncertainty from choosing the evaluation grid.
+
+`extremum()` finds the maximum or minimum over the supplied discrete grid.
+Its location distribution is therefore grid-valued; use a sufficiently dense
+`new_data` grid when location precision matters. Ties use the first grid
+location.
+
+`crossing()` linearly interpolates between adjacent grid points. Use
+`direction=` and `which=` when a curve has several crossings. Some bootstrap
+curves may not cross the requested level; these are reported through
+`missing_replicates` and `missing_rate`. The crossing interval is conditional
+on the valid bootstrap curves, so a large missing rate is a substantive
+warning rather than a convergence failure.
+
 Bootstrap refits can occasionally fail or reach their iteration limit.
 `replicates` counts successful fits; by default the method allows up to the
 larger of `replicates + 10` and `1.2 * replicates` attempts. Set
@@ -312,9 +381,10 @@ Conditional linear-coefficient inference supports additive RS and CG fits.
 Conditional smooth inference and within-curve simultaneous bands support
 additive RS and CG fits. Parametric bootstrap smooth inference supports both
 algorithms, repeats smoothing-parameter selection, and provides empirical
-joint covariance and simultaneous bands across fitted smooths. A closed-form
-analytic joint covariance across spline coefficients, different smooth terms,
-and smoothing parameters remains separate future work.
+joint covariance, simultaneous bands, and derived-curve functionals across
+fitted smooths. A closed-form analytic joint covariance across spline
+coefficients, different smooth terms, and smoothing parameters remains
+separate future work.
 
 The Hessian and conditional smooth calculations are local Wald
 approximations. They do not replace profile likelihood or robust sandwich

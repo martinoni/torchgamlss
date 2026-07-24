@@ -19,6 +19,10 @@ from torchgamlss import (
     PSpline,
     RSControl,
     SmoothBootstrapResult,
+    SmoothCrossingBootstrapResult,
+    SmoothDerivedBandResult,
+    SmoothDerivedBootstrapResult,
+    SmoothExtremumBootstrapResult,
     SmoothInferenceResult,
     SmoothJointBandResult,
     SmoothJointBootstrapResult,
@@ -761,7 +765,8 @@ def test_joint_smooth_bootstrap_preserves_cross_term_dependence():
     )
     control = RSControl(max_outer_iterations=200)
     model.fit_rs_data(data, weights="weight", control=control)
-    new_data = data.iloc[::4].drop(columns="y")
+    new_data = data.iloc[::4].drop(columns="y").copy()
+    new_data["z"] = new_data["x"]
 
     joint = model.smooth_joint_bootstrap_data(
         data,
@@ -862,6 +867,139 @@ def test_joint_smooth_bootstrap_preserves_cross_term_dependence():
         joint.simultaneous_confidence_bands((("mu", "x"), ("mu", "x")))
     with pytest.raises(KeyError, match="unknown smooth term"):
         joint.covariance_block(("mu", "missing"), ("sigma", "z"))
+
+    difference = joint.difference(("mu", "x"), ("sigma", "z"))
+    assert isinstance(difference, SmoothDerivedBootstrapResult)
+    assert difference.name == "mu.x - sigma.z"
+    assert difference.operation == "linear_contrast"
+    assert difference.source_terms == joint.term_order
+    torch.testing.assert_close(
+        difference.estimates,
+        joint["mu"]["x"].estimates - joint["sigma"]["z"].estimates,
+    )
+    torch.testing.assert_close(
+        difference.bootstrap_estimates,
+        (
+            joint["mu"]["x"].bootstrap_estimates
+            - joint["sigma"]["z"].bootstrap_estimates
+        ),
+    )
+    torch.testing.assert_close(
+        torch.diagonal(difference.covariance_matrix),
+        difference.standard_errors.square(),
+    )
+    assert difference.confidence_intervals.shape == (len(new_data), 2)
+    assert tuple(difference.to_dataframe().columns) == (
+        "covariate",
+        "estimate",
+        "bootstrap_mean",
+        "bias",
+        "standard_error",
+        "ci_lower",
+        "ci_upper",
+    )
+
+    derived_band = difference.simultaneous_confidence_band()
+    assert isinstance(derived_band, SmoothDerivedBandResult)
+    assert derived_band.method == "parametric_bootstrap_derived_max_t"
+    assert derived_band.confidence_intervals.shape == (len(new_data), 2)
+
+    derivative = joint.derivative(("mu", "x"))
+    assert derivative.operation == "derivative_1"
+    torch.testing.assert_close(
+        derivative.estimates,
+        torch.gradient(
+            joint["mu"]["x"].estimates,
+            spacing=(joint["mu"]["x"].covariate,),
+        )[0],
+    )
+    assert joint.derivative(("mu", "x"), order=2).estimates.shape == (
+        len(new_data),
+    )
+    with pytest.raises(ValueError, match="1 or 2"):
+        joint.derivative(("mu", "x"), order=3)
+
+    maximum = difference.extremum()
+    assert isinstance(maximum, SmoothExtremumBootstrapResult)
+    assert maximum.kind == "maximum"
+    assert maximum.estimate == pytest.approx(float(difference.estimates.max()))
+    assert maximum.bootstrap_estimates.shape == (10,)
+    assert maximum.bootstrap_locations.shape == (10,)
+    assert maximum.confidence_interval.shape == (2,)
+    assert maximum.location_confidence_interval.shape == (2,)
+    assert maximum.attempts == joint.attempts
+    assert maximum.failure_rate == pytest.approx(joint.failure_rate)
+    assert tuple(maximum.to_dataframe()["metric"]) == ("value", "location")
+
+    crossing = difference.crossing(level=0.0, direction="decreasing")
+    assert isinstance(crossing, SmoothCrossingBootstrapResult)
+    assert crossing.valid_replicates + crossing.missing_replicates == 10
+    assert crossing.valid_replicates >= 2
+    assert math.isfinite(crossing.estimate)
+    assert crossing.confidence_interval.shape == (2,)
+    assert 0.0 <= crossing.missing_rate <= 1.0
+    assert crossing.attempts == joint.attempts
+    assert crossing.failure_rate == pytest.approx(joint.failure_rate)
+    assert len(crossing.to_dataframe()) == 1
+
+    contrast = joint.linear_contrast(
+        {("mu", "x"): 2.0, ("sigma", "z"): -0.5},
+        name="custom",
+    )
+    assert contrast.name == "custom"
+    torch.testing.assert_close(
+        contrast.estimates,
+        2.0 * joint["mu"]["x"].estimates
+        - 0.5 * joint["sigma"]["z"].estimates,
+    )
+    with pytest.raises(ValueError, match="distinct"):
+        joint.difference(("mu", "x"), ("mu", "x"))
+    with pytest.raises(ValueError, match="nonzero"):
+        joint.linear_contrast({("mu", "x"): 0.0})
+    with pytest.raises(KeyError, match="unknown smooth terms"):
+        joint.linear_contrast({("mu", "missing"): 1.0})
+
+
+def test_derived_crossing_tracks_replicates_without_a_root():
+    covariate = torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64)
+    estimates = torch.tensor([-1.0, 0.2, 1.0], dtype=torch.float64)
+    bootstrap_estimates = torch.tensor(
+        [
+            [-1.0, 0.1, 1.0],
+            [-2.0, -1.0, 1.0],
+            [1.0, 2.0, 3.0],
+            [-2.0, -1.0, -0.5],
+        ],
+        dtype=torch.float64,
+    )
+    result = SmoothDerivedBootstrapResult(
+        name="synthetic",
+        operation="test",
+        source_terms=(("mu", "x"),),
+        covariate=covariate,
+        estimates=estimates,
+        bootstrap_estimates=bootstrap_estimates,
+        standard_errors=bootstrap_estimates.std(dim=0),
+        confidence_intervals=torch.zeros((3, 2), dtype=torch.float64),
+        confidence_level=0.95,
+        replicates=4,
+        attempts=4,
+        failed_replicates=0,
+        algorithm="rs",
+    )
+
+    crossing = result.crossing(direction="increasing")
+
+    assert crossing.estimate == pytest.approx(-1.0 / 6.0)
+    assert crossing.valid_replicates == 2
+    assert crossing.missing_replicates == 2
+    assert crossing.missing_rate == pytest.approx(0.5)
+    assert torch.isnan(crossing.bootstrap_estimates[2:]).all()
+    assert torch.isfinite(crossing.valid_bootstrap_estimates).all()
+    with pytest.raises(ValueError, match="does not contain"):
+        result.crossing(level=10.0)
+    with pytest.raises(ValueError, match="direction"):
+        result.crossing(direction="sideways")
 
 
 def test_smooth_bootstrap_validates_replicates_algorithm_and_control():
