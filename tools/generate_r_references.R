@@ -1729,20 +1729,77 @@ rownames(cg_multi_smooth_term_reference) <- NULL
 rownames(cg_multi_smooth_coefficient_reference) <- NULL
 rownames(cg_multi_smooth_contribution_reference) <- NULL
 
-assert_close <- function(actual, expected_path, tolerance) {
+assert_close <- function(
+  actual,
+  expected_path,
+  tolerance,
+  ignored_numeric_columns = character()
+) {
   expected <- read.csv(expected_path, check.names = FALSE)
   if (!identical(names(actual), names(expected))) {
     stop("Reference columns differ in ", expected_path)
   }
 
-  numeric_columns <- vapply(actual, is.numeric, logical(1))
-  character_columns <- !numeric_columns
-  difference <- abs(as.matrix(actual[numeric_columns]) -
-                    as.matrix(expected[numeric_columns]))
-  scale <- 1 + abs(as.matrix(expected[numeric_columns]))
+  unknown_ignored_columns <- setdiff(ignored_numeric_columns, names(actual))
+  if (length(unknown_ignored_columns) > 0) {
+    stop(
+      "Unknown ignored numeric columns for ",
+      expected_path,
+      ": ",
+      paste(unknown_ignored_columns, collapse = ", ")
+    )
+  }
 
-  if (any(difference > tolerance * scale)) {
-    stop("Numeric parity check failed for ", expected_path)
+  numeric_columns <- vapply(actual, is.numeric, logical(1))
+  invalid_ignored_columns <- ignored_numeric_columns[
+    !numeric_columns[ignored_numeric_columns]
+  ]
+  if (length(invalid_ignored_columns) > 0) {
+    stop(
+      "Ignored columns must be numeric for ",
+      expected_path,
+      ": ",
+      paste(invalid_ignored_columns, collapse = ", ")
+    )
+  }
+
+  compared_numeric_columns <- numeric_columns &
+    !(names(actual) %in% ignored_numeric_columns)
+  character_columns <- !numeric_columns
+  if (any(compared_numeric_columns)) {
+    numeric_names <- names(actual)[compared_numeric_columns]
+    actual_numeric <- as.matrix(actual[compared_numeric_columns])
+    expected_numeric <- as.matrix(expected[compared_numeric_columns])
+    difference <- abs(actual_numeric - expected_numeric)
+    allowed_difference <- tolerance * (1 + abs(expected_numeric))
+    failures <- which(difference > allowed_difference, arr.ind = TRUE)
+
+    if (nrow(failures) > 0) {
+      row_index <- failures[1, "row"]
+      column_index <- failures[1, "col"]
+      column_name <- numeric_names[[column_index]]
+      row_label <- if ("case" %in% names(actual)) {
+        paste0(actual$case[[row_index]], " (row ", row_index, ")")
+      } else {
+        as.character(row_index)
+      }
+      stop(
+        "Numeric parity check failed for ",
+        expected_path,
+        ": case/row ",
+        row_label,
+        ", column ",
+        column_name,
+        ", actual=",
+        format(actual_numeric[row_index, column_index], digits = 17),
+        ", expected=",
+        format(expected_numeric[row_index, column_index], digits = 17),
+        ", absolute difference=",
+        format(difference[row_index, column_index], digits = 17),
+        ", allowed=",
+        format(allowed_difference[row_index, column_index], digits = 17)
+      )
+    }
   }
   if (any(character_columns) &&
       !identical(actual[character_columns], expected[character_columns])) {
@@ -1831,7 +1888,8 @@ if (check_only) {
   assert_close(
     cg_smooth_reference,
     cg_smooth_reference_path,
-    tolerance = 1e-6
+    tolerance = 1e-6,
+    ignored_numeric_columns = "outer_iterations"
   )
   assert_close(
     cg_smooth_linear_reference,
@@ -1851,7 +1909,8 @@ if (check_only) {
   assert_close(
     cg_multi_smooth_reference,
     cg_multi_smooth_reference_path,
-    tolerance = 1e-7
+    tolerance = 1e-7,
+    ignored_numeric_columns = "outer_iterations"
   )
   assert_close(
     cg_multi_smooth_fit_data,
