@@ -120,3 +120,8 @@ band = mu_x.simultaneous_confidence_band(
 ```
 
 See [`INFERENCE.md`](INFERENCE.md) for the statistical interpretation.
+
+`smooth_bootstrap_data(..., new_data=new_data)` evaluates each parametric
+bootstrap refit on the same new-data grid. Unlike the conditional intervals
+above, it reruns smoothing-parameter selection and returns pointwise
+percentile intervals from the refitted curves.

@@ -50,6 +50,8 @@ The current implementation contains:
 - R-compatible pointwise standard errors, full within-curve covariance, and
   simulation-based simultaneous confidence bands for fitted P-spline
   contributions, conditional on their smoothing parameters;
+- fixed-design parametric bootstrap pointwise intervals and within-curve bands
+  that refit RS or CG and repeat automatic smoothing-parameter selection;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
 - continuous and randomized discrete normal quantile residuals;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
@@ -61,8 +63,10 @@ The current implementation contains:
 
 Broader graphical diagnostics are planned work. The L-BFGS path remains a
 Torch-native numerical baseline and requires fixed smoothing parameters.
-Joint uncertainty across different smooth terms and uncertainty from estimated
-smoothing parameters are not yet supported.
+Analytic joint uncertainty across different smooth terms and estimated
+smoothing parameters is not yet supported. Parametric bootstrap refits can
+propagate both coefficient and smoothing-selection variability for each
+reported curve.
 
 ## Development
 

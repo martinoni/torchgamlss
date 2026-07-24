@@ -1,4 +1,5 @@
 import csv
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -17,6 +18,7 @@ from torchgamlss import (
     Poisson,
     PSpline,
     RSControl,
+    SmoothBootstrapResult,
     SmoothInferenceResult,
     SmoothSimultaneousBand,
 )
@@ -631,6 +633,7 @@ def test_smooth_simultaneous_confidence_band_is_reproducible_and_wider():
     )
 
     assert isinstance(first, SmoothSimultaneousBand)
+    assert first.method == "conditional_gaussian_max_t"
     assert first.parameter == "mu"
     assert first.term == "x"
     assert first.simulations == 2_000
@@ -658,6 +661,147 @@ def test_smooth_simultaneous_confidence_band_is_reproducible_and_wider():
 
     with pytest.raises(ValueError, match="at least 100"):
         result.simultaneous_confidence_band(simulations=99)
+
+
+def test_parametric_smooth_bootstrap_reselects_lambda_reproducibly():
+    data = pd.read_csv(REFERENCE_DIR / "no_pb_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ pb(x)", "sigma": "~ 1"},
+        data,
+    )
+    model.fit_rs_data(data)
+    original_state = {
+        name: value.detach().clone()
+        for name, value in model.state_dict().items()
+    }
+    new_data = data.iloc[::2].drop(columns="y")
+
+    first = model.smooth_bootstrap_data(
+        data,
+        new_data=new_data,
+        replicates=10,
+        generator=torch.Generator().manual_seed(2026),
+    )["mu"]["x"]
+    second = model.smooth_bootstrap_data(
+        data,
+        new_data=new_data,
+        replicates=10,
+        generator=torch.Generator().manual_seed(2026),
+    )["mu"]["x"]
+
+    assert isinstance(first, SmoothBootstrapResult)
+    assert first.algorithm == "rs"
+    assert first.replicates == 10
+    assert first.attempts == 10
+    assert first.failed_replicates == 0
+    assert first.failure_rate == 0
+    assert first.confidence_level == pytest.approx(0.95)
+    assert first.bootstrap_estimates.shape == (10, len(new_data))
+    assert first.bootstrap_smoothing_parameters.shape == (10,)
+    assert first.bootstrap_smoothing_parameters.std() > 0
+    assert first.smoothing_parameter_standard_error > 0
+    assert first.smoothing_parameter_bootstrap_mean > 0
+    assert math.isfinite(first.smoothing_parameter_bias)
+    assert first.smoothing_parameter_confidence_interval.shape == (2,)
+    torch.testing.assert_close(
+        first.bootstrap_estimates,
+        second.bootstrap_estimates,
+    )
+    torch.testing.assert_close(
+        first.bootstrap_smoothing_parameters,
+        second.bootstrap_smoothing_parameters,
+    )
+    torch.testing.assert_close(
+        torch.diagonal(first.covariance_matrix),
+        first.standard_errors.square(),
+    )
+    assert first.confidence_intervals.shape == (len(new_data), 2)
+    assert torch.isfinite(first.confidence_intervals).all()
+    simultaneous_band = first.simultaneous_confidence_band()
+    assert simultaneous_band.method == "parametric_bootstrap_max_t"
+    assert simultaneous_band.simulations == 10
+    assert math.isfinite(simultaneous_band.critical_value)
+    assert simultaneous_band.critical_value > 0
+    assert simultaneous_band.confidence_intervals.shape == (len(new_data), 2)
+    assert tuple(first.to_dataframe().columns) == (
+        "covariate",
+        "estimate",
+        "bootstrap_mean",
+        "bias",
+        "standard_error",
+        "ci_lower",
+        "ci_upper",
+    )
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, original_state[name])
+
+    cg = model.smooth_bootstrap_data(
+        data,
+        new_data=new_data,
+        replicates=10,
+        algorithm="cg",
+        generator=torch.Generator().manual_seed(7),
+    )["mu"]["x"]
+    assert cg.algorithm == "cg"
+    assert cg.bootstrap_estimates.shape == (10, len(new_data))
+
+
+def test_smooth_bootstrap_validates_replicates_algorithm_and_control():
+    x = torch.linspace(-1.0, 1.0, 20, dtype=torch.float64)
+    response = torch.sin(x)
+    term = PSpline.from_data(x)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        smooth_terms={"mu": {"x": term}},
+        dtype=torch.float64,
+    )
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x)),
+        "sigma": torch.ones((x.numel(), 1), dtype=torch.float64),
+    }
+    smooth_covariates = {"mu": {"x": x}, "sigma": {}}
+
+    with pytest.raises(ValueError, match="at least 10"):
+        model.smooth_bootstrap(
+            response,
+            design,
+            smooth_covariates=smooth_covariates,
+            replicates=9,
+        )
+    with pytest.raises(ValueError, match="algorithm"):
+        model.smooth_bootstrap(
+            response,
+            design,
+            smooth_covariates=smooth_covariates,
+            algorithm="other",
+        )
+    with pytest.raises(ValueError, match="RSControl"):
+        model.smooth_bootstrap(
+            response,
+            design,
+            smooth_covariates=smooth_covariates,
+            control=CGControl(),
+        )
+    with pytest.raises(ValueError, match="max_attempts"):
+        model.smooth_bootstrap(
+            response,
+            design,
+            smooth_covariates=smooth_covariates,
+            replicates=10,
+            max_attempts=9,
+        )
+    with pytest.raises(RuntimeError, match="0 successful fits"):
+        model.smooth_bootstrap(
+            response,
+            design,
+            smooth_covariates=smooth_covariates,
+            replicates=10,
+            max_attempts=10,
+            control=RSControl(max_outer_iterations=1),
+            generator=torch.Generator().manual_seed(3),
+        )
 
 
 def test_smooth_curve_inference_supports_formula_new_data():

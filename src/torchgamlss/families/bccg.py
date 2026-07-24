@@ -61,6 +61,33 @@ def _box_cox_z(
     return z, log_ratio
 
 
+def _box_cox_response(
+    score: Tensor,
+    mu: Tensor,
+    sigma: Tensor,
+    nu: Tensor,
+) -> Tensor:
+    """Invert the Box-Cox score transformation on its positive support."""
+    near_zero = nu.abs() < _SMALL_NU
+    safe_nu = torch.where(near_zero, torch.ones_like(nu), nu)
+    base = (1.0 + nu * sigma * score).clamp_min(torch.finfo(score.dtype).tiny)
+    transformed = mu * torch.exp(torch.log(base) / safe_nu)
+    log_normal = mu * torch.exp(sigma * score)
+    return torch.where(near_zero, log_normal, transformed)
+
+
+def _valid_box_cox_score(score: Tensor, sigma: Tensor, nu: Tensor) -> Tensor:
+    """Return whether a latent symmetric score maps to a positive response."""
+    near_zero = nu.abs() < _SMALL_NU
+    safe_nu = torch.where(near_zero, torch.ones_like(nu), nu)
+    boundary = -1.0 / (sigma * safe_nu)
+    return (
+        near_zero
+        | ((nu > 0) & (score > boundary))
+        | ((nu < 0) & (score < boundary))
+    )
+
+
 def _truncation_terms(sigma: Tensor, nu: Tensor) -> tuple[Tensor, Tensor]:
     """Return log normalizer and inverse-Mills ratio for BCCG truncation."""
     near_zero = nu.abs() < _SMALL_NU
@@ -120,6 +147,25 @@ class BoxCoxColeGreenDistribution(Distribution):
             - _LOG_SQRT_TWO_PI
             - log_normalizer
         )
+
+    @torch.no_grad()
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> Tensor:
+        """Draw from the truncated Box-Cox normal representation."""
+        shape = self._extended_shape(sample_shape)
+        mu = self.mu.expand(shape)
+        sigma = self.sigma.expand(shape)
+        nu = self.nu.expand(shape)
+        score = torch.randn(shape, dtype=mu.dtype, device=mu.device)
+        valid = _valid_box_cox_score(score, sigma, nu)
+        for _ in range(100):
+            if bool(valid.all()):
+                break
+            replacement = torch.randn(shape, dtype=mu.dtype, device=mu.device)
+            score = torch.where(valid, score, replacement)
+            valid = _valid_box_cox_score(score, sigma, nu)
+        else:
+            raise RuntimeError("BCCG latent-score rejection sampler did not converge")
+        return _box_cox_response(score, mu, sigma, nu)
 
     def cdf(self, value: Tensor) -> Tensor:
         if self._validate_args:

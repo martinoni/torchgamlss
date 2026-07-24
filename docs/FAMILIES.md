@@ -68,6 +68,18 @@ The response must be finite and strictly between zero and one. Boundary values
 zero and one require a different response family and are not silently moved
 into the interior.
 
+## Response simulation
+
+Every public family implements `family.sample(parameters, generator=...)`.
+A seeded `torch.Generator` makes a draw reproducible without changing Torch's
+global random-number-generator state. Normal, Gamma, Beta, Poisson, and NBI
+delegate to their Torch distributions. BCCG, BCT, and BCPE sample their
+truncated latent normal, Student-t, and power-exponential representations,
+respectively.
+
+This interface is used by the fixed-design parametric smooth bootstrap
+described in [`INFERENCE.md`](INFERENCE.md).
+
 ## Verified behavior
 
 Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
@@ -78,6 +90,8 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - distribution means and variances;
 - autograd after the link chain rule;
 - response-support validation;
+- seeded response simulation, including probability-integral-transform checks
+  for BCCG, BCT, and BCPE;
 - weighted RS fits with parameter-specific offsets and formulas.
 
 See [`PARITY.md`](PARITY.md) for package versions and regeneration commands.

@@ -170,6 +170,12 @@ one parameter. TorchGAMLSS exposes the corresponding full within-curve
 covariance and simulation-based simultaneous band as extensions; the R
 fixtures directly validate the covariance diagonal.
 
+Parametric smooth bootstrap is also an extension: it composes the
+parity-tested family distributions, RS/CG fitting, and smoothing-selection
+updates rather than reproducing a single `gamlss` return value. Seeded
+samplers for BCCG, BCT, and BCPE are checked through their fitted CDFs using
+the probability integral transform.
+
 ## Cole-Green fitting
 
 The CG fixtures compare the joint cross-derivative cycles and additive

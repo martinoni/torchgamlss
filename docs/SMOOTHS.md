@@ -120,6 +120,32 @@ band.confidence_intervals
 The generator makes the Monte Carlo result reproducible. Neither kind of
 interval accounts for uncertainty from estimating the smoothing parameter.
 
+To propagate that uncertainty, simulate from the fitted distribution and
+repeat the complete fit, including lambda selection:
+
+```python
+bootstrap = model.smooth_bootstrap(
+    y,
+    design,
+    smooth_covariates=smooth_covariates,
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)["mu"]["x"]
+
+bootstrap.standard_errors
+bootstrap.confidence_intervals
+bootstrap.bootstrap_smoothing_parameters
+bootstrap.smoothing_parameter_confidence_interval
+bootstrap_band = bootstrap.simultaneous_confidence_band()
+```
+
+These are pointwise percentile intervals from a fixed-design parametric
+bootstrap. Failed refits are replaced by new attempts up to `max_attempts`;
+inspect `failure_rate` rather than ignoring convergence problems. The
+bootstrap band uses the maximum standardized error across the same successful
+refits and is simultaneous over the evaluation points for that smooth.
+
 The same smooth terms and selection modes work with `fit_cg()` and
 `CGControl`; CG performs one `additive.fit()`-style pass per parameter update
 inside its joint Gauss-Seidel cycle.
@@ -168,8 +194,9 @@ gcv_term = PSpline.from_data(
 - Only one-dimensional, equally spaced P-spline bases are available.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
-  additive models. Full joint uncertainty across smooth terms and
-  smoothing-parameter estimation is not yet available.
+  additive models. Parametric bootstrap refits additionally propagate lambda
+  selection uncertainty for individual curves. An analytic joint covariance
+  across smooth terms and smoothing parameters is not yet available.
 - Automatic smoothing selection is available through `fit_rs()` and
   `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

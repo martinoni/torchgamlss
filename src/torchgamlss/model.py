@@ -27,8 +27,10 @@ from torchgamlss.fitting import (
 from torchgamlss.formula import FormulaData, FormulaEncoder
 from torchgamlss.inference import (
     InferenceResult,
+    SmoothBootstrapResult,
     SmoothInferenceResult,
     coefficient_inference,
+    smooth_term_bootstrap,
     smooth_term_inference,
 )
 from torchgamlss.smooths import PSpline, SmoothTerm
@@ -322,6 +324,43 @@ class GAMLSS(nn.Module):
             smooth_covariates=prepared.smooth_covariates,
             evaluation_smooth_covariates=evaluation_covariates,
             confidence_level=confidence_level,
+        )
+
+    def smooth_bootstrap_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        new_data: Any = None,
+        replicates: int = 999,
+        max_attempts: int | None = None,
+        algorithm: Literal["rs", "cg"] = "rs",
+        control: RSControl | CGControl | None = None,
+        confidence_level: float = 0.95,
+        generator: torch.Generator | None = None,
+    ) -> dict[str, dict[str, SmoothBootstrapResult]]:
+        """Bootstrap fitted smooths while repeating lambda selection."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        evaluation_covariates = (
+            prepared.smooth_covariates
+            if new_data is None
+            else self.prepare_formula_data(new_data).smooth_covariates
+        )
+        return self.smooth_bootstrap(
+            prepared.response,
+            prepared.design_matrices,
+            smooth_covariates=prepared.smooth_covariates,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            evaluation_smooth_covariates=evaluation_covariates,
+            replicates=replicates,
+            max_attempts=max_attempts,
+            algorithm=algorithm,
+            control=control,
+            confidence_level=confidence_level,
+            generator=generator,
         )
 
     def diagnostics_data(
@@ -721,6 +760,41 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             evaluation_smooth_covariates=evaluation_smooth_covariates,
             confidence_level=confidence_level,
+        )
+
+    def smooth_bootstrap(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        evaluation_smooth_covariates: (
+            Mapping[str, Mapping[str, Tensor]] | None
+        ) = None,
+        replicates: int = 999,
+        max_attempts: int | None = None,
+        algorithm: Literal["rs", "cg"] = "rs",
+        control: RSControl | CGControl | None = None,
+        confidence_level: float = 0.95,
+        generator: torch.Generator | None = None,
+    ) -> dict[str, dict[str, SmoothBootstrapResult]]:
+        """Bootstrap smooth curves while repeating classical fitting."""
+        return smooth_term_bootstrap(
+            self,
+            response,
+            design_matrices,
+            smooth_covariates=smooth_covariates,
+            weights=weights,
+            offsets=offsets,
+            evaluation_smooth_covariates=evaluation_smooth_covariates,
+            replicates=replicates,
+            max_attempts=max_attempts,
+            algorithm=algorithm,
+            control=control,
+            confidence_level=confidence_level,
+            generator=generator,
         )
 
     def diagnostics(

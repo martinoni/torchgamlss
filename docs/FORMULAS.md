@@ -110,6 +110,25 @@ band = mu_x.simultaneous_confidence_band(
 default intervals in `mu_x_table` are pointwise; `band.confidence_intervals`
 contains a simulation-based simultaneous band at the same confidence level.
 
+To include smoothing-selection variability, use a seeded parametric bootstrap.
+Each replicate reuses the stored formulas and refits the complete model:
+
+```python
+bootstrap = model.smooth_bootstrap_data(
+    data,
+    weights="weight",
+    new_data=new_data,
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)
+mu_x_bootstrap = bootstrap["mu"]["x"]
+```
+
+The original fitted model is not changed. See
+[`INFERENCE.md`](INFERENCE.md) for intervals, failed-refit accounting, and the
+fixed-design interpretation.
+
 Diagnostics and quantile residuals use the same stored encodings:
 
 ```python

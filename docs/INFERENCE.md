@@ -156,6 +156,83 @@ R does not currently provide `se.fit=TRUE` for new data through
 the stored basis. Keep new covariates inside the fitted range when strict
 extrapolation compatibility matters.
 
+## Parametric bootstrap with lambda reselection
+
+`smooth_bootstrap_data()` propagates response, coefficient, and
+smoothing-selection variability by simulating from the fitted GAMLSS
+distribution and refitting the complete model:
+
+```python
+bootstrap = model.smooth_bootstrap_data(
+    data,
+    weights="weight",
+    new_data=new_data,
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)
+mu_x_bootstrap = bootstrap["mu"]["x"]
+
+mu_x_bootstrap.standard_errors
+mu_x_bootstrap.confidence_intervals
+mu_x_bootstrap.bootstrap_estimates
+mu_x_bootstrap.bootstrap_smoothing_parameters
+mu_x_bootstrap.smoothing_parameter_standard_error
+mu_x_bootstrap.smoothing_parameter_confidence_interval
+bootstrap_band = mu_x_bootstrap.simultaneous_confidence_band()
+bootstrap_table = mu_x_bootstrap.to_dataframe()
+```
+
+For each successful replicate, TorchGAMLSS:
+
+1. draws one response at every original design row from the fitted
+   distribution;
+2. clones the fitted model;
+3. reruns RS or CG, including ML, GAIC, GCV, or target-EDF lambda selection;
+4. evaluates every smooth on the requested covariate values.
+
+Use the same `algorithm=` and `control=` settings as the original fit so the
+bootstrap distribution represents the estimator that produced the reported
+model.
+
+The reported pointwise intervals are percentile bootstrap intervals.
+`standard_errors` and `covariance_matrix` are empirical across the successful
+refitted curves. The original model is never mutated. All eight public
+families provide the response sampler required by this workflow.
+
+`simultaneous_confidence_band()` uses the replicate distribution of the
+maximum absolute standardized curve error. It therefore propagates lambda
+selection into a max-|t| band over the evaluation points of that one smooth,
+without another simulation pass. Inspect its `method` field to distinguish it
+from the conditional Gaussian band.
+
+Bootstrap refits can occasionally fail or reach their iteration limit.
+`replicates` counts successful fits; by default the method allows up to the
+larger of `replicates + 10` and `1.2 * replicates` attempts. Set
+`max_attempts=` explicitly when needed, and inspect `attempts`,
+`failed_replicates`, and `failure_rate`. Exhausting the attempt budget raises
+an error rather than returning an undersized bootstrap sample.
+
+This is a fixed-design parametric bootstrap: covariates, offsets, and weights
+remain fixed while responses are simulated. Weights are reused as case or
+prior weights. If integer weights represent literal replicated observations,
+expand those observations before bootstrapping so each replicate receives an
+independent simulated response.
+
+The bootstrap is substantially more expensive than conditional inference;
+`999` is a practical starting point, while final tail inference may require
+more replicates. Neither the pointwise intervals nor the band is joint across
+several different smooth terms.
+
+Methodologically, the local ML lambda update follows
+[Rigby and Stasinopoulos (2014)](https://doi.org/10.1177/0962280212473302).
+The simulate-and-refit design follows the general parametric-bootstrap
+strategy for GAMLSS described by
+[Hohberg, Pütz, and Kneib (2020)](https://doi.org/10.1371/journal.pone.0226514).
+For broader context on interval estimation and smoothing-parameter variability
+in penalized GAMs, see
+[Wood (2006)](https://doi.org/10.1111/j.1467-842X.2006.00450.x).
+
 ## Wald tests and degrees of freedom
 
 Statistics, two-sided p-values, and confidence intervals use a Student t
@@ -184,10 +261,12 @@ or non-identifiable designs are rejected rather than pseudo-inverted.
 Parametric inference supports models fitted by RS, CG, or Torch L-BFGS.
 Conditional linear-coefficient inference supports additive RS and CG fits.
 Conditional smooth inference and within-curve simultaneous bands support
-additive RS and CG fits. Full joint inference across spline coefficients,
-different smooth terms, and smoothing parameters remains separate future
-work.
+additive RS and CG fits. Parametric bootstrap smooth inference supports both
+algorithms and repeats smoothing-parameter selection. A closed-form joint
+covariance across spline coefficients, different smooth terms, and smoothing
+parameters remains separate future work.
 
-These are local Wald approximations. They do not replace profile likelihood,
-bootstrap inference, robust sandwich covariance, or corrections for
-smoothing-parameter estimation.
+The Hessian and conditional smooth calculations are local Wald
+approximations. They do not replace profile likelihood or robust sandwich
+covariance. The parametric bootstrap adds a simulation-based alternative but
+depends on the fitted family and convergence of the refits.

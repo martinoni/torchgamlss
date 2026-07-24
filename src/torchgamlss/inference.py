@@ -1,11 +1,12 @@
-"""Wald inference for coefficients and conditional additive smooth curves."""
+"""Wald, conditional smooth-curve, and parametric-bootstrap inference."""
 
 from __future__ import annotations
 
+import copy
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,7 @@ from scipy.stats import t as student_t
 from torch import Tensor
 
 if TYPE_CHECKING:
+    from torchgamlss.fitting import CGControl, RSControl
     from torchgamlss.model import GAMLSS
 
 
@@ -86,6 +88,7 @@ class SmoothSimultaneousBand:
     critical_value: float
     confidence_level: float
     simulations: int
+    method: str = "conditional_gaussian_max_t"
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return covariates, estimates, and limits as a pandas DataFrame."""
@@ -207,6 +210,7 @@ class SmoothInferenceResult:
             critical_value=critical_value,
             confidence_level=self.confidence_level,
             simulations=simulations,
+            method="conditional_gaussian_max_t",
         )
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -224,6 +228,132 @@ class SmoothInferenceResult:
             columns=[
                 "covariate",
                 "estimate",
+                "standard_error",
+                "ci_lower",
+                "ci_upper",
+            ],
+        )
+
+
+@dataclass(frozen=True)
+class SmoothBootstrapResult:
+    """Parametric-bootstrap inference for one fitted smooth contribution."""
+
+    parameter: str
+    term: str
+    covariate: Tensor
+    estimates: Tensor
+    bootstrap_estimates: Tensor = field(repr=False)
+    standard_errors: Tensor
+    confidence_intervals: Tensor
+    smoothing_parameter: float
+    bootstrap_smoothing_parameters: Tensor = field(repr=False)
+    confidence_level: float
+    replicates: int
+    attempts: int
+    failed_replicates: int
+    algorithm: str
+
+    @property
+    def bootstrap_mean(self) -> Tensor:
+        """Return the replicate-wise mean curve."""
+        return self.bootstrap_estimates.mean(dim=0)
+
+    @property
+    def bias(self) -> Tensor:
+        """Return bootstrap mean minus the original fitted curve."""
+        return self.bootstrap_mean - self.estimates
+
+    @property
+    def covariance_matrix(self) -> Tensor:
+        """Return the empirical covariance across bootstrap curves."""
+        centered = self.bootstrap_estimates - self.bootstrap_mean
+        return centered.mT @ centered / (self.replicates - 1)
+
+    @property
+    def smoothing_parameter_standard_error(self) -> float:
+        """Return the bootstrap standard error of the smoothing parameter."""
+        return float(self.bootstrap_smoothing_parameters.std(correction=1))
+
+    @property
+    def smoothing_parameter_bootstrap_mean(self) -> float:
+        """Return the mean smoothing parameter across successful refits."""
+        return float(self.bootstrap_smoothing_parameters.mean())
+
+    @property
+    def smoothing_parameter_bias(self) -> float:
+        """Return bootstrap mean lambda minus the original fitted lambda."""
+        return self.smoothing_parameter_bootstrap_mean - self.smoothing_parameter
+
+    @property
+    def smoothing_parameter_confidence_interval(self) -> Tensor:
+        """Return the percentile interval for the smoothing parameter."""
+        tail_probability = (1.0 - self.confidence_level) / 2.0
+        probabilities = torch.tensor(
+            [tail_probability, 1.0 - tail_probability],
+            dtype=self.bootstrap_smoothing_parameters.dtype,
+            device=self.bootstrap_smoothing_parameters.device,
+        )
+        return torch.quantile(self.bootstrap_smoothing_parameters, probabilities)
+
+    @property
+    def failure_rate(self) -> float:
+        """Return the fraction of attempted refits that failed."""
+        return self.failed_replicates / self.attempts
+
+    def simultaneous_confidence_band(self) -> SmoothSimultaneousBand:
+        """Return a max-|t| band from the successful bootstrap refits."""
+        positive_standard_errors = self.standard_errors > 0
+        if not positive_standard_errors.any():
+            raise RuntimeError(
+                "bootstrap curves have no positive variance; "
+                "a simultaneous band is unavailable"
+            )
+        standardized_deviations = (
+            self.bootstrap_estimates[:, positive_standard_errors]
+            - self.estimates[positive_standard_errors]
+        ) / self.standard_errors[positive_standard_errors]
+        maximum_statistics = standardized_deviations.abs().amax(dim=1)
+        critical_value = float(
+            torch.quantile(maximum_statistics, self.confidence_level)
+        )
+        confidence_intervals = torch.column_stack(
+            (
+                self.estimates - critical_value * self.standard_errors,
+                self.estimates + critical_value * self.standard_errors,
+            )
+        )
+        return SmoothSimultaneousBand(
+            parameter=self.parameter,
+            term=self.term,
+            covariate=self.covariate,
+            estimates=self.estimates,
+            confidence_intervals=confidence_intervals,
+            critical_value=critical_value,
+            confidence_level=self.confidence_level,
+            simulations=self.replicates,
+            method="parametric_bootstrap_max_t",
+        )
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return curve estimates and pointwise bootstrap inference."""
+        values = torch.column_stack(
+            (
+                self.covariate,
+                self.estimates,
+                self.bootstrap_mean,
+                self.bias,
+                self.standard_errors,
+                self.confidence_intervals,
+            )
+        )
+        return pd.DataFrame(
+            values.detach().cpu().numpy(),
+            columns=[
+                "covariate",
+                "estimate",
+                "bootstrap_mean",
+                "bias",
                 "standard_error",
                 "ci_lower",
                 "ci_upper",
@@ -548,6 +678,249 @@ def smooth_term_inference(
                 smoothing_parameter=term.smoothing_parameter,
                 effective_degrees_of_freedom=effective_degrees_of_freedom,
                 confidence_level=confidence_level,
+            )
+
+    return results
+
+
+def smooth_term_bootstrap(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    evaluation_smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    replicates: int = 999,
+    max_attempts: int | None = None,
+    algorithm: Literal["rs", "cg"] = "rs",
+    control: RSControl | CGControl | None = None,
+    confidence_level: float = 0.95,
+    generator: torch.Generator | None = None,
+) -> dict[str, dict[str, SmoothBootstrapResult]]:
+    """Refit parametric bootstrap samples and summarize smooth uncertainty.
+
+    Each replicate draws a response from the fitted distribution and reruns
+    the selected classical fitting algorithm. Automatic smoothing-parameter
+    selection is therefore repeated rather than held fixed.
+    """
+    if (
+        isinstance(replicates, bool)
+        or not isinstance(replicates, int)
+        or replicates < 10
+    ):
+        raise ValueError("replicates must be an integer of at least 10")
+    if max_attempts is None:
+        max_attempts = max(replicates + 10, math.ceil(1.2 * replicates))
+    if (
+        isinstance(max_attempts, bool)
+        or not isinstance(max_attempts, int)
+        or max_attempts < replicates
+    ):
+        raise ValueError("max_attempts must be an integer not smaller than replicates")
+    if not math.isfinite(confidence_level) or not 0.0 < confidence_level < 1.0:
+        raise ValueError("confidence_level must be finite and between zero and one")
+    if algorithm not in {"rs", "cg"}:
+        raise ValueError("algorithm must be 'rs' or 'cg'")
+    if not any(
+        model.smooth_terms[parameter] for parameter in model.family.parameter_names
+    ):
+        raise ValueError("smooth bootstrap requires at least one smooth term")
+
+    from torchgamlss.fitting import CGControl, RSControl
+
+    expected_control = RSControl if algorithm == "rs" else CGControl
+    if control is not None and not isinstance(control, expected_control):
+        raise ValueError(
+            f"control must be {expected_control.__name__} when algorithm="
+            f"{algorithm!r}"
+        )
+
+    model_parameter = next(model.parameters())
+    if (
+        response.ndim != 1
+        or response.numel() < 1
+        or response.dtype != model_parameter.dtype
+        or response.device != model_parameter.device
+        or not torch.isfinite(response).all()
+    ):
+        raise ValueError(
+            "bootstrap response must be a non-empty finite vector matching "
+            "the model dtype and device"
+        )
+    model.family.validate_response(response, context="bootstrap")
+    case_weights = model._validated_weights(response, weights)
+    contributions = model.term_contributions(
+        design_matrices,
+        offsets,
+        smooth_covariates=smooth_covariates,
+    )
+    if any(
+        contribution.offset.numel() != response.numel()
+        for contribution in contributions.values()
+    ):
+        raise ValueError("design matrices must have one row per response")
+
+    evaluation_covariates = (
+        smooth_covariates
+        if evaluation_smooth_covariates is None
+        else evaluation_smooth_covariates
+    )
+    _validate_smooth_evaluation_mapping(model, evaluation_covariates)
+    fitted_parameters = {
+        parameter: value.detach()
+        for parameter, value in model.family.parameters_from_predictors(
+            {
+                parameter: contribution.total.detach()
+                for parameter, contribution in contributions.items()
+            }
+        ).items()
+    }
+
+    original_estimates: dict[str, dict[str, Tensor]] = {}
+    original_smoothing_parameters: dict[str, dict[str, float]] = {}
+    bootstrap_estimates: dict[str, dict[str, Tensor]] = {}
+    bootstrap_smoothing_parameters: dict[str, dict[str, Tensor]] = {}
+    for parameter in model.family.parameter_names:
+        original_estimates[parameter] = {}
+        original_smoothing_parameters[parameter] = {}
+        bootstrap_estimates[parameter] = {}
+        bootstrap_smoothing_parameters[parameter] = {}
+        for term_name, term in model.smooth_terms[parameter].items():
+            evaluation_covariate = evaluation_covariates[parameter][term_name]
+            estimate = term(evaluation_covariate).detach()
+            original_estimates[parameter][term_name] = estimate.clone()
+            original_smoothing_parameters[parameter][
+                term_name
+            ] = term.smoothing_parameter
+            bootstrap_estimates[parameter][term_name] = torch.empty(
+                (replicates, estimate.numel()),
+                dtype=estimate.dtype,
+                device=estimate.device,
+            )
+            bootstrap_smoothing_parameters[parameter][term_name] = torch.empty(
+                replicates,
+                dtype=estimate.dtype,
+                device=estimate.device,
+            )
+
+    successful_replicates = 0
+    attempts = 0
+    failure_messages: list[str] = []
+    while successful_replicates < replicates and attempts < max_attempts:
+        attempts += 1
+        bootstrap_response = model.family.sample(
+            fitted_parameters,
+            generator=generator,
+        )
+        if (
+            bootstrap_response.shape != response.shape
+            or bootstrap_response.dtype != response.dtype
+            or bootstrap_response.device != response.device
+            or not torch.isfinite(bootstrap_response).all()
+        ):
+            failure_messages.append(
+                "family sampling returned an invalid bootstrap response"
+            )
+            continue
+        try:
+            model.family.validate_response(
+                bootstrap_response,
+                context=f"bootstrap attempt {attempts}",
+            )
+        except ValueError as error:
+            failure_messages.append(str(error))
+            continue
+        bootstrap_model = copy.deepcopy(model)
+        try:
+            if algorithm == "rs":
+                fit_result = bootstrap_model.fit_rs(
+                    bootstrap_response,
+                    design_matrices,
+                    weights=case_weights,
+                    offsets=offsets,
+                    smooth_covariates=smooth_covariates,
+                    initial_parameters=fitted_parameters,
+                    control=control,
+                )
+            else:
+                fit_result = bootstrap_model.fit_cg(
+                    bootstrap_response,
+                    design_matrices,
+                    weights=case_weights,
+                    offsets=offsets,
+                    smooth_covariates=smooth_covariates,
+                    initial_parameters=fitted_parameters,
+                    control=control,
+                )
+        except (FloatingPointError, RuntimeError, ValueError) as error:
+            failure_messages.append(str(error))
+            continue
+        if not fit_result.converged:
+            failure_messages.append("classical fit did not converge")
+            continue
+
+        with torch.no_grad():
+            for parameter in model.family.parameter_names:
+                for term_name, term in bootstrap_model.smooth_terms[
+                    parameter
+                ].items():
+                    bootstrap_estimates[parameter][term_name][
+                        successful_replicates
+                    ].copy_(
+                        term(evaluation_covariates[parameter][term_name])
+                    )
+                    bootstrap_smoothing_parameters[parameter][term_name][
+                        successful_replicates
+                    ] = term.smoothing_parameter
+        successful_replicates += 1
+
+    if successful_replicates < replicates:
+        last_failure = failure_messages[-1] if failure_messages else "unknown failure"
+        raise RuntimeError(
+            f"bootstrap obtained {successful_replicates} successful fits out of "
+            f"{replicates} after {attempts} attempts; last failure: {last_failure}"
+        )
+
+    tail_probability = (1.0 - confidence_level) / 2.0
+    quantile_probabilities = torch.tensor(
+        [tail_probability, 1.0 - tail_probability],
+        dtype=response.dtype,
+        device=response.device,
+    )
+    results: dict[str, dict[str, SmoothBootstrapResult]] = {}
+    for parameter in model.family.parameter_names:
+        results[parameter] = {}
+        for term_name in model.smooth_terms[parameter]:
+            term_bootstrap_estimates = bootstrap_estimates[parameter][term_name]
+            standard_errors = term_bootstrap_estimates.std(dim=0, correction=1)
+            confidence_intervals = torch.quantile(
+                term_bootstrap_estimates,
+                quantile_probabilities,
+                dim=0,
+            ).mT
+            results[parameter][term_name] = SmoothBootstrapResult(
+                parameter=parameter,
+                term=term_name,
+                covariate=evaluation_covariates[parameter][term_name]
+                .detach()
+                .clone(),
+                estimates=original_estimates[parameter][term_name],
+                bootstrap_estimates=term_bootstrap_estimates,
+                standard_errors=standard_errors,
+                confidence_intervals=confidence_intervals,
+                smoothing_parameter=original_smoothing_parameters[parameter][
+                    term_name
+                ],
+                bootstrap_smoothing_parameters=bootstrap_smoothing_parameters[
+                    parameter
+                ][term_name],
+                confidence_level=confidence_level,
+                replicates=replicates,
+                attempts=attempts,
+                failed_replicates=attempts - replicates,
+                algorithm=algorithm,
             )
 
     return results

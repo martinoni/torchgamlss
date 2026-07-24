@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from torchgamlss import GAMLSS, Normal, PSpline
+from torchgamlss import BCCG, BCPE, BCT, GAMLSS, Normal, PSpline
 
 
 def _example():
@@ -30,6 +30,67 @@ def test_normal_parameters_follow_their_predictors():
         distribution.scale,
         torch.ones(3, dtype=torch.float64),
     )
+
+
+def test_family_sampling_with_generator_is_reproducible_and_isolated():
+    family = Normal()
+    parameters = {
+        "mu": torch.zeros(4, dtype=torch.float64),
+        "sigma": torch.ones(4, dtype=torch.float64),
+    }
+    global_state = torch.random.get_rng_state().clone()
+
+    first = family.sample(
+        parameters,
+        generator=torch.Generator().manual_seed(2026),
+    )
+    second = family.sample(
+        parameters,
+        generator=torch.Generator().manual_seed(2026),
+    )
+
+    torch.testing.assert_close(first, second)
+    assert torch.equal(torch.random.get_rng_state(), global_state)
+
+
+@pytest.mark.parametrize(
+    ("family", "tau"),
+    [
+        (BCCG(), None),
+        (BCT(), 4.0),
+        (BCPE(), 1.5),
+    ],
+)
+def test_box_cox_family_sampling_has_uniform_probability_integral_transform(
+    family,
+    tau,
+):
+    observation_count = 3_000
+    parameters = {
+        "mu": torch.full((observation_count,), 2.0, dtype=torch.float64),
+        "sigma": torch.full((observation_count,), 0.25, dtype=torch.float64),
+        "nu": torch.tensor([-0.7, 0.0, 0.7], dtype=torch.float64).repeat(
+            observation_count // 3
+        ),
+    }
+    if tau is not None:
+        parameters["tau"] = torch.full(
+            (observation_count,),
+            tau,
+            dtype=torch.float64,
+        )
+
+    response = family.sample(
+        parameters,
+        generator=torch.Generator().manual_seed(2026),
+    )
+    probabilities = family.cdf(response, parameters)
+
+    assert response.shape == (observation_count,)
+    assert torch.isfinite(response).all()
+    assert torch.all(response > 0)
+    assert float(probabilities.mean()) == pytest.approx(0.5, abs=0.02)
+    assert float(probabilities.var()) == pytest.approx(1.0 / 12.0, abs=0.01)
 
 
 def test_negative_log_likelihood_is_differentiable():

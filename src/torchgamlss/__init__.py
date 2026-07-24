@@ -19,6 +19,7 @@ from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
 from torchgamlss.inference import (
     InferenceResult,
+    SmoothBootstrapResult,
     SmoothInferenceResult,
     SmoothSimultaneousBand,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "PSpline",
     "RSControl",
     "RSFitResult",
+    "SmoothBootstrapResult",
     "SmoothInferenceResult",
     "SmoothSimultaneousBand",
     "SmoothTerm",

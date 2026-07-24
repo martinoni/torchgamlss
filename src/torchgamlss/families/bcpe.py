@@ -7,11 +7,16 @@ from collections.abc import Mapping
 
 import torch
 from torch import Tensor
-from torch.distributions import Distribution, constraints
+from torch.distributions import Distribution, Gamma, constraints
 from torch.distributions.utils import broadcast_all
 
 from torchgamlss.families.base import Family
-from torchgamlss.families.bccg import _box_cox_z, _exprel_derivative
+from torchgamlss.families.bccg import (
+    _box_cox_response,
+    _box_cox_z,
+    _exprel_derivative,
+    _valid_box_cox_score,
+)
 from torchgamlss.links import IdentityLink, Link, LogLink
 
 _MAX_GAMMA_ITERATIONS = 300
@@ -137,6 +142,18 @@ def _power_exponential_cdf(value: Tensor, tau: Tensor) -> Tensor:
     return 0.5 * (1.0 + gamma_probability * value.sign())
 
 
+def _sample_power_exponential(tau: Tensor) -> Tensor:
+    """Draw a standardized symmetric power-exponential score."""
+    gamma = Gamma(tau.reciprocal(), torch.ones_like(tau)).sample()
+    magnitude = torch.exp(_log_scale(tau)) * (2.0 * gamma).pow(tau.reciprocal())
+    sign = torch.where(
+        torch.rand_like(magnitude) < 0.5,
+        -torch.ones_like(magnitude),
+        torch.ones_like(magnitude),
+    )
+    return sign * magnitude
+
+
 def _truncation_terms(
     sigma: Tensor,
     nu: Tensor,
@@ -207,6 +224,26 @@ class BoxCoxPowerExponentialDistribution(Distribution):
             + _power_exponential_log_prob(z, tau)
             - log_normalizer
         )
+
+    @torch.no_grad()
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> Tensor:
+        """Draw from the truncated Box-Cox power-exponential representation."""
+        shape = self._extended_shape(sample_shape)
+        mu = self.mu.expand(shape)
+        sigma = self.sigma.expand(shape)
+        nu = self.nu.expand(shape)
+        tau = self.tau.expand(shape)
+        score = _sample_power_exponential(tau)
+        valid = _valid_box_cox_score(score, sigma, nu)
+        for _ in range(100):
+            if bool(valid.all()):
+                break
+            replacement = _sample_power_exponential(tau)
+            score = torch.where(valid, score, replacement)
+            valid = _valid_box_cox_score(score, sigma, nu)
+        else:
+            raise RuntimeError("BCPE latent-score rejection sampler did not converge")
+        return _box_cox_response(score, mu, sigma, nu)
 
     def cdf(self, value: Tensor) -> Tensor:
         if self._validate_args:

@@ -45,6 +45,7 @@ as supported.
 - [x] BCPE four-parameter family
 - [x] R-to-Python API and numerical compatibility guide
 - [x] Within-curve covariance and conditional simultaneous smooth bands
+- [x] Parametric smooth bootstrap and bands with repeated lambda selection
 - [ ] Joint covariance and uncertainty for penalized smooth terms
 
 ## Phase 4 — Torch-native extensions

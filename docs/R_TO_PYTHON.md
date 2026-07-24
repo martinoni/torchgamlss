@@ -441,6 +441,25 @@ The covariance and band extend the same fixed-`lambda` calculation; R parity
 fixtures directly compare its diagonal (the pointwise variances). The band
 does not account for smoothing-parameter selection uncertainty.
 
+TorchGAMLSS provides an explicit parametric-bootstrap path when lambda
+selection uncertainty matters:
+
+```python
+bootstrap = model.smooth_bootstrap_data(
+    data,
+    weights="weight",
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)
+mu_x_bootstrap = bootstrap["mu"]["x"]
+```
+
+Every replicate simulates from the fitted family and reruns the complete RS or
+CG fit, so automatic `pb()` lambda selection is repeated. This is a
+TorchGAMLSS extension rather than a claim of direct `gamlss` output parity;
+the underlying fit and conditional variance remain covered by the R fixtures.
+
 See [`DIAGNOSTICS.md`](DIAGNOSTICS.md) and
 [`INFERENCE.md`](INFERENCE.md).
 
@@ -493,7 +512,8 @@ Important exclusions include:
 - smoothers other than the current `pb()` implementation;
 - transformed or interaction smooth terms;
 - automatic missing-value row removal;
-- profile-likelihood, bootstrap, and robust covariance workflows;
+- profile-likelihood and robust covariance workflows;
+- nonparametric, cluster, and simultaneous multi-smooth bootstrap intervals;
 - joint covariance across different penalized smooth terms;
 - the complete R plotting and diagnostic ecosystem;
 - exact P-spline extrapolation parity outside the training range.

@@ -7,14 +7,16 @@ from collections.abc import Mapping
 
 import torch
 from torch import Tensor
-from torch.distributions import Distribution, constraints
+from torch.distributions import Distribution, StudentT, constraints
 from torch.distributions.utils import broadcast_all
 
 from torchgamlss.families.base import Family
 from torchgamlss.families.bccg import (
     BoxCoxColeGreenDistribution,
+    _box_cox_response,
     _box_cox_z,
     _exprel_derivative,
+    _valid_box_cox_score,
 )
 from torchgamlss.links import IdentityLink, Link, LogLink
 
@@ -218,6 +220,27 @@ class BoxCoxTDistribution(Distribution):
             validate_args=False,
         ).log_prob(value)
         return torch.where(use_normal_limit, normal_density, log_density)
+
+    @torch.no_grad()
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> Tensor:
+        """Draw from the truncated Box-Cox Student-t representation."""
+        shape = self._extended_shape(sample_shape)
+        mu = self.mu.expand(shape)
+        sigma = self.sigma.expand(shape)
+        nu = self.nu.expand(shape)
+        tau = self.tau.expand(shape)
+        score_distribution = StudentT(tau)
+        score = score_distribution.sample()
+        valid = _valid_box_cox_score(score, sigma, nu)
+        for _ in range(100):
+            if bool(valid.all()):
+                break
+            replacement = score_distribution.sample()
+            score = torch.where(valid, score, replacement)
+            valid = _valid_box_cox_score(score, sigma, nu)
+        else:
+            raise RuntimeError("BCT latent-score rejection sampler did not converge")
+        return _box_cox_response(score, mu, sigma, nu)
 
     def cdf(self, value: Tensor) -> Tensor:
         if self._validate_args:

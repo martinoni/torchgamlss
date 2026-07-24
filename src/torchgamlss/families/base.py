@@ -50,6 +50,46 @@ class Family(ABC):
         """Evaluate the observation-wise log density or log mass."""
         return self.distribution(parameters).log_prob(response)
 
+    def sample(
+        self,
+        parameters: Mapping[str, Tensor],
+        *,
+        generator: torch.Generator | None = None,
+    ) -> Tensor:
+        """Draw one response per parameter row.
+
+        PyTorch distributions use the global random-number generator. When a
+        generator is supplied, a seed is drawn from it inside an isolated RNG
+        context so sampling is reproducible without changing global RNG state.
+        """
+        distribution = self.distribution(parameters)
+        try:
+            if generator is None:
+                return distribution.sample()
+
+            generator_device = torch.device(generator.device)
+            seed = int(
+                torch.randint(
+                    torch.iinfo(torch.int64).max,
+                    (),
+                    dtype=torch.int64,
+                    device=generator_device,
+                    generator=generator,
+                )
+            )
+            parameter_device = next(iter(parameters.values())).device
+            devices = [] if parameter_device.type == "cpu" else [parameter_device]
+            with torch.random.fork_rng(
+                devices=devices,
+                device_type=parameter_device.type,
+            ):
+                torch.manual_seed(seed)
+                return distribution.sample()
+        except NotImplementedError as error:
+            raise NotImplementedError(
+                f"response sampling is not implemented for the {self.name} family"
+            ) from error
+
     def cdf(self, response: Tensor, parameters: Mapping[str, Tensor]) -> Tensor:
         """Evaluate the response CDF for quantile diagnostics."""
         try:
