@@ -1,4 +1,4 @@
-"""Wald inference for parametric and conditional additive GAMLSS coefficients."""
+"""Wald inference for coefficients and conditional additive smooth curves."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 import torch
+from scipy.stats import norm
 from scipy.stats import t as student_t
 from torch import Tensor
 
@@ -67,6 +68,47 @@ class InferenceResult:
                 "standard_error",
                 "statistic",
                 "p_value",
+                "ci_lower",
+                "ci_upper",
+            ],
+        )
+
+
+@dataclass(frozen=True)
+class SmoothInferenceResult:
+    """Pointwise conditional inference for one fitted smooth contribution."""
+
+    parameter: str
+    term: str
+    covariate: Tensor
+    estimates: Tensor
+    standard_errors: Tensor
+    confidence_intervals: Tensor
+    smoothing_parameter: float
+    effective_degrees_of_freedom: float
+    confidence_level: float
+
+    @property
+    def variances(self) -> Tensor:
+        """Return pointwise variances on the additive predictor scale."""
+        return self.standard_errors.square()
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return covariates, fitted contributions, and pointwise intervals."""
+        values = torch.column_stack(
+            (
+                self.covariate,
+                self.estimates,
+                self.standard_errors,
+                self.confidence_intervals,
+            )
+        )
+        return pd.DataFrame(
+            values.detach().cpu().numpy(),
+            columns=[
+                "covariate",
+                "estimate",
+                "standard_error",
                 "ci_lower",
                 "ci_upper",
             ],
@@ -224,6 +266,171 @@ def coefficient_inference(
     )
 
 
+def smooth_term_inference(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    evaluation_smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    confidence_level: float = 0.95,
+) -> dict[str, dict[str, SmoothInferenceResult]]:
+    """Infer fitted smooth curves conditional on their smoothing parameters.
+
+    The pointwise variance follows ``gamlss.pb()``: it uses the inverse
+    penalized working-weight system and removes the unpenalized polynomial
+    null-space contribution already represented by the linear predictor.
+    """
+    if not math.isfinite(confidence_level) or not 0.0 < confidence_level < 1.0:
+        raise ValueError("confidence_level must be finite and between zero and one")
+    if not any(
+        model.smooth_terms[parameter] for parameter in model.family.parameter_names
+    ):
+        raise ValueError("smooth inference requires at least one smooth term")
+
+    model_parameter = next(model.parameters())
+    if (
+        response.ndim != 1
+        or response.numel() < 1
+        or response.dtype != model_parameter.dtype
+        or response.device != model_parameter.device
+        or not torch.isfinite(response).all()
+    ):
+        raise ValueError(
+            "inference response must be a non-empty finite vector matching "
+            "the model dtype and device"
+        )
+
+    contributions = model.term_contributions(
+        design_matrices,
+        offsets,
+        smooth_covariates=smooth_covariates,
+    )
+    if any(
+        contribution.offset.numel() != response.numel()
+        for contribution in contributions.values()
+    ):
+        raise ValueError("design matrices must have one row per response")
+    case_weights = model._validated_weights(response, weights)
+    predictors = {
+        parameter: contribution.total.detach()
+        for parameter, contribution in contributions.items()
+    }
+    parameters = model.family.parameters_from_predictors(predictors)
+    second_derivatives = model.family.expected_second_derivatives(response, parameters)
+
+    evaluation_covariates = (
+        smooth_covariates
+        if evaluation_smooth_covariates is None
+        else evaluation_smooth_covariates
+    )
+    _validate_smooth_evaluation_mapping(model, evaluation_covariates)
+    critical_value = float(norm.ppf(0.5 + confidence_level / 2.0))
+    results: dict[str, dict[str, SmoothInferenceResult]] = {}
+
+    for parameter in model.family.parameter_names:
+        parameter_terms = model.smooth_terms[parameter]
+        results[parameter] = {}
+        if not parameter_terms:
+            continue
+
+        second = second_derivatives[(parameter, parameter)].clamp(max=-1e-15)
+        inverse_link_derivative = model.family.links[parameter].inverse_derivative(
+            predictors[parameter]
+        )
+        derivative = inverse_link_derivative.reciprocal()
+        working_weights = -(second / derivative.square())
+        working_weights = working_weights.clamp(min=1e-10, max=1e10).detach()
+        combined_weights = working_weights * case_weights
+        if (
+            not torch.isfinite(combined_weights).all()
+            or (combined_weights < 0).any()
+            or combined_weights.sum() <= 0
+        ):
+            raise RuntimeError(
+                f"conditional smooth weights for {parameter!r} are invalid"
+            )
+
+        for term_name, term in parameter_terms.items():
+            training_covariate = smooth_covariates[parameter][term_name].detach()
+            evaluation_covariate = evaluation_covariates[parameter][term_name].detach()
+            training_basis = term.basis(training_covariate)
+            evaluation_basis = term.basis(evaluation_covariate)
+            penalty = term.penalty_matrix()
+            system = training_basis.mT @ (
+                combined_weights.unsqueeze(-1) * training_basis
+            ) + term.smoothing_parameter * (penalty.mT @ penalty)
+            system_inverse = torch.linalg.pinv(system, hermitian=True)
+            raw_variances = torch.einsum(
+                "ij,jk,ik->i",
+                evaluation_basis,
+                system_inverse,
+                evaluation_basis,
+            )
+
+            nullity = term.penalty_nullity
+            if nullity:
+                powers = torch.arange(
+                    nullity,
+                    dtype=training_covariate.dtype,
+                    device=training_covariate.device,
+                )
+                training_null_basis = training_covariate.unsqueeze(-1).pow(powers)
+                evaluation_null_basis = evaluation_covariate.unsqueeze(-1).pow(powers)
+                null_system = training_null_basis.mT @ (
+                    combined_weights.unsqueeze(-1) * training_null_basis
+                )
+                null_inverse = torch.linalg.pinv(null_system, hermitian=True)
+                null_variances = torch.einsum(
+                    "ij,jk,ik->i",
+                    evaluation_null_basis,
+                    null_inverse,
+                    evaluation_null_basis,
+                )
+                variances = raw_variances - null_variances
+            else:
+                variances = raw_variances
+
+            tolerance = math.sqrt(
+                torch.finfo(variances.dtype).eps
+            ) * raw_variances.abs().max().clamp_min(1.0)
+            if (variances < -tolerance).any():
+                raise RuntimeError(
+                    f"conditional smooth variance for {parameter!r}.{term_name} "
+                    "is materially negative"
+                )
+            variances = variances.clamp_min(0.0)
+            standard_errors = variances.sqrt()
+            estimates = term(evaluation_covariate).detach()
+            confidence_intervals = torch.column_stack(
+                (
+                    estimates - critical_value * standard_errors,
+                    estimates + critical_value * standard_errors,
+                )
+            )
+            effective_degrees_of_freedom = float(
+                term.effective_degrees_of_freedom(
+                    training_covariate,
+                    combined_weights,
+                )
+            )
+            results[parameter][term_name] = SmoothInferenceResult(
+                parameter=parameter,
+                term=term_name,
+                covariate=evaluation_covariate.detach().clone(),
+                estimates=estimates,
+                standard_errors=standard_errors.detach(),
+                confidence_intervals=confidence_intervals.detach(),
+                smoothing_parameter=term.smoothing_parameter,
+                effective_degrees_of_freedom=effective_degrees_of_freedom,
+                confidence_level=confidence_level,
+            )
+
+    return results
+
+
 def _parameter_slices(model: GAMLSS) -> dict[str, slice]:
     result = {}
     start = 0
@@ -246,3 +453,25 @@ def _coefficient_names(model: GAMLSS) -> tuple[str, ...]:
         for parameter in model.family.parameter_names
         for column in model.formula_column_names[parameter]
     )
+
+
+def _validate_smooth_evaluation_mapping(
+    model: GAMLSS,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+) -> None:
+    expected_parameters = set(model.family.parameter_names)
+    extra_parameters = set(smooth_covariates).difference(expected_parameters)
+    if extra_parameters:
+        raise ValueError(
+            "Evaluation smooth covariates contain unknown parameters: "
+            f"{sorted(extra_parameters)}"
+        )
+    for parameter in model.family.parameter_names:
+        expected_terms = set(model.smooth_terms[parameter])
+        supplied_terms = set(smooth_covariates.get(parameter, {}))
+        if expected_terms != supplied_terms:
+            raise ValueError(
+                f"Evaluation smooth covariates for {parameter!r} do not match "
+                f"configured terms: missing={sorted(expected_terms - supplied_terms)}, "
+                f"extra={sorted(supplied_terms - expected_terms)}"
+            )

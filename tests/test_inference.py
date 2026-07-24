@@ -17,6 +17,7 @@ from torchgamlss import (
     Poisson,
     PSpline,
     RSControl,
+    SmoothInferenceResult,
 )
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
@@ -64,6 +65,19 @@ def _conditional_covariance(case: str, size: int) -> torch.Tensor:
                     row["covariance"]
                 )
     return covariance
+
+
+def _smooth_table_rows(
+    case: str,
+    parameter: str,
+    term: str,
+) -> pd.DataFrame:
+    reference = pd.read_csv(REFERENCE_DIR / "smooth_inference_reference.csv")
+    return reference.loc[
+        (reference["case"] == case)
+        & (reference["parameter"] == parameter)
+        & (reference["term"] == term)
+    ].sort_values("observation_index")
 
 
 @pytest.mark.parametrize(
@@ -487,6 +501,127 @@ def test_conditional_smooth_inference_requires_residual_degrees_of_freedom():
             design,
             smooth_covariates={"mu": {"x": x}},
             conditional_on_smooths=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("case", "formula"),
+    [
+        ("NO_FIXED_RS", "y ~ pb(x, smoothing_parameter=12)"),
+        ("NO_ML_RS", "y ~ pb(x)"),
+    ],
+)
+def test_smooth_curve_inference_matches_r_gamlss_pb(case, formula):
+    data = pd.read_csv(REFERENCE_DIR / "no_pb_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": formula, "sigma": "~ 1"},
+        data,
+    )
+    model.fit_rs_data(
+        data,
+        control=RSControl(
+            outer_tolerance=1e-10,
+            max_outer_iterations=200,
+            inner_tolerance=1e-10,
+            max_inner_iterations=200,
+            backfitting_tolerance=1e-10,
+            max_backfitting_iterations=200,
+        ),
+    )
+
+    result = model.smooth_inference_data(data)["mu"]["x"]
+    reference = _smooth_table_rows(case, "mu", "x")
+    expected = {
+        column: torch.tensor(reference[column].to_numpy(), dtype=torch.float64)
+        for column in (
+            "estimate",
+            "variance",
+            "standard_error",
+            "ci_lower",
+            "ci_upper",
+        )
+    }
+
+    assert isinstance(result, SmoothInferenceResult)
+    assert result.parameter == "mu"
+    assert result.term == "x"
+    assert result.confidence_level == pytest.approx(0.95)
+    assert result.smoothing_parameter == pytest.approx(
+        float(reference["smoothing_parameter"].iloc[0]),
+        rel=1e-8,
+        abs=1e-8,
+    )
+    assert result.effective_degrees_of_freedom == pytest.approx(
+        float(reference["smooth_edf"].iloc[0]),
+        rel=1e-8,
+        abs=1e-8,
+    )
+    torch.testing.assert_close(
+        result.estimates,
+        expected["estimate"],
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    torch.testing.assert_close(
+        result.variances,
+        expected["variance"],
+        rtol=2e-7,
+        atol=2e-10,
+    )
+    torch.testing.assert_close(
+        result.standard_errors,
+        expected["standard_error"],
+        rtol=2e-7,
+        atol=2e-9,
+    )
+    torch.testing.assert_close(
+        result.confidence_intervals,
+        torch.column_stack((expected["ci_lower"], expected["ci_upper"])),
+        rtol=2e-7,
+        atol=2e-7,
+    )
+    table = result.to_dataframe()
+    assert tuple(table.columns) == (
+        "covariate",
+        "estimate",
+        "standard_error",
+        "ci_lower",
+        "ci_upper",
+    )
+    assert len(table) == len(data)
+
+
+def test_smooth_curve_inference_supports_formula_new_data():
+    data = pd.read_csv(REFERENCE_DIR / "no_pb_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ pb(x, smoothing_parameter=12)", "sigma": "~ 1"},
+        data,
+    )
+    model.fit_rs_data(data)
+    new_data = data.iloc[::4].drop(columns="y")
+
+    result = model.smooth_inference_data(data, new_data=new_data)["mu"]["x"]
+    contribution = model.predict_data(new_data, type="terms")["mu"].smooth["x"]
+
+    torch.testing.assert_close(result.estimates, contribution)
+    assert result.standard_errors.shape == (len(new_data),)
+    assert result.confidence_intervals.shape == (len(new_data), 2)
+    assert torch.all(result.confidence_intervals[:, 0] <= result.estimates)
+    assert torch.all(result.confidence_intervals[:, 1] >= result.estimates)
+
+
+def test_smooth_curve_inference_rejects_parametric_models():
+    response = torch.tensor([0.0, 1.0, 2.0], dtype=torch.float64)
+    design = {"mu": torch.ones((3, 1), dtype=torch.float64)}
+    model = GAMLSS(Poisson(), {"mu": 1}, dtype=torch.float64)
+
+    with pytest.raises(ValueError, match="at least one smooth"):
+        model.smooth_inference(
+            response,
+            design,
+            smooth_covariates={"mu": {}},
         )
 
 

@@ -47,6 +47,8 @@ The current implementation contains:
 - joint full-Hessian covariance, standard errors, Wald tests, and confidence
   intervals for parametric models and conditional linear-coefficient inference
   with fitted smooth contributions held fixed;
+- R-compatible pointwise standard errors and confidence intervals for fitted
+  P-spline contributions, conditional on their smoothing parameters;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
 - continuous and randomized discrete normal quantile residuals;
 - Wilkinson formulas for tabular fitting and prediction, including categorical

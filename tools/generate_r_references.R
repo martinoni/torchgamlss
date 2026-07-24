@@ -119,6 +119,9 @@ conditional_inference_table_path <- file.path(
 conditional_inference_covariance_path <- file.path(
   reference_dir, "conditional_inference_covariance_reference.csv"
 )
+smooth_inference_path <- file.path(
+  reference_dir, "smooth_inference_reference.csv"
+)
 model_diagnostics_path <- file.path(
   reference_dir, "model_diagnostics_reference.csv"
 )
@@ -1772,6 +1775,60 @@ names(conditional_inference_covariance_reference)[
 rownames(conditional_inference_table_reference) <- NULL
 rownames(conditional_inference_covariance_reference) <- NULL
 
+smooth_inference_reference <- function(
+  fit, case_name, parameter, term_name, which
+) {
+  contribution <- drop(
+    fit[[paste0(parameter, ".s")]][, which]
+  )
+  variance <- drop(
+    fit[[paste0(parameter, ".var")]][, which]
+  )
+  standard_error <- sqrt(variance)
+  critical_value <- qnorm(0.975)
+  smooth <- getSmo(fit, parameter = parameter, which = which)
+  data.frame(
+    case = case_name,
+    parameter = parameter,
+    term = term_name,
+    observation_index = seq_along(contribution) - 1,
+    estimate = contribution,
+    variance = variance,
+    standard_error = standard_error,
+    ci_lower = contribution - critical_value * standard_error,
+    ci_upper = contribution + critical_value * standard_error,
+    smoothing_parameter = unname(smooth$lambda),
+    smooth_edf = unname(smooth$edf),
+    gamlss_version = as.character(packageVersion("gamlss")),
+    gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+  )
+}
+smooth_inference_results <- list(
+  smooth_inference_reference(pb_fit, "NO_FIXED_RS", "mu", "x", 1),
+  smooth_inference_reference(pb_ml_fit, "NO_ML_RS", "mu", "x", 1)
+)
+for (case_name in names(cg_multi_smooth_fits)) {
+  fit <- cg_multi_smooth_fits[[case_name]]
+  specs <- cg_multi_smooth_specs[[case_name]]
+  for (index in seq_len(nrow(specs))) {
+    smooth_inference_results <- c(
+      smooth_inference_results,
+      list(smooth_inference_reference(
+        fit,
+        case_name,
+        specs$parameter[[index]],
+        specs$term[[index]],
+        specs$which[[index]]
+      ))
+    )
+  }
+}
+smooth_inference_reference_data <- do.call(
+  rbind,
+  smooth_inference_results
+)
+rownames(smooth_inference_reference_data) <- NULL
+
 assert_close <- function(
   actual,
   expected_path,
@@ -2024,6 +2081,11 @@ if (check_only) {
     tolerance = 1e-6
   )
   assert_close(
+    smooth_inference_reference_data,
+    smooth_inference_path,
+    tolerance = 1e-6
+  )
+  assert_close(
     model_diagnostics_reference,
     model_diagnostics_path,
     tolerance = 1e-6
@@ -2173,6 +2235,7 @@ if (check_only) {
     conditional_inference_covariance_reference,
     conditional_inference_covariance_path
   )
+  write_csv_lf(smooth_inference_reference_data, smooth_inference_path)
   write_csv_lf(model_diagnostics_reference, model_diagnostics_path)
   write_csv_lf(quantile_residual_reference, quantile_residual_path)
   message("Wrote R reference fixtures to ", reference_dir)

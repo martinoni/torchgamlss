@@ -89,3 +89,22 @@ covariates inside the fitted range for now.
 Models constructed with `GAMLSS.from_formula()` can use `predict_data()` to
 materialize these inputs directly from a pandas DataFrame or compatible
 mapping. See [`FORMULAS.md`](FORMULAS.md).
+
+## Conditional smooth intervals
+
+For fitted formula models, `smooth_inference_data()` adds pointwise standard
+errors and confidence intervals to each smooth contribution:
+
+```python
+curves = model.smooth_inference_data(
+    training_data,
+    weights="weight",
+    new_data=new_data,
+)
+mu_x = curves["mu"]["x"]
+```
+
+The fitted curve is `mu_x.estimates`; its pointwise uncertainty is in
+`standard_errors` and `confidence_intervals`. The calculation conditions on
+the fitted smoothing parameter and does not produce a simultaneous band. See
+[`INFERENCE.md`](INFERENCE.md).

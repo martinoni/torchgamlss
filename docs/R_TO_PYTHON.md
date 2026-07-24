@@ -415,6 +415,18 @@ This corresponds to `vcov.gamlss(type="all")` and
 coefficients and smoothing parameters; full joint penalized-term inference is
 not yet implemented.
 
+Pointwise uncertainty for the smooth contributions corresponds to the
+`se.fit=TRUE` term calculation in R:
+
+```python
+smooth_curves = model.smooth_inference_data(data, weights="weight")
+mu_x = smooth_curves["mu"]["x"]
+mu_x_table = mu_x.to_dataframe()
+```
+
+The intervals are conditional on the fitted `lambda` and use normal critical
+values. They are pointwise, not simultaneous bands.
+
 See [`DIAGNOSTICS.md`](DIAGNOSTICS.md) and
 [`INFERENCE.md`](INFERENCE.md).
 

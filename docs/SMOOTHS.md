@@ -86,6 +86,25 @@ edf = result.smooth_effective_degrees_of_freedom["mu"]["x"]
 estimated_lambda = result.smoothing_parameters["mu"]["x"]
 ```
 
+After fitting, pointwise conditional uncertainty for each smooth contribution
+is available from the same data:
+
+```python
+curve = model.smooth_inference(
+    y,
+    design,
+    smooth_covariates=smooth_covariates,
+)["mu"]["x"]
+
+curve.estimates
+curve.standard_errors
+curve.confidence_intervals
+```
+
+This follows the `gamlss.pb()` variance calculation and conditions on the
+fitted smoothing parameter. The intervals are on the additive predictor scale
+and are pointwise rather than simultaneous.
+
 The same smooth terms and selection modes work with `fit_cg()` and
 `CGControl`; CG performs one `additive.fit()`-style pass per parameter update
 inside its joint Gauss-Seidel cycle.
@@ -132,9 +151,9 @@ gcv_term = PSpline.from_data(
 ## Current limitations
 
 - Only one-dimensional, equally spaced P-spline bases are available.
-- Parametric covariance and Wald inference are available only for models
-  without smooth terms. Joint uncertainty for spline coefficients and
-  smoothing-parameter estimation is not yet available.
+- Linear-coefficient inference and pointwise smooth intervals are available
+  conditionally for additive models. Full joint uncertainty across smooth
+  terms and smoothing-parameter estimation is not yet available.
 - Automatic smoothing selection is available through `fit_rs()` and
   `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

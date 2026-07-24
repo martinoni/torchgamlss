@@ -492,6 +492,11 @@ def test_cg_multiple_psplines_match_r_gamlss_additive_fit(
             backfitting_tolerance=fit_tolerance,
         ),
     )
+    smooth_inference = model.smooth_inference_data(data, weights="weight")
+    smooth_inference_reference = _case_rows(
+        "smooth_inference_reference.csv",
+        case,
+    )
 
     assert result.converged
     assert result.outer_iterations == int(reference["outer_iterations"])
@@ -555,6 +560,38 @@ def test_cg_multiple_psplines_match_r_gamlss_additive_fit(
                 dtype=torch.float64,
             ),
             rtol=2e-6,
+            atol=2e-6,
+        )
+        expected_inference = smooth_inference_reference.loc[
+            (smooth_inference_reference["parameter"] == term_row.parameter)
+            & (smooth_inference_reference["term"] == term_row.term)
+        ].sort_values("observation_index")
+        term_inference = smooth_inference[term_row.parameter][term_row.term]
+        torch.testing.assert_close(
+            term_inference.estimates,
+            torch.tensor(
+                expected_inference["estimate"].to_numpy(),
+                dtype=torch.float64,
+            ),
+            rtol=2e-6,
+            atol=2e-6,
+        )
+        torch.testing.assert_close(
+            term_inference.standard_errors,
+            torch.tensor(
+                expected_inference["standard_error"].to_numpy(),
+                dtype=torch.float64,
+            ),
+            rtol=5e-6,
+            atol=5e-7,
+        )
+        torch.testing.assert_close(
+            term_inference.confidence_intervals,
+            torch.tensor(
+                expected_inference[["ci_lower", "ci_upper"]].to_numpy(),
+                dtype=torch.float64,
+            ),
+            rtol=5e-6,
             atol=2e-6,
         )
 

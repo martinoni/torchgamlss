@@ -92,6 +92,14 @@ Models with smooth terms support explicit conditional inference for their
 linear coefficients. Pass `conditional_on_smooths=True`, the fitted residual
 degrees of freedom, and see [`INFERENCE.md`](INFERENCE.md) for its scope.
 
+Pointwise conditional inference for the fitted smooth contributions uses the
+same stored formula encodings:
+
+```python
+smooth_curves = model.smooth_inference_data(data, weights="weight")
+mu_x_table = smooth_curves["mu"]["x"].to_dataframe()
+```
+
 Diagnostics and quantile residuals use the same stored encodings:
 
 ```python

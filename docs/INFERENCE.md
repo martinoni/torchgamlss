@@ -1,4 +1,4 @@
-# Coefficient inference
+# Inference
 
 TorchGAMLSS provides joint Wald inference for fitted parametric models. The
 covariance matrix is the inverse of the observed Hessian of the weighted
@@ -72,6 +72,55 @@ smoothing-parameter uncertainty. This is the same limitation for which R
 `gamlss` warns that standard errors of linear terms may not be appropriate
 when additive terms are present.
 
+## Smooth-curve uncertainty
+
+`smooth_inference_data()` returns pointwise standard errors and confidence
+intervals for each fitted smooth contribution:
+
+```python
+curves = model.smooth_inference_data(data, weights="weight")
+mu_x = curves["mu"]["x"]
+
+mu_x.estimates
+mu_x.standard_errors
+mu_x.confidence_intervals
+table = mu_x.to_dataframe()
+```
+
+The estimates and intervals are on the additive predictor scale. For a
+P-spline basis `B`, working weights `W`, penalty `D`, and fitted `lambda`, the
+raw pointwise covariance uses
+
+```text
+(B' W B + lambda D' D)^-1.
+```
+
+The variance of the unpenalized polynomial null space is then removed because
+that component is already represented by the linear predictor. This
+reproduces the `var` component created by `gamlss.pb()` and subsequently used
+by `predict.gamlss(..., se.fit=TRUE)`.
+
+Intervals use pointwise normal critical values. They are conditional on the
+fitted smoothing parameter and final working weights: they do not incorporate
+selection uncertainty in `lambda`, and they are not simultaneous confidence
+bands. Smooths in several distribution parameters and multiple smooths in one
+parameter are returned independently.
+
+The formula API can evaluate a stored basis on new covariate values:
+
+```python
+new_curves = model.smooth_inference_data(
+    data,
+    weights="weight",
+    new_data=new_data,
+)
+```
+
+R does not currently provide `se.fit=TRUE` for new data through
+`predict.gamlss`; TorchGAMLSS extends the same fixed-`lambda` covariance to
+the stored basis. Keep new covariates inside the fitted range when strict
+extrapolation compatibility matters.
+
 ## Wald tests and degrees of freedom
 
 Statistics, two-sided p-values, and confidence intervals use a Student t
@@ -99,8 +148,9 @@ or non-identifiable designs are rejected rather than pseudo-inverted.
 
 Parametric inference supports models fitted by RS, CG, or Torch L-BFGS.
 Conditional linear-coefficient inference supports additive RS and CG fits.
-Full joint inference for spline coefficients and smoothing parameters remains
-separate future work.
+Conditional pointwise smooth inference supports additive RS and CG fits.
+Full joint inference across spline coefficients, smooth terms, and smoothing
+parameters remains separate future work.
 
 These are local Wald approximations. They do not replace profile likelihood,
 bootstrap inference, robust sandwich covariance, or corrections for

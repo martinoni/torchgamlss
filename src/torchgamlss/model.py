@@ -25,7 +25,12 @@ from torchgamlss.fitting import (
     fit_rs,
 )
 from torchgamlss.formula import FormulaData, FormulaEncoder
-from torchgamlss.inference import InferenceResult, coefficient_inference
+from torchgamlss.inference import (
+    InferenceResult,
+    SmoothInferenceResult,
+    coefficient_inference,
+    smooth_term_inference,
+)
 from torchgamlss.smooths import PSpline, SmoothTerm
 
 
@@ -290,6 +295,33 @@ class GAMLSS(nn.Module):
             conditional_on_smooths=conditional_on_smooths,
             confidence_level=confidence_level,
             degrees_of_freedom=degrees_of_freedom,
+        )
+
+    def smooth_inference_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        new_data: Any = None,
+        confidence_level: float = 0.95,
+    ) -> dict[str, dict[str, SmoothInferenceResult]]:
+        """Infer fitted smooth contributions, conditional on their lambdas."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        evaluation_covariates = (
+            prepared.smooth_covariates
+            if new_data is None
+            else self.prepare_formula_data(new_data).smooth_covariates
+        )
+        return self.smooth_inference(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            evaluation_smooth_covariates=evaluation_covariates,
+            confidence_level=confidence_level,
         )
 
     def diagnostics_data(
@@ -664,6 +696,31 @@ class GAMLSS(nn.Module):
             conditional_on_smooths=conditional_on_smooths,
             confidence_level=confidence_level,
             degrees_of_freedom=degrees_of_freedom,
+        )
+
+    def smooth_inference(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        evaluation_smooth_covariates: (
+            Mapping[str, Mapping[str, Tensor]] | None
+        ) = None,
+        confidence_level: float = 0.95,
+    ) -> dict[str, dict[str, SmoothInferenceResult]]:
+        """Infer smooth curves conditional on fitted smoothing parameters."""
+        return smooth_term_inference(
+            self,
+            response,
+            design_matrices,
+            smooth_covariates=smooth_covariates,
+            weights=weights,
+            offsets=offsets,
+            evaluation_smooth_covariates=evaluation_smooth_covariates,
+            confidence_level=confidence_level,
         )
 
     def diagnostics(

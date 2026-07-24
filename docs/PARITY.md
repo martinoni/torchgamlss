@@ -162,6 +162,12 @@ held fixed and the Hessian contains only the linear coefficients. The
 fixtures compare their covariance, standard errors, tests, confidence
 intervals, and fitted residual degrees of freedom.
 
+Smooth-curve inference fixtures compare the fitted contribution, conditional
+variance, pointwise standard error, and 95% interval produced from
+`fit$mu.var` and `fit$sigma.var`. They cover fixed and ML smoothing in RS,
+simultaneous `mu` and `sigma` smooths in CG, and two smooth terms attached to
+one parameter.
+
 ## Cole-Green fitting
 
 The CG fixtures compare the joint cross-derivative cycles and additive
