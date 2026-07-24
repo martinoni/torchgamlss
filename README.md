@@ -45,7 +45,8 @@ The current implementation contains:
   `pb.control(method=...)`;
 - prediction on response, link, and additive-term scales, including new data;
 - joint full-Hessian covariance, standard errors, Wald tests, and confidence
-  intervals for parametric models;
+  intervals for parametric models and conditional linear-coefficient inference
+  with fitted smooth contributions held fixed;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
 - continuous and randomized discrete normal quantile residuals;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
@@ -57,7 +58,8 @@ The current implementation contains:
 
 Broader graphical diagnostics are planned work. The L-BFGS path remains a
 Torch-native numerical baseline and requires fixed smoothing parameters.
-Inference for penalized smooth terms is not yet supported.
+Joint uncertainty for spline coefficients and estimated smoothing parameters
+is not yet supported.
 
 ## Development
 

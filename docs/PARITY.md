@@ -155,6 +155,13 @@ R obtains the Hessian numerically with `optimHess`; TorchGAMLSS obtains it
 through Torch automatic differentiation. Parity is therefore defined to the
 documented numerical tolerance rather than bitwise equality.
 
+Conditional-inference fixtures additionally cover fixed- and ML-lambda Normal
+RS fits and a weighted, offset, fixed-lambda Beta CG fit. As in
+`gen.likelihood()` and `vcov.gamlss()`, the fitted smooth contributions are
+held fixed and the Hessian contains only the linear coefficients. The
+fixtures compare their covariance, standard errors, tests, confidence
+intervals, and fitted residual degrees of freedom.
+
 ## Cole-Green fitting
 
 The CG fixtures compare the joint cross-derivative cycles and additive

@@ -113,6 +113,12 @@ inference_table_path <- file.path(reference_dir, "inference_table_reference.csv"
 inference_covariance_path <- file.path(
   reference_dir, "inference_covariance_reference.csv"
 )
+conditional_inference_table_path <- file.path(
+  reference_dir, "conditional_inference_table_reference.csv"
+)
+conditional_inference_covariance_path <- file.path(
+  reference_dir, "conditional_inference_covariance_reference.csv"
+)
 model_diagnostics_path <- file.path(
   reference_dir, "model_diagnostics_reference.csv"
 )
@@ -1729,6 +1735,43 @@ rownames(cg_multi_smooth_term_reference) <- NULL
 rownames(cg_multi_smooth_coefficient_reference) <- NULL
 rownames(cg_multi_smooth_contribution_reference) <- NULL
 
+conditional_inference_results <- list(
+  suppressWarnings(inference_reference(
+    pb_fit,
+    "NO_FIXED_RS",
+    c("mu", "mu", "sigma"),
+    c("Intercept", "pb(x lambda=12)", "Intercept")
+  )),
+  suppressWarnings(inference_reference(
+    pb_ml_fit,
+    "NO_ML_RS",
+    c("mu", "mu", "sigma"),
+    c("Intercept", "pb(x)", "Intercept")
+  )),
+  suppressWarnings(inference_reference(
+    be_cg_pb_fit,
+    "BE_FIXED_CG",
+    c("mu", "mu", "sigma", "sigma"),
+    c("Intercept", "pb(x lambda=12)", "Intercept", "z")
+  ))
+)
+conditional_inference_table_reference <- do.call(
+  rbind,
+  lapply(conditional_inference_results, function(result) result$table)
+)
+conditional_inference_covariance_reference <- do.call(
+  rbind,
+  lapply(conditional_inference_results, function(result) result$covariance)
+)
+names(conditional_inference_table_reference)[
+  names(conditional_inference_table_reference) == "family"
+] <- "case"
+names(conditional_inference_covariance_reference)[
+  names(conditional_inference_covariance_reference) == "family"
+] <- "case"
+rownames(conditional_inference_table_reference) <- NULL
+rownames(conditional_inference_covariance_reference) <- NULL
+
 assert_close <- function(
   actual,
   expected_path,
@@ -1971,6 +2014,16 @@ if (check_only) {
     tolerance = 1e-6
   )
   assert_close(
+    conditional_inference_table_reference,
+    conditional_inference_table_path,
+    tolerance = 1e-6
+  )
+  assert_close(
+    conditional_inference_covariance_reference,
+    conditional_inference_covariance_path,
+    tolerance = 1e-6
+  )
+  assert_close(
     model_diagnostics_reference,
     model_diagnostics_path,
     tolerance = 1e-6
@@ -2112,6 +2165,14 @@ if (check_only) {
   write_csv_lf(bcpe_rs_reference, bcpe_rs_reference_path)
   write_csv_lf(inference_table_reference, inference_table_path)
   write_csv_lf(inference_covariance_reference, inference_covariance_path)
+  write_csv_lf(
+    conditional_inference_table_reference,
+    conditional_inference_table_path
+  )
+  write_csv_lf(
+    conditional_inference_covariance_reference,
+    conditional_inference_covariance_path
+  )
   write_csv_lf(model_diagnostics_reference, model_diagnostics_path)
   write_csv_lf(quantile_residual_reference, quantile_residual_path)
   message("Wrote R reference fixtures to ", reference_dir)

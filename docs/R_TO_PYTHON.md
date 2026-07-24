@@ -397,9 +397,23 @@ coefficient_table = inference.to_dataframe()
 covariance = inference.covariance_matrix
 ```
 
-This corresponds to the current `vcov.gamlss(type="all")` and
-`summary.gamlss(type="vcov")` parity slice. Joint inference for penalized
-smooth terms is not yet implemented.
+For a fitted additive model, the R-compatible conditional calculation holds
+the smooth contributions fixed and infers only the linear coefficients:
+
+```python
+inference = model.inference_data(
+    data,
+    weights="weight",
+    conditional_on_smooths=True,
+    degrees_of_freedom=effective_observations
+    - fit.effective_degrees_of_freedom,
+)
+```
+
+This corresponds to `vcov.gamlss(type="all")` and
+`summary.gamlss(type="vcov")`. It excludes uncertainty in the spline
+coefficients and smoothing parameters; full joint penalized-term inference is
+not yet implemented.
 
 See [`DIAGNOSTICS.md`](DIAGNOSTICS.md) and
 [`INFERENCE.md`](INFERENCE.md).

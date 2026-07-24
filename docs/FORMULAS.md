@@ -88,7 +88,9 @@ inference = model.inference_data(data, weights="weight")
 table = inference.to_dataframe()
 ```
 
-See [`INFERENCE.md`](INFERENCE.md).
+Models with smooth terms support explicit conditional inference for their
+linear coefficients. Pass `conditional_on_smooths=True`, the fitted residual
+degrees of freedom, and see [`INFERENCE.md`](INFERENCE.md) for its scope.
 
 Diagnostics and quantile residuals use the same stored encodings:
 

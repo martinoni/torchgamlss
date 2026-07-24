@@ -45,6 +45,33 @@ inference = model.inference(
 `by_parameter()` splits any coefficient-aligned tensor, such as estimates or
 standard errors, into the family parameter blocks.
 
+## Conditional inference with smooth terms
+
+For additive models, TorchGAMLSS can reproduce the conditional calculation in
+`gamlss::vcov.gamlss()`. The fitted smooth contributions are held fixed while
+the observed Hessian is evaluated with respect to the linear coefficients:
+
+```python
+fit = model.fit_rs_data(data)
+inference = model.inference_data(
+    data,
+    conditional_on_smooths=True,
+    degrees_of_freedom=len(data) - fit.effective_degrees_of_freedom,
+)
+```
+
+`conditional_on_smooths=True` is required explicitly. The returned
+`InferenceResult.conditional_on_smooths` flag records that interpretation.
+The formula API supplies the training smooth covariates automatically. The
+low-level tensor API additionally requires `smooth_covariates=`.
+
+This covariance includes cross-parameter uncertainty among the linear
+coefficients, conditional on the fitted smooth functions. It does not contain
+spline coefficients and does not account for spline-coefficient or
+smoothing-parameter uncertainty. This is the same limitation for which R
+`gamlss` warns that standard errors of linear terms may not be appropriate
+when additive terms are present.
+
 ## Wald tests and degrees of freedom
 
 Statistics, two-sided p-values, and confidence intervals use a Student t
@@ -58,7 +85,11 @@ fixtures:
 - the total number of linear coefficients is subtracted.
 
 Callers can set `degrees_of_freedom=` explicitly when their weighting design
-requires a different convention.
+requires a different convention. It is mandatory for conditional smooth
+inference because the residual degrees of freedom must use the fitted model's
+effective, rather than raw coefficient, dimension. For integer frequency
+weights, subtract `fit.effective_degrees_of_freedom` from the sum of weights;
+for case weights, subtract it from the number of positive-weight observations.
 
 ## Scope and limitations
 
@@ -66,11 +97,10 @@ Inference is evaluated at the model's current coefficients, so fit the model
 before calling it. The Hessian must be finite and positive definite; singular
 or non-identifiable designs are rejected rather than pseudo-inverted.
 
-This first implementation supports linear parametric models, fitted by RS,
-CG, or Torch L-BFGS. Models containing smooth terms are rejected because
-conditioning on fitted smooth contributions would omit smoothing and spline
-coefficient uncertainty. Joint inference for penalized terms is separate
-future work.
+Parametric inference supports models fitted by RS, CG, or Torch L-BFGS.
+Conditional linear-coefficient inference supports additive RS and CG fits.
+Full joint inference for spline coefficients and smoothing parameters remains
+separate future work.
 
 These are local Wald approximations. They do not replace profile likelihood,
 bootstrap inference, robust sandwich covariance, or corrections for

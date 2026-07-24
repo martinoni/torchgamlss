@@ -1,4 +1,4 @@
-"""Wald inference for parametric GAMLSS coefficients."""
+"""Wald inference for parametric and conditional additive GAMLSS coefficients."""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ class InferenceResult:
     confidence_intervals: Tensor
     degrees_of_freedom: float
     confidence_level: float
+    conditional_on_smooths: bool = False
 
     @property
     def correlation_matrix(self) -> Tensor:
@@ -79,16 +80,28 @@ def coefficient_inference(
     *,
     weights: Tensor | None = None,
     offsets: Mapping[str, Tensor] | None = None,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    conditional_on_smooths: bool = False,
     confidence_level: float = 0.95,
     degrees_of_freedom: float | None = None,
 ) -> InferenceResult:
-    """Compute full-Hessian covariance and t-based Wald inference."""
+    """Compute full-Hessian covariance and t-based Wald inference.
+
+    When ``conditional_on_smooths`` is true, fitted smooth contributions are
+    held fixed and only the linear coefficients enter the Hessian. This follows
+    ``gamlss::vcov.gamlss()`` and intentionally excludes spline-coefficient and
+    smoothing-parameter uncertainty.
+    """
     if not math.isfinite(confidence_level) or not 0.0 < confidence_level < 1.0:
         raise ValueError("confidence_level must be finite and between zero and one")
-    if any(model.smooth_terms[parameter] for parameter in model.family.parameter_names):
+    has_smooths = any(
+        model.smooth_terms[parameter] for parameter in model.family.parameter_names
+    )
+    if has_smooths and not conditional_on_smooths:
         raise ValueError(
             "coefficient inference currently supports parametric models without "
-            "smooth terms"
+            "smooth terms; set conditional_on_smooths=True for conditional "
+            "linear-coefficient inference"
         )
 
     model_parameter = next(model.parameters())
@@ -104,7 +117,11 @@ def coefficient_inference(
             "the model dtype and device"
         )
 
-    contributions = model.term_contributions(design_matrices, offsets)
+    contributions = model.term_contributions(
+        design_matrices,
+        offsets,
+        smooth_covariates=smooth_covariates,
+    )
     observation_count = response.numel()
     if any(
         contribution.offset.numel() != observation_count
@@ -122,6 +139,12 @@ def coefficient_inference(
     parameter_slices = _parameter_slices(model)
     coefficient_count = estimates.numel()
     if degrees_of_freedom is None:
+        if has_smooths:
+            raise ValueError(
+                "degrees_of_freedom is required for conditional smooth "
+                "inference; use the effective observation count minus the "
+                "fit result's effective_degrees_of_freedom"
+            )
         if torch.equal(case_weights, case_weights.round()):
             effective_observations = float(case_weights.sum())
         else:
@@ -133,11 +156,18 @@ def coefficient_inference(
             "(sum of weights minus coefficient count)"
         )
 
+    fixed_contributions = {}
+    for parameter, contribution in contributions.items():
+        fixed = contribution.offset
+        for smooth in contribution.smooth.values():
+            fixed = fixed + smooth.detach()
+        fixed_contributions[parameter] = fixed
+
     def objective(flat_coefficients: Tensor) -> Tensor:
         predictors = {
             parameter: design_matrices[parameter]
             @ flat_coefficients[parameter_slices[parameter]]
-            + contributions[parameter].offset
+            + fixed_contributions[parameter]
             for parameter in model.family.parameter_names
         }
         parameters = model.family.parameters_from_predictors(predictors)
@@ -190,6 +220,7 @@ def coefficient_inference(
         confidence_intervals=confidence_intervals.detach(),
         degrees_of_freedom=degrees_of_freedom,
         confidence_level=confidence_level,
+        conditional_on_smooths=has_smooths,
     )
 
 

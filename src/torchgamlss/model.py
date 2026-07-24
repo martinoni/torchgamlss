@@ -273,10 +273,11 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         weights: Any = None,
+        conditional_on_smooths: bool = False,
         confidence_level: float = 0.95,
         degrees_of_freedom: float | None = None,
     ) -> InferenceResult:
-        """Infer formula-model coefficients from the current fitted state."""
+        """Infer formula-model linear coefficients from the fitted state."""
         prepared = self.prepare_formula_data(data, include_response=True)
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
@@ -285,6 +286,8 @@ class GAMLSS(nn.Module):
             prepared.design_matrices,
             weights=case_weights,
             offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            conditional_on_smooths=conditional_on_smooths,
             confidence_level=confidence_level,
             degrees_of_freedom=degrees_of_freedom,
         )
@@ -645,6 +648,8 @@ class GAMLSS(nn.Module):
         *,
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        conditional_on_smooths: bool = False,
         confidence_level: float = 0.95,
         degrees_of_freedom: float | None = None,
     ) -> InferenceResult:
@@ -655,6 +660,8 @@ class GAMLSS(nn.Module):
             design_matrices,
             weights=weights,
             offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            conditional_on_smooths=conditional_on_smooths,
             confidence_level=confidence_level,
             degrees_of_freedom=degrees_of_freedom,
         )

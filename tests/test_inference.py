@@ -11,6 +11,7 @@ from torchgamlss import (
     BCT,
     GAMLSS,
     Beta,
+    CGControl,
     NegativeBinomial,
     Normal,
     Poisson,
@@ -37,6 +38,28 @@ def _covariance(family: str, size: int) -> torch.Tensor:
     ) as data_file:
         for row in csv.DictReader(data_file):
             if row["family"] == family:
+                covariance[int(row["row_index"]), int(row["column_index"])] = float(
+                    row["covariance"]
+                )
+    return covariance
+
+
+def _conditional_table_rows(case: str) -> list[dict[str, str]]:
+    with (REFERENCE_DIR / "conditional_inference_table_reference.csv").open(
+        newline="",
+        encoding="utf-8",
+    ) as data_file:
+        return [row for row in csv.DictReader(data_file) if row["case"] == case]
+
+
+def _conditional_covariance(case: str, size: int) -> torch.Tensor:
+    covariance = torch.zeros((size, size), dtype=torch.float64)
+    with (REFERENCE_DIR / "conditional_inference_covariance_reference.csv").open(
+        newline="",
+        encoding="utf-8",
+    ) as data_file:
+        for row in csv.DictReader(data_file):
+            if row["case"] == case:
                 covariance[int(row["row_index"]), int(row["column_index"])] = float(
                     row["covariance"]
                 )
@@ -209,6 +232,7 @@ def test_full_hessian_inference_matches_r_gamlss(
         torch.diagonal(result.correlation_matrix),
         torch.ones(len(rows), dtype=torch.float64),
     )
+    assert not result.conditional_on_smooths
 
     split_estimates = result.by_parameter(result.estimates)
     assert tuple(split_estimates) == family.parameter_names
@@ -298,7 +322,134 @@ def test_inference_rejects_singular_hessian():
         model.inference(response, design)
 
 
-def test_inference_rejects_smooth_models_until_joint_uncertainty_is_supported():
+@pytest.mark.parametrize("case", ["NO_FIXED_RS", "NO_ML_RS", "BE_FIXED_CG"])
+def test_conditional_smooth_inference_matches_r_gamlss_vcov(case):
+    if case == "BE_FIXED_CG":
+        data = pd.read_csv(REFERENCE_DIR / "be_fit_data.csv")
+        model = GAMLSS.from_formula(
+            Beta(),
+            {
+                "mu": "y ~ pb(x, smoothing_parameter=12) + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+            },
+            data,
+        )
+        model.fit_cg_data(
+            data,
+            weights="weight",
+            control=CGControl(
+                outer_tolerance=1e-7,
+                max_outer_iterations=300,
+                inner_tolerance=1e-7,
+                max_inner_iterations=300,
+                backfitting_tolerance=1e-7,
+            ),
+        )
+        weights = "weight"
+    else:
+        data = pd.read_csv(REFERENCE_DIR / "no_pb_fit_data.csv")
+        mu_formula = (
+            "y ~ pb(x, smoothing_parameter=12)"
+            if case == "NO_FIXED_RS"
+            else "y ~ pb(x)"
+        )
+        model = GAMLSS.from_formula(
+            Normal(),
+            {"mu": mu_formula, "sigma": "~ 1"},
+            data,
+        )
+        model.fit_rs_data(
+            data,
+            control=RSControl(
+                outer_tolerance=1e-10,
+                max_outer_iterations=200,
+                inner_tolerance=1e-10,
+                max_inner_iterations=200,
+                backfitting_tolerance=1e-10,
+                max_backfitting_iterations=200,
+            ),
+        )
+        weights = None
+
+    rows = _conditional_table_rows(case)
+    degrees_of_freedom = float(rows[0]["degrees_of_freedom"])
+    result = model.inference_data(
+        data,
+        weights=weights,
+        conditional_on_smooths=True,
+        degrees_of_freedom=degrees_of_freedom,
+    )
+    expected = {
+        column: torch.tensor(
+            [float(row[column]) for row in rows],
+            dtype=torch.float64,
+        )
+        for column in (
+            "estimate",
+            "standard_error",
+            "statistic",
+            "p_value",
+            "ci_lower",
+            "ci_upper",
+        )
+    }
+
+    assert result.conditional_on_smooths
+    expected_names = {
+        "NO_FIXED_RS": (
+            "mu.Intercept",
+            "mu.pb(x, smoothing_parameter=12)",
+            "sigma.Intercept",
+        ),
+        "NO_ML_RS": ("mu.Intercept", "mu.pb(x)", "sigma.Intercept"),
+        "BE_FIXED_CG": (
+            "mu.Intercept",
+            "mu.pb(x, smoothing_parameter=12)",
+            "sigma.Intercept",
+            "sigma.z",
+        ),
+    }
+    assert result.coefficient_names == expected_names[case]
+    assert result.degrees_of_freedom == pytest.approx(degrees_of_freedom)
+    torch.testing.assert_close(
+        result.estimates,
+        expected["estimate"],
+        rtol=5e-6,
+        atol=5e-7,
+    )
+    torch.testing.assert_close(
+        result.covariance_matrix,
+        _conditional_covariance(case, len(rows)),
+        rtol=1e-5,
+        atol=5e-7,
+    )
+    torch.testing.assert_close(
+        result.standard_errors,
+        expected["standard_error"],
+        rtol=1e-5,
+        atol=5e-7,
+    )
+    torch.testing.assert_close(
+        result.statistics,
+        expected["statistic"],
+        rtol=1e-5,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        result.p_values,
+        expected["p_value"],
+        rtol=2e-4,
+        atol=3e-7,
+    )
+    torch.testing.assert_close(
+        result.confidence_intervals,
+        torch.column_stack((expected["ci_lower"], expected["ci_upper"])),
+        rtol=1e-5,
+        atol=1e-6,
+    )
+
+
+def test_inference_requires_explicit_conditioning_for_smooth_models():
     x = torch.linspace(-1.0, 1.0, 20, dtype=torch.float64)
     term = PSpline.from_data(x, smoothing_parameter=12.0)
     model = GAMLSS(
@@ -312,8 +463,31 @@ def test_inference_rejects_smooth_models_until_joint_uncertainty_is_supported():
         "sigma": torch.ones((x.numel(), 1), dtype=torch.float64),
     }
 
-    with pytest.raises(ValueError, match="without smooth"):
+    with pytest.raises(ValueError, match="conditional_on_smooths"):
         model.inference(torch.sin(x), design)
+
+
+def test_conditional_smooth_inference_requires_residual_degrees_of_freedom():
+    x = torch.linspace(-1.0, 1.0, 20, dtype=torch.float64)
+    term = PSpline.from_data(x, smoothing_parameter=12.0)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        smooth_terms={"mu": {"x": term}},
+        dtype=torch.float64,
+    )
+    design = {
+        "mu": torch.column_stack((torch.ones_like(x), x)),
+        "sigma": torch.ones((x.numel(), 1), dtype=torch.float64),
+    }
+
+    with pytest.raises(ValueError, match="degrees_of_freedom is required"):
+        model.inference(
+            torch.sin(x),
+            design,
+            smooth_covariates={"mu": {"x": x}},
+            conditional_on_smooths=True,
+        )
 
 
 def test_inference_result_rejects_misaligned_parameter_split():
