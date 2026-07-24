@@ -206,6 +206,55 @@ selection into a max-|t| band over the evaluation points of that one smooth,
 without another simulation pass. Inspect its `method` field to distinguish it
 from the conditional Gaussian band.
 
+For covariance and family-wise bands across several smooths, request the
+aligned joint result directly:
+
+```python
+joint = model.smooth_joint_bootstrap_data(
+    data,
+    weights="weight",
+    new_data=new_data,
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)
+
+joint.term_order
+joint.bootstrap_estimates
+joint.covariance_matrix
+joint.correlation_matrix
+mu_sigma_covariance = joint.covariance_block(
+    ("mu", "x"),
+    ("sigma", "z"),
+)
+
+joint.bootstrap_smoothing_parameters
+joint.smoothing_parameter_covariance_matrix
+joint.smoothing_parameter_correlation_matrix
+
+joint_bands = joint.simultaneous_confidence_bands()
+mu_x_joint_band = joint_bands["mu"]["x"]
+joint_table = joint.to_dataframe()
+```
+
+Every row of `joint.bootstrap_estimates` and
+`joint.bootstrap_smoothing_parameters` comes from the same simulated response
+and complete model refit. `term_order`, `term_slices`, and `point_labels`
+identify the stacked curve coordinates. `covariance_block()` can therefore
+measure dependence between different smooths, including smooths attached to
+different distribution parameters.
+
+`simultaneous_confidence_bands()` calibrates one max-|t| critical value over
+all points of all selected smooths. Pass a sequence such as
+`terms=(("mu", "x"), ("sigma", "z"))` to restrict the family. Its method is
+`parametric_bootstrap_joint_max_t`. The individual
+`simultaneous_confidence_band()` method remains available when simultaneous
+coverage is required only within one curve.
+
+If a smoothing parameter is fixed in the formula, its bootstrap variance is
+zero and its correlations are undefined (`nan`). Its covariance with every
+other smoothing parameter is zero up to numerical precision.
+
 Bootstrap refits can occasionally fail or reach their iteration limit.
 `replicates` counts successful fits; by default the method allows up to the
 larger of `replicates + 10` and `1.2 * replicates` attempts. Set
@@ -221,8 +270,8 @@ independent simulated response.
 
 The bootstrap is substantially more expensive than conditional inference;
 `999` is a practical starting point, while final tail inference may require
-more replicates. Neither the pointwise intervals nor the band is joint across
-several different smooth terms.
+more replicates. Pointwise percentile intervals remain marginal. Use the joint
+max-|t| result when simultaneous coverage across several terms is required.
 
 Methodologically, the local ML lambda update follows
 [Rigby and Stasinopoulos (2014)](https://doi.org/10.1177/0962280212473302).
@@ -262,9 +311,10 @@ Parametric inference supports models fitted by RS, CG, or Torch L-BFGS.
 Conditional linear-coefficient inference supports additive RS and CG fits.
 Conditional smooth inference and within-curve simultaneous bands support
 additive RS and CG fits. Parametric bootstrap smooth inference supports both
-algorithms and repeats smoothing-parameter selection. A closed-form joint
-covariance across spline coefficients, different smooth terms, and smoothing
-parameters remains separate future work.
+algorithms, repeats smoothing-parameter selection, and provides empirical
+joint covariance and simultaneous bands across fitted smooths. A closed-form
+analytic joint covariance across spline coefficients, different smooth terms,
+and smoothing parameters remains separate future work.
 
 The Hessian and conditional smooth calculations are local Wald
 approximations. They do not replace profile likelihood or robust sandwich

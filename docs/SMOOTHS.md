@@ -146,6 +146,27 @@ inspect `failure_rate` rather than ignoring convergence problems. The
 bootstrap band uses the maximum standardized error across the same successful
 refits and is simultaneous over the evaluation points for that smooth.
 
+When the model contains several smooths, preserve their replicate alignment
+with the joint API:
+
+```python
+joint = model.smooth_joint_bootstrap(
+    y,
+    design,
+    smooth_covariates=smooth_covariates,
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)
+
+cross_covariance = joint.covariance_block(("mu", "x"), ("sigma", "z"))
+lambda_covariance = joint.smoothing_parameter_covariance_matrix
+joint_bands = joint.simultaneous_confidence_bands()
+```
+
+The full `covariance_matrix` follows `term_order` and `term_slices`.
+Joint bands use one max-|t| critical value over every selected curve point.
+
 The same smooth terms and selection modes work with `fit_cg()` and
 `CGControl`; CG performs one `additive.fit()`-style pass per parameter update
 inside its joint Gauss-Seidel cycle.
@@ -195,8 +216,9 @@ gcv_term = PSpline.from_data(
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
   additive models. Parametric bootstrap refits additionally propagate lambda
-  selection uncertainty for individual curves. An analytic joint covariance
-  across smooth terms and smoothing parameters is not yet available.
+  selection uncertainty and provide empirical covariance and simultaneous
+  bands across several curves. An analytic joint covariance across smooth
+  terms and smoothing parameters is not yet available.
 - Automatic smoothing selection is available through `fit_rs()` and
   `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

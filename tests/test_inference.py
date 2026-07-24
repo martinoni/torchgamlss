@@ -20,6 +20,8 @@ from torchgamlss import (
     RSControl,
     SmoothBootstrapResult,
     SmoothInferenceResult,
+    SmoothJointBandResult,
+    SmoothJointBootstrapResult,
     SmoothSimultaneousBand,
 )
 
@@ -745,6 +747,121 @@ def test_parametric_smooth_bootstrap_reselects_lambda_reproducibly():
     )["mu"]["x"]
     assert cg.algorithm == "cg"
     assert cg.bootstrap_estimates.shape == (10, len(new_data))
+
+
+def test_joint_smooth_bootstrap_preserves_cross_term_dependence():
+    data = pd.read_csv(REFERENCE_DIR / "cg_multi_smooth_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Beta(),
+        {
+            "mu": "y ~ pb(x) + offset(mu_offset)",
+            "sigma": "~ pb(z) + offset(sigma_offset)",
+        },
+        data,
+    )
+    control = RSControl(max_outer_iterations=200)
+    model.fit_rs_data(data, weights="weight", control=control)
+    new_data = data.iloc[::4].drop(columns="y")
+
+    joint = model.smooth_joint_bootstrap_data(
+        data,
+        weights="weight",
+        new_data=new_data,
+        replicates=10,
+        max_attempts=20,
+        control=control,
+        generator=torch.Generator().manual_seed(17),
+    )
+
+    assert isinstance(joint, SmoothJointBootstrapResult)
+    assert joint.term_order == (("mu", "x"), ("sigma", "z"))
+    assert joint.algorithm == "rs"
+    assert joint.replicates == 10
+    assert 10 <= joint.attempts <= 20
+    assert joint.failed_replicates == joint.attempts - joint.replicates
+    assert joint.failure_rate == pytest.approx(
+        joint.failed_replicates / joint.attempts
+    )
+    assert joint["mu"]["x"].bootstrap_estimates.shape == (10, len(new_data))
+    assert joint["sigma"]["z"].bootstrap_estimates.shape == (10, len(new_data))
+    assert joint.bootstrap_estimates.shape == (10, 2 * len(new_data))
+    assert joint.estimates.shape == (2 * len(new_data),)
+    assert len(joint.point_labels) == 2 * len(new_data)
+
+    mu_slice = joint.term_slices[("mu", "x")]
+    sigma_slice = joint.term_slices[("sigma", "z")]
+    cross_covariance = joint.covariance_block(("mu", "x"), ("sigma", "z"))
+    torch.testing.assert_close(
+        joint.covariance_matrix[mu_slice, sigma_slice],
+        cross_covariance,
+    )
+    torch.testing.assert_close(
+        joint.covariance_matrix[sigma_slice, mu_slice],
+        cross_covariance.mT,
+    )
+    torch.testing.assert_close(
+        joint.covariance_matrix[mu_slice, mu_slice],
+        joint["mu"]["x"].covariance_matrix,
+    )
+    torch.testing.assert_close(
+        torch.diagonal(joint.correlation_matrix),
+        torch.ones(2 * len(new_data), dtype=torch.float64),
+    )
+    assert joint.bootstrap_smoothing_parameters.shape == (10, 2)
+    assert joint.smoothing_parameters.shape == (2,)
+    assert torch.all(joint.bootstrap_smoothing_parameters.std(dim=0) > 0)
+    torch.testing.assert_close(
+        torch.diagonal(joint.smoothing_parameter_covariance_matrix),
+        joint.bootstrap_smoothing_parameters.var(dim=0),
+    )
+    torch.testing.assert_close(
+        torch.diagonal(joint.smoothing_parameter_correlation_matrix),
+        torch.ones(2, dtype=torch.float64),
+    )
+
+    bands = joint.simultaneous_confidence_bands()
+    assert isinstance(bands, SmoothJointBandResult)
+    assert bands.term_order == joint.term_order
+    assert bands.method == "parametric_bootstrap_joint_max_t"
+    assert bands.replicates == 10
+    assert bands["mu"]["x"].method == "parametric_bootstrap_joint_max_t"
+    assert bands["sigma"]["z"].critical_value == pytest.approx(
+        bands.critical_value
+    )
+    mu_band = joint["mu"]["x"].simultaneous_confidence_band()
+    assert bands.critical_value >= mu_band.critical_value
+    assert tuple(bands.to_dataframe().columns) == (
+        "parameter",
+        "term",
+        "covariate",
+        "estimate",
+        "ci_lower",
+        "ci_upper",
+    )
+    assert len(bands.to_dataframe()) == 2 * len(new_data)
+    assert tuple(joint.to_dataframe().columns) == (
+        "parameter",
+        "term",
+        "covariate",
+        "estimate",
+        "bootstrap_mean",
+        "bias",
+        "standard_error",
+        "ci_lower",
+        "ci_upper",
+    )
+
+    mu_only = joint.simultaneous_confidence_bands((("mu", "x"),))
+    assert mu_only.term_order == (("mu", "x"),)
+    assert mu_only.critical_value == pytest.approx(
+        joint["mu"]["x"].simultaneous_confidence_band().critical_value
+    )
+    with pytest.raises(ValueError, match="at least one"):
+        joint.simultaneous_confidence_bands(())
+    with pytest.raises(ValueError, match="duplicates"):
+        joint.simultaneous_confidence_bands((("mu", "x"), ("mu", "x")))
+    with pytest.raises(KeyError, match="unknown smooth term"):
+        joint.covariance_block(("mu", "missing"), ("sigma", "z"))
 
 
 def test_smooth_bootstrap_validates_replicates_algorithm_and_control():

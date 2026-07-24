@@ -125,3 +125,8 @@ See [`INFERENCE.md`](INFERENCE.md) for the statistical interpretation.
 bootstrap refit on the same new-data grid. Unlike the conditional intervals
 above, it reruns smoothing-parameter selection and returns pointwise
 percentile intervals from the refitted curves.
+
+`smooth_joint_bootstrap_data(..., new_data=new_data)` additionally retains
+replicate alignment across all fitted smooths. Its covariance blocks and
+joint max-|t| bands therefore describe their dependence on the requested
+prediction grid.

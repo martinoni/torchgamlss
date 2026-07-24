@@ -21,6 +21,8 @@ from torchgamlss.inference import (
     InferenceResult,
     SmoothBootstrapResult,
     SmoothInferenceResult,
+    SmoothJointBandResult,
+    SmoothJointBootstrapResult,
     SmoothSimultaneousBand,
 )
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
@@ -57,6 +59,8 @@ __all__ = [
     "RSFitResult",
     "SmoothBootstrapResult",
     "SmoothInferenceResult",
+    "SmoothJointBandResult",
+    "SmoothJointBootstrapResult",
     "SmoothSimultaneousBand",
     "SmoothTerm",
     "TermContributions",

@@ -29,6 +29,7 @@ from torchgamlss.inference import (
     InferenceResult,
     SmoothBootstrapResult,
     SmoothInferenceResult,
+    SmoothJointBootstrapResult,
     coefficient_inference,
     smooth_term_bootstrap,
     smooth_term_inference,
@@ -362,6 +363,33 @@ class GAMLSS(nn.Module):
             confidence_level=confidence_level,
             generator=generator,
         )
+
+    def smooth_joint_bootstrap_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        new_data: Any = None,
+        replicates: int = 999,
+        max_attempts: int | None = None,
+        algorithm: Literal["rs", "cg"] = "rs",
+        control: RSControl | CGControl | None = None,
+        confidence_level: float = 0.95,
+        generator: torch.Generator | None = None,
+    ) -> SmoothJointBootstrapResult:
+        """Bootstrap all fitted smooths in one aligned joint result."""
+        curves = self.smooth_bootstrap_data(
+            data,
+            weights=weights,
+            new_data=new_data,
+            replicates=replicates,
+            max_attempts=max_attempts,
+            algorithm=algorithm,
+            control=control,
+            confidence_level=confidence_level,
+            generator=generator,
+        )
+        return SmoothJointBootstrapResult._from_curves(curves)
 
     def diagnostics_data(
         self,
@@ -796,6 +824,41 @@ class GAMLSS(nn.Module):
             confidence_level=confidence_level,
             generator=generator,
         )
+
+    def smooth_joint_bootstrap(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        evaluation_smooth_covariates: (
+            Mapping[str, Mapping[str, Tensor]] | None
+        ) = None,
+        replicates: int = 999,
+        max_attempts: int | None = None,
+        algorithm: Literal["rs", "cg"] = "rs",
+        control: RSControl | CGControl | None = None,
+        confidence_level: float = 0.95,
+        generator: torch.Generator | None = None,
+    ) -> SmoothJointBootstrapResult:
+        """Bootstrap all smooth curves with replicate alignment preserved."""
+        curves = self.smooth_bootstrap(
+            response,
+            design_matrices,
+            smooth_covariates=smooth_covariates,
+            weights=weights,
+            offsets=offsets,
+            evaluation_smooth_covariates=evaluation_smooth_covariates,
+            replicates=replicates,
+            max_attempts=max_attempts,
+            algorithm=algorithm,
+            control=control,
+            confidence_level=confidence_level,
+            generator=generator,
+        )
+        return SmoothJointBootstrapResult._from_curves(curves)
 
     def diagnostics(
         self,

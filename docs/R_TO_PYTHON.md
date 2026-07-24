@@ -460,6 +460,26 @@ CG fit, so automatic `pb()` lambda selection is repeated. This is a
 TorchGAMLSS extension rather than a claim of direct `gamlss` output parity;
 the underlying fit and conditional variance remain covered by the R fixtures.
 
+Use `smooth_joint_bootstrap_data()` when several fitted smooths must remain
+aligned within each replicate:
+
+```python
+joint = model.smooth_joint_bootstrap_data(
+    data,
+    weights="weight",
+    replicates=999,
+    generator=torch.Generator().manual_seed(2026),
+)
+mu_sigma_covariance = joint.covariance_block(
+    ("mu", "x"),
+    ("sigma", "z"),
+)
+joint_bands = joint.simultaneous_confidence_bands()
+```
+
+This exposes empirical covariance across curve points and selected `lambda`
+values and calibrates a single max-|t| band over several smooth terms.
+
 See [`DIAGNOSTICS.md`](DIAGNOSTICS.md) and
 [`INFERENCE.md`](INFERENCE.md).
 
@@ -513,8 +533,8 @@ Important exclusions include:
 - transformed or interaction smooth terms;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
-- nonparametric, cluster, and simultaneous multi-smooth bootstrap intervals;
-- joint covariance across different penalized smooth terms;
+- nonparametric and cluster bootstrap intervals;
+- analytic joint covariance across different penalized smooth terms;
 - the complete R plotting and diagnostic ecosystem;
 - exact P-spline extrapolation parity outside the training range.
 

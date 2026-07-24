@@ -125,6 +125,10 @@ bootstrap = model.smooth_bootstrap_data(
 mu_x_bootstrap = bootstrap["mu"]["x"]
 ```
 
+For several formula smooths, call `smooth_joint_bootstrap_data()` instead to
+obtain cross-term covariance and max-|t| bands calibrated over all selected
+curves.
+
 The original fitted model is not changed. See
 [`INFERENCE.md`](INFERENCE.md) for intervals, failed-refit accounting, and the
 fixed-design interpretation.

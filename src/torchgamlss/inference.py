@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -359,6 +359,294 @@ class SmoothBootstrapResult:
                 "ci_upper",
             ],
         )
+
+
+@dataclass(frozen=True)
+class SmoothJointBandResult:
+    """Bootstrap max-|t| bands calibrated jointly over several smooths."""
+
+    bands: Mapping[str, Mapping[str, SmoothSimultaneousBand]]
+    term_order: tuple[tuple[str, str], ...]
+    critical_value: float
+    confidence_level: float
+    replicates: int
+    method: str = "parametric_bootstrap_joint_max_t"
+
+    def __getitem__(self, parameter: str) -> Mapping[str, SmoothSimultaneousBand]:
+        """Return all jointly calibrated bands for one parameter."""
+        return self.bands[parameter]
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return all jointly calibrated bands in long format."""
+        frames = []
+        for parameter, term in self.term_order:
+            frame = self.bands[parameter][term].to_dataframe()
+            frame.insert(0, "term", term)
+            frame.insert(0, "parameter", parameter)
+            frames.append(frame)
+        return pd.concat(frames, ignore_index=True)
+
+
+@dataclass(frozen=True)
+class SmoothJointBootstrapResult:
+    """Aligned parametric-bootstrap inference for several fitted smooths."""
+
+    curves: Mapping[str, Mapping[str, SmoothBootstrapResult]]
+    term_order: tuple[tuple[str, str], ...]
+    confidence_level: float
+    replicates: int
+    attempts: int
+    failed_replicates: int
+    algorithm: str
+
+    @classmethod
+    def _from_curves(
+        cls,
+        curves: Mapping[str, Mapping[str, SmoothBootstrapResult]],
+    ) -> SmoothJointBootstrapResult:
+        """Build a joint result from internally aligned bootstrap curves."""
+        term_order = tuple(
+            (parameter, term)
+            for parameter, parameter_curves in curves.items()
+            for term in parameter_curves
+        )
+        if not term_order:
+            raise ValueError("joint smooth bootstrap requires at least one curve")
+        first_parameter, first_term = term_order[0]
+        first = curves[first_parameter][first_term]
+        for parameter, term in term_order[1:]:
+            current = curves[parameter][term]
+            metadata = (
+                current.confidence_level,
+                current.replicates,
+                current.attempts,
+                current.failed_replicates,
+                current.algorithm,
+            )
+            expected = (
+                first.confidence_level,
+                first.replicates,
+                first.attempts,
+                first.failed_replicates,
+                first.algorithm,
+            )
+            if metadata != expected:
+                raise ValueError(
+                    "joint smooth bootstrap curves must come from the same run"
+                )
+        copied_curves = {
+            parameter: dict(parameter_curves)
+            for parameter, parameter_curves in curves.items()
+        }
+        return cls(
+            curves=copied_curves,
+            term_order=term_order,
+            confidence_level=first.confidence_level,
+            replicates=first.replicates,
+            attempts=first.attempts,
+            failed_replicates=first.failed_replicates,
+            algorithm=first.algorithm,
+        )
+
+    def __getitem__(self, parameter: str) -> Mapping[str, SmoothBootstrapResult]:
+        """Return all aligned bootstrap curves for one parameter."""
+        return self.curves[parameter]
+
+    @property
+    def failure_rate(self) -> float:
+        """Return the fraction of attempted joint refits that failed."""
+        return self.failed_replicates / self.attempts
+
+    @property
+    def term_slices(self) -> dict[tuple[str, str], slice]:
+        """Return slices locating each curve in stacked point-wise results."""
+        result = {}
+        start = 0
+        for key in self.term_order:
+            curve = self._curve(key)
+            stop = start + curve.estimates.numel()
+            result[key] = slice(start, stop)
+            start = stop
+        return result
+
+    @property
+    def point_labels(self) -> tuple[tuple[str, str, int], ...]:
+        """Return parameter, term, and point-index labels for stacked results."""
+        return tuple(
+            (parameter, term, index)
+            for parameter, term in self.term_order
+            for index in range(self.curves[parameter][term].estimates.numel())
+        )
+
+    @property
+    def estimates(self) -> Tensor:
+        """Return original curves concatenated in ``term_order``."""
+        return torch.cat([self._curve(key).estimates for key in self.term_order])
+
+    @property
+    def bootstrap_estimates(self) -> Tensor:
+        """Return aligned bootstrap curves as replicates by stacked points."""
+        return torch.cat(
+            [self._curve(key).bootstrap_estimates for key in self.term_order],
+            dim=1,
+        )
+
+    @property
+    def covariance_matrix(self) -> Tensor:
+        """Return the empirical covariance over every stacked curve point."""
+        estimates = self.bootstrap_estimates
+        centered = estimates - estimates.mean(dim=0)
+        return centered.mT @ centered / (self.replicates - 1)
+
+    @property
+    def correlation_matrix(self) -> Tensor:
+        """Return the empirical correlation over every stacked curve point."""
+        covariance = self.covariance_matrix
+        standard_errors = torch.diagonal(covariance).clamp_min(0).sqrt()
+        scale = standard_errors.unsqueeze(1) * standard_errors.unsqueeze(0)
+        correlation = covariance / scale
+        return correlation.clamp(-1.0, 1.0)
+
+    def covariance_block(
+        self,
+        first: tuple[str, str],
+        second: tuple[str, str],
+    ) -> Tensor:
+        """Return empirical cross-covariance between two fitted curves."""
+        first_curve = self._curve(first).bootstrap_estimates
+        second_curve = self._curve(second).bootstrap_estimates
+        first_centered = first_curve - first_curve.mean(dim=0)
+        second_centered = second_curve - second_curve.mean(dim=0)
+        return first_centered.mT @ second_centered / (self.replicates - 1)
+
+    @property
+    def smoothing_parameters(self) -> Tensor:
+        """Return fitted smoothing parameters in ``term_order``."""
+        reference = self._curve(self.term_order[0]).bootstrap_smoothing_parameters
+        return torch.tensor(
+            [
+                self._curve(key).smoothing_parameter
+                for key in self.term_order
+            ],
+            dtype=reference.dtype,
+            device=reference.device,
+        )
+
+    @property
+    def bootstrap_smoothing_parameters(self) -> Tensor:
+        """Return aligned smoothing parameters as replicates by terms."""
+        return torch.column_stack(
+            [
+                self._curve(key).bootstrap_smoothing_parameters
+                for key in self.term_order
+            ]
+        )
+
+    @property
+    def smoothing_parameter_covariance_matrix(self) -> Tensor:
+        """Return empirical covariance among reselected smoothing parameters."""
+        parameters = self.bootstrap_smoothing_parameters
+        centered = parameters - parameters.mean(dim=0)
+        return centered.mT @ centered / (self.replicates - 1)
+
+    @property
+    def smoothing_parameter_correlation_matrix(self) -> Tensor:
+        """Return empirical correlations among smoothing parameters."""
+        covariance = self.smoothing_parameter_covariance_matrix
+        standard_errors = torch.diagonal(covariance).clamp_min(0).sqrt()
+        scale = standard_errors.unsqueeze(1) * standard_errors.unsqueeze(0)
+        correlation = covariance / scale
+        return correlation.clamp(-1.0, 1.0)
+
+    def simultaneous_confidence_bands(
+        self,
+        terms: Sequence[tuple[str, str]] | None = None,
+    ) -> SmoothJointBandResult:
+        """Return max-|t| bands jointly calibrated over selected smooths."""
+        selected_terms = self._selected_terms(terms)
+        standardized_deviations = []
+        for key in selected_terms:
+            curve = self._curve(key)
+            positive_standard_errors = curve.standard_errors > 0
+            if positive_standard_errors.any():
+                standardized_deviations.append(
+                    (
+                        curve.bootstrap_estimates[:, positive_standard_errors]
+                        - curve.estimates[positive_standard_errors]
+                    )
+                    / curve.standard_errors[positive_standard_errors]
+                )
+        if not standardized_deviations:
+            raise RuntimeError(
+                "selected bootstrap curves have no positive variance; "
+                "joint simultaneous bands are unavailable"
+            )
+        maximum_statistics = torch.cat(
+            standardized_deviations,
+            dim=1,
+        ).abs().amax(dim=1)
+        critical_value = float(
+            torch.quantile(maximum_statistics, self.confidence_level)
+        )
+        bands: dict[str, dict[str, SmoothSimultaneousBand]] = {}
+        for parameter, term in selected_terms:
+            curve = self.curves[parameter][term]
+            confidence_intervals = torch.column_stack(
+                (
+                    curve.estimates - critical_value * curve.standard_errors,
+                    curve.estimates + critical_value * curve.standard_errors,
+                )
+            )
+            bands.setdefault(parameter, {})[term] = SmoothSimultaneousBand(
+                parameter=parameter,
+                term=term,
+                covariate=curve.covariate,
+                estimates=curve.estimates,
+                confidence_intervals=confidence_intervals,
+                critical_value=critical_value,
+                confidence_level=self.confidence_level,
+                simulations=self.replicates,
+                method="parametric_bootstrap_joint_max_t",
+            )
+        return SmoothJointBandResult(
+            bands=bands,
+            term_order=selected_terms,
+            critical_value=critical_value,
+            confidence_level=self.confidence_level,
+            replicates=self.replicates,
+        )
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return all pointwise curve summaries in long format."""
+        frames = []
+        for parameter, term in self.term_order:
+            frame = self.curves[parameter][term].to_dataframe()
+            frame.insert(0, "term", term)
+            frame.insert(0, "parameter", parameter)
+            frames.append(frame)
+        return pd.concat(frames, ignore_index=True)
+
+    def _curve(self, key: tuple[str, str]) -> SmoothBootstrapResult:
+        try:
+            parameter, term = key
+            return self.curves[parameter][term]
+        except (KeyError, TypeError, ValueError) as error:
+            raise KeyError(f"unknown smooth term {key!r}") from error
+
+    def _selected_terms(
+        self,
+        terms: Sequence[tuple[str, str]] | None,
+    ) -> tuple[tuple[str, str], ...]:
+        if terms is None:
+            return self.term_order
+        if not terms:
+            raise ValueError("terms must contain at least one smooth term")
+        if len(set(terms)) != len(terms):
+            raise ValueError("terms must not contain duplicates")
+        selected_terms = tuple(terms)
+        for key in selected_terms:
+            self._curve(key)
+        return selected_terms
 
 
 def coefficient_inference(
