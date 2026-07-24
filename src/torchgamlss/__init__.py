@@ -17,7 +17,11 @@ from torchgamlss.families import (
 )
 from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
-from torchgamlss.inference import InferenceResult, SmoothInferenceResult
+from torchgamlss.inference import (
+    InferenceResult,
+    SmoothInferenceResult,
+    SmoothSimultaneousBand,
+)
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
 from torchgamlss.model import GAMLSS, FitResult, TermContributions
 from torchgamlss.smooths import PSpline, SmoothTerm
@@ -51,6 +55,7 @@ __all__ = [
     "RSControl",
     "RSFitResult",
     "SmoothInferenceResult",
+    "SmoothSimultaneousBand",
     "SmoothTerm",
     "TermContributions",
     "compare_models",

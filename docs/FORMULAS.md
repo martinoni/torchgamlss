@@ -92,13 +92,23 @@ Models with smooth terms support explicit conditional inference for their
 linear coefficients. Pass `conditional_on_smooths=True`, the fitted residual
 degrees of freedom, and see [`INFERENCE.md`](INFERENCE.md) for its scope.
 
-Pointwise conditional inference for the fitted smooth contributions uses the
-same stored formula encodings:
+Conditional inference for the fitted smooth contributions uses the same
+stored formula encodings:
 
 ```python
+import torch
+
 smooth_curves = model.smooth_inference_data(data, weights="weight")
-mu_x_table = smooth_curves["mu"]["x"].to_dataframe()
+mu_x = smooth_curves["mu"]["x"]
+mu_x_table = mu_x.to_dataframe()
+band = mu_x.simultaneous_confidence_band(
+    generator=torch.Generator().manual_seed(2026),
+)
 ```
+
+`mu_x.covariance_matrix` contains the full within-curve covariance. The
+default intervals in `mu_x_table` are pointwise; `band.confidence_intervals`
+contains a simulation-based simultaneous band at the same confidence level.
 
 Diagnostics and quantile residuals use the same stored encodings:
 

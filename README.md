@@ -47,8 +47,9 @@ The current implementation contains:
 - joint full-Hessian covariance, standard errors, Wald tests, and confidence
   intervals for parametric models and conditional linear-coefficient inference
   with fitted smooth contributions held fixed;
-- R-compatible pointwise standard errors and confidence intervals for fitted
-  P-spline contributions, conditional on their smoothing parameters;
+- R-compatible pointwise standard errors, full within-curve covariance, and
+  simulation-based simultaneous confidence bands for fitted P-spline
+  contributions, conditional on their smoothing parameters;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
 - continuous and randomized discrete normal quantile residuals;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
@@ -60,8 +61,8 @@ The current implementation contains:
 
 Broader graphical diagnostics are planned work. The L-BFGS path remains a
 Torch-native numerical baseline and requires fixed smoothing parameters.
-Joint uncertainty for spline coefficients and estimated smoothing parameters
-is not yet supported.
+Joint uncertainty across different smooth terms and uncertainty from estimated
+smoothing parameters are not yet supported.
 
 ## Development
 

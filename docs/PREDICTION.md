@@ -90,12 +90,15 @@ Models constructed with `GAMLSS.from_formula()` can use `predict_data()` to
 materialize these inputs directly from a pandas DataFrame or compatible
 mapping. See [`FORMULAS.md`](FORMULAS.md).
 
-## Conditional smooth intervals
+## Conditional smooth intervals and bands
 
-For fitted formula models, `smooth_inference_data()` adds pointwise standard
-errors and confidence intervals to each smooth contribution:
+For fitted formula models, `smooth_inference_data()` adds within-curve
+covariance, pointwise standard errors, and confidence intervals to each smooth
+contribution:
 
 ```python
+import torch
+
 curves = model.smooth_inference_data(
     training_data,
     weights="weight",
@@ -106,5 +109,14 @@ mu_x = curves["mu"]["x"]
 
 The fitted curve is `mu_x.estimates`; its pointwise uncertainty is in
 `standard_errors` and `confidence_intervals`. The calculation conditions on
-the fitted smoothing parameter and does not produce a simultaneous band. See
-[`INFERENCE.md`](INFERENCE.md).
+the fitted smoothing parameter. A simultaneous band over all supplied
+evaluation points is available from:
+
+```python
+band = mu_x.simultaneous_confidence_band(
+    simulations=10_000,
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+See [`INFERENCE.md`](INFERENCE.md) for the statistical interpretation.

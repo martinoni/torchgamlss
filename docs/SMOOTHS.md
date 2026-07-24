@@ -86,8 +86,8 @@ edf = result.smooth_effective_degrees_of_freedom["mu"]["x"]
 estimated_lambda = result.smoothing_parameters["mu"]["x"]
 ```
 
-After fitting, pointwise conditional uncertainty for each smooth contribution
-is available from the same data:
+After fitting, conditional uncertainty for each smooth contribution is
+available from the same data:
 
 ```python
 curve = model.smooth_inference(
@@ -97,13 +97,28 @@ curve = model.smooth_inference(
 )["mu"]["x"]
 
 curve.estimates
+curve.covariance_matrix
+curve.correlation_matrix
 curve.standard_errors
 curve.confidence_intervals
 ```
 
 This follows the `gamlss.pb()` variance calculation and conditions on the
 fitted smoothing parameter. The intervals are on the additive predictor scale
-and are pointwise rather than simultaneous.
+and are pointwise. A simulation-based simultaneous band over the supplied
+covariate values uses the full within-curve covariance:
+
+```python
+band = curve.simultaneous_confidence_band(
+    simulations=10_000,
+    generator=torch.Generator().manual_seed(2026),
+)
+band.critical_value
+band.confidence_intervals
+```
+
+The generator makes the Monte Carlo result reproducible. Neither kind of
+interval accounts for uncertainty from estimating the smoothing parameter.
 
 The same smooth terms and selection modes work with `fit_cg()` and
 `CGControl`; CG performs one `additive.fit()`-style pass per parameter update
@@ -151,9 +166,10 @@ gcv_term = PSpline.from_data(
 ## Current limitations
 
 - Only one-dimensional, equally spaced P-spline bases are available.
-- Linear-coefficient inference and pointwise smooth intervals are available
-  conditionally for additive models. Full joint uncertainty across smooth
-  terms and smoothing-parameter estimation is not yet available.
+- Linear-coefficient inference, within-curve covariance, pointwise smooth
+  intervals, and simultaneous smooth bands are available conditionally for
+  additive models. Full joint uncertainty across smooth terms and
+  smoothing-parameter estimation is not yet available.
 - Automatic smoothing selection is available through `fit_rs()` and
   `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

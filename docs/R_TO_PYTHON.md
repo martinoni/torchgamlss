@@ -419,13 +419,27 @@ Pointwise uncertainty for the smooth contributions corresponds to the
 `se.fit=TRUE` term calculation in R:
 
 ```python
+import torch
+
 smooth_curves = model.smooth_inference_data(data, weights="weight")
 mu_x = smooth_curves["mu"]["x"]
 mu_x_table = mu_x.to_dataframe()
 ```
 
 The intervals are conditional on the fitted `lambda` and use normal critical
-values. They are pointwise, not simultaneous bands.
+values. TorchGAMLSS additionally exposes the implied full within-curve
+covariance and can construct a conditional simultaneous band:
+
+```python
+covariance = mu_x.covariance_matrix
+band = mu_x.simultaneous_confidence_band(
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+The covariance and band extend the same fixed-`lambda` calculation; R parity
+fixtures directly compare its diagonal (the pointwise variances). The band
+does not account for smoothing-parameter selection uncertainty.
 
 See [`DIAGNOSTICS.md`](DIAGNOSTICS.md) and
 [`INFERENCE.md`](INFERENCE.md).
@@ -480,7 +494,7 @@ Important exclusions include:
 - transformed or interaction smooth terms;
 - automatic missing-value row removal;
 - profile-likelihood, bootstrap, and robust covariance workflows;
-- joint covariance for penalized smooth terms;
+- joint covariance across different penalized smooth terms;
 - the complete R plotting and diagnostic ecosystem;
 - exact P-spline extrapolation parity outside the training range.
 

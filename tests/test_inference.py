@@ -18,6 +18,7 @@ from torchgamlss import (
     PSpline,
     RSControl,
     SmoothInferenceResult,
+    SmoothSimultaneousBand,
 )
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
@@ -569,6 +570,24 @@ def test_smooth_curve_inference_matches_r_gamlss_pb(case, formula):
         rtol=2e-7,
         atol=2e-10,
     )
+    assert result.covariance_matrix.shape == (len(data), len(data))
+    torch.testing.assert_close(
+        result.covariance_matrix,
+        result.covariance_matrix.mT,
+    )
+    torch.testing.assert_close(
+        torch.diagonal(result.covariance_matrix),
+        result.variances,
+    )
+    assert torch.linalg.eigvalsh(result.covariance_matrix).min() >= -1e-12
+    torch.testing.assert_close(
+        result.correlation_matrix,
+        result.correlation_matrix.mT,
+    )
+    torch.testing.assert_close(
+        torch.diagonal(result.correlation_matrix),
+        torch.ones(len(data), dtype=torch.float64),
+    )
     torch.testing.assert_close(
         result.standard_errors,
         expected["standard_error"],
@@ -592,6 +611,55 @@ def test_smooth_curve_inference_matches_r_gamlss_pb(case, formula):
     assert len(table) == len(data)
 
 
+def test_smooth_simultaneous_confidence_band_is_reproducible_and_wider():
+    data = pd.read_csv(REFERENCE_DIR / "no_pb_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ pb(x, smoothing_parameter=12)", "sigma": "~ 1"},
+        data,
+    )
+    model.fit_rs_data(data)
+    result = model.smooth_inference_data(data)["mu"]["x"]
+
+    first = result.simultaneous_confidence_band(
+        simulations=2_000,
+        generator=torch.Generator().manual_seed(2026),
+    )
+    second = result.simultaneous_confidence_band(
+        simulations=2_000,
+        generator=torch.Generator().manual_seed(2026),
+    )
+
+    assert isinstance(first, SmoothSimultaneousBand)
+    assert first.parameter == "mu"
+    assert first.term == "x"
+    assert first.simulations == 2_000
+    assert first.confidence_level == pytest.approx(0.95)
+    assert first.critical_value == pytest.approx(second.critical_value)
+    torch.testing.assert_close(
+        first.confidence_intervals,
+        second.confidence_intervals,
+    )
+    assert first.critical_value > 1.96
+    assert torch.all(
+        first.confidence_intervals[:, 0] <= result.confidence_intervals[:, 0]
+    )
+    assert torch.all(
+        first.confidence_intervals[:, 1] >= result.confidence_intervals[:, 1]
+    )
+    table = first.to_dataframe()
+    assert tuple(table.columns) == (
+        "covariate",
+        "estimate",
+        "ci_lower",
+        "ci_upper",
+    )
+    assert len(table) == len(data)
+
+    with pytest.raises(ValueError, match="at least 100"):
+        result.simultaneous_confidence_band(simulations=99)
+
+
 def test_smooth_curve_inference_supports_formula_new_data():
     data = pd.read_csv(REFERENCE_DIR / "no_pb_fit_data.csv")
     model = GAMLSS.from_formula(
@@ -607,6 +675,7 @@ def test_smooth_curve_inference_supports_formula_new_data():
 
     torch.testing.assert_close(result.estimates, contribution)
     assert result.standard_errors.shape == (len(new_data),)
+    assert result.covariance_matrix.shape == (len(new_data), len(new_data))
     assert result.confidence_intervals.shape == (len(new_data), 2)
     assert torch.all(result.confidence_intervals[:, 0] <= result.estimates)
     assert torch.all(result.confidence_intervals[:, 1] >= result.estimates)

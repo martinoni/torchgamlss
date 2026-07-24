@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -75,13 +75,42 @@ class InferenceResult:
 
 
 @dataclass(frozen=True)
-class SmoothInferenceResult:
-    """Pointwise conditional inference for one fitted smooth contribution."""
+class SmoothSimultaneousBand:
+    """Simulation-based simultaneous band for one smooth contribution."""
 
     parameter: str
     term: str
     covariate: Tensor
     estimates: Tensor
+    confidence_intervals: Tensor
+    critical_value: float
+    confidence_level: float
+    simulations: int
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return covariates, estimates, and limits as a pandas DataFrame."""
+        values = torch.column_stack(
+            (
+                self.covariate,
+                self.estimates,
+                self.confidence_intervals,
+            )
+        )
+        return pd.DataFrame(
+            values.detach().cpu().numpy(),
+            columns=["covariate", "estimate", "ci_lower", "ci_upper"],
+        )
+
+
+@dataclass(frozen=True)
+class SmoothInferenceResult:
+    """Conditional inference for one fitted smooth contribution."""
+
+    parameter: str
+    term: str
+    covariate: Tensor
+    estimates: Tensor
+    _covariance_root: Tensor = field(repr=False)
     standard_errors: Tensor
     confidence_intervals: Tensor
     smoothing_parameter: float
@@ -92,6 +121,93 @@ class SmoothInferenceResult:
     def variances(self) -> Tensor:
         """Return pointwise variances on the additive predictor scale."""
         return self.standard_errors.square()
+
+    @property
+    def covariance_matrix(self) -> Tensor:
+        """Return the conditional covariance matrix of the fitted curve."""
+        return self._covariance_root @ self._covariance_root.mT
+
+    @property
+    def correlation_matrix(self) -> Tensor:
+        """Return the conditional correlation matrix of the fitted curve."""
+        scale = self.standard_errors.unsqueeze(1) * self.standard_errors.unsqueeze(0)
+        safe_scale = scale.clamp_min(torch.finfo(scale.dtype).tiny)
+        correlation = (self.covariance_matrix / safe_scale).clamp(-1.0, 1.0)
+        diagonal = torch.arange(
+            self.standard_errors.numel(),
+            device=self.standard_errors.device,
+        )
+        correlation[diagonal, diagonal] = (
+            self.standard_errors > 0
+        ).to(correlation.dtype)
+        return correlation
+
+    def simultaneous_confidence_band(
+        self,
+        *,
+        simulations: int = 10_000,
+        generator: torch.Generator | None = None,
+    ) -> SmoothSimultaneousBand:
+        """Return a conditional Gaussian max-|t| confidence band.
+
+        Monte Carlo draws use the full curve covariance. Pass a seeded
+        ``torch.Generator`` for reproducible limits.
+        """
+        if (
+            isinstance(simulations, bool)
+            or not isinstance(simulations, int)
+            or simulations < 100
+        ):
+            raise ValueError("simulations must be an integer of at least 100")
+
+        positive_standard_errors = self.standard_errors > 0
+        if self._covariance_root.shape[1] == 0 or not positive_standard_errors.any():
+            raise RuntimeError(
+                "smooth covariance has no positive variance; "
+                "a simultaneous band is unavailable"
+            )
+
+        standardized_root = (
+            self._covariance_root[positive_standard_errors]
+            / self.standard_errors[positive_standard_errors].unsqueeze(1)
+        )
+        maximum_statistics = torch.empty(
+            simulations,
+            dtype=self.estimates.dtype,
+            device=self.estimates.device,
+        )
+        batch_size = 1_024
+        for start in range(0, simulations, batch_size):
+            stop = min(start + batch_size, simulations)
+            normal_draws = torch.randn(
+                (stop - start, self._covariance_root.shape[1]),
+                dtype=self.estimates.dtype,
+                device=self.estimates.device,
+                generator=generator,
+            )
+            maximum_statistics[start:stop] = (
+                normal_draws @ standardized_root.mT
+            ).abs().amax(dim=1)
+
+        critical_value = float(
+            torch.quantile(maximum_statistics, self.confidence_level)
+        )
+        confidence_intervals = torch.column_stack(
+            (
+                self.estimates - critical_value * self.standard_errors,
+                self.estimates + critical_value * self.standard_errors,
+            )
+        )
+        return SmoothSimultaneousBand(
+            parameter=self.parameter,
+            term=self.term,
+            covariate=self.covariate,
+            estimates=self.estimates,
+            confidence_intervals=confidence_intervals.detach(),
+            critical_value=critical_value,
+            confidence_level=self.confidence_level,
+            simulations=simulations,
+        )
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return covariates, fitted contributions, and pointwise intervals."""
@@ -363,12 +479,7 @@ def smooth_term_inference(
                 combined_weights.unsqueeze(-1) * training_basis
             ) + term.smoothing_parameter * (penalty.mT @ penalty)
             system_inverse = torch.linalg.pinv(system, hermitian=True)
-            raw_variances = torch.einsum(
-                "ij,jk,ik->i",
-                evaluation_basis,
-                system_inverse,
-                evaluation_basis,
-            )
+            coefficient_covariance = system_inverse
 
             nullity = term.penalty_nullity
             if nullity:
@@ -378,30 +489,40 @@ def smooth_term_inference(
                     device=training_covariate.device,
                 )
                 training_null_basis = training_covariate.unsqueeze(-1).pow(powers)
-                evaluation_null_basis = evaluation_covariate.unsqueeze(-1).pow(powers)
                 null_system = training_null_basis.mT @ (
                     combined_weights.unsqueeze(-1) * training_null_basis
                 )
                 null_inverse = torch.linalg.pinv(null_system, hermitian=True)
-                null_variances = torch.einsum(
-                    "ij,jk,ik->i",
-                    evaluation_null_basis,
-                    null_inverse,
-                    evaluation_null_basis,
+                null_basis_coefficients = torch.linalg.lstsq(
+                    training_basis,
+                    training_null_basis,
+                ).solution
+                coefficient_covariance = coefficient_covariance - (
+                    null_basis_coefficients
+                    @ null_inverse
+                    @ null_basis_coefficients.mT
                 )
-                variances = raw_variances - null_variances
-            else:
-                variances = raw_variances
-
-            tolerance = math.sqrt(
-                torch.finfo(variances.dtype).eps
-            ) * raw_variances.abs().max().clamp_min(1.0)
-            if (variances < -tolerance).any():
+            coefficient_covariance = (
+                coefficient_covariance + coefficient_covariance.mT
+            ) / 2.0
+            eigenvalues, eigenvectors = torch.linalg.eigh(coefficient_covariance)
+            covariance_scale = eigenvalues.abs().max().clamp_min(
+                torch.finfo(eigenvalues.dtype).tiny
+            )
+            covariance_tolerance = (
+                math.sqrt(torch.finfo(eigenvalues.dtype).eps) * covariance_scale
+            )
+            if (eigenvalues < -covariance_tolerance).any():
                 raise RuntimeError(
-                    f"conditional smooth variance for {parameter!r}.{term_name} "
-                    "is materially negative"
+                    f"conditional smooth covariance for "
+                    f"{parameter!r}.{term_name} is not positive semidefinite"
                 )
-            variances = variances.clamp_min(0.0)
+            retained = eigenvalues > covariance_tolerance
+            coefficient_root = (
+                eigenvectors[:, retained] * eigenvalues[retained].sqrt()
+            )
+            covariance_root = evaluation_basis @ coefficient_root
+            variances = covariance_root.square().sum(dim=1)
             standard_errors = variances.sqrt()
             estimates = term(evaluation_covariate).detach()
             confidence_intervals = torch.column_stack(
@@ -421,6 +542,7 @@ def smooth_term_inference(
                 term=term_name,
                 covariate=evaluation_covariate.detach().clone(),
                 estimates=estimates,
+                _covariance_root=covariance_root.detach(),
                 standard_errors=standard_errors.detach(),
                 confidence_intervals=confidence_intervals.detach(),
                 smoothing_parameter=term.smoothing_parameter,

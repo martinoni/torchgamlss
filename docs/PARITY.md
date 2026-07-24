@@ -166,7 +166,9 @@ Smooth-curve inference fixtures compare the fitted contribution, conditional
 variance, pointwise standard error, and 95% interval produced from
 `fit$mu.var` and `fit$sigma.var`. They cover fixed and ML smoothing in RS,
 simultaneous `mu` and `sigma` smooths in CG, and two smooth terms attached to
-one parameter.
+one parameter. TorchGAMLSS exposes the corresponding full within-curve
+covariance and simulation-based simultaneous band as extensions; the R
+fixtures directly validate the covariance diagonal.
 
 ## Cole-Green fitting
 

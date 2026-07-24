@@ -74,37 +74,72 @@ when additive terms are present.
 
 ## Smooth-curve uncertainty
 
-`smooth_inference_data()` returns pointwise standard errors and confidence
-intervals for each fitted smooth contribution:
+`smooth_inference_data()` returns full within-curve covariance, pointwise
+standard errors, and confidence intervals for each fitted smooth contribution:
 
 ```python
+import torch
+
 curves = model.smooth_inference_data(data, weights="weight")
 mu_x = curves["mu"]["x"]
 
 mu_x.estimates
+mu_x.covariance_matrix
+mu_x.correlation_matrix
 mu_x.standard_errors
 mu_x.confidence_intervals
 table = mu_x.to_dataframe()
 ```
 
 The estimates and intervals are on the additive predictor scale. For a
-P-spline basis `B`, working weights `W`, penalty `D`, and fitted `lambda`, the
-raw pointwise covariance uses
+P-spline basis `B`, evaluation basis `B_*`, working weights `W`, penalty `D`,
+and fitted `lambda`, the raw covariance uses
 
 ```text
-(B' W B + lambda D' D)^-1.
+B_* (B' W B + lambda D' D)^-1 B_*'.
 ```
 
-The variance of the unpenalized polynomial null space is then removed because
-that component is already represented by the linear predictor. This
-reproduces the `var` component created by `gamlss.pb()` and subsequently used
-by `predict.gamlss(..., se.fit=TRUE)`.
+The covariance of the unpenalized polynomial null space is then removed
+because that component is already represented by the linear predictor. The
+diagonal reproduces the `var` component created by `gamlss.pb()` and
+subsequently used by `predict.gamlss(..., se.fit=TRUE)`.
 
 Intervals use pointwise normal critical values. They are conditional on the
 fitted smoothing parameter and final working weights: they do not incorporate
-selection uncertainty in `lambda`, and they are not simultaneous confidence
-bands. Smooths in several distribution parameters and multiple smooths in one
-parameter are returned independently.
+selection uncertainty in `lambda`.
+
+### Simultaneous bands
+
+The full covariance supports a conditional simultaneous band over all
+covariate values in the result:
+
+```python
+band = mu_x.simultaneous_confidence_band(
+    simulations=10_000,
+    generator=torch.Generator().manual_seed(2026),
+)
+
+band.critical_value
+band.confidence_intervals
+band.to_dataframe()
+```
+
+Each simulation draws a Gaussian curve from the conditional covariance and
+records its maximum absolute standardized deviation. The empirical
+`confidence_level` quantile is used in place of the pointwise normal critical
+value. A seeded generator gives reproducible Monte Carlo limits; increasing
+`simulations` reduces simulation error.
+
+The band is simultaneous only across the evaluation points for one returned
+smooth. Smooths in several distribution parameters and multiple smooths in
+one parameter are still returned independently. The band remains conditional
+on the fitted `lambda` and final working weights, so it does not incorporate
+smoothing-parameter selection uncertainty.
+
+`covariance_matrix` has one row and column per evaluation point and is
+materialized only when accessed. The band calculation uses an internal
+low-rank covariance factor directly, so it does not need to allocate that
+square matrix.
 
 The formula API can evaluate a stored basis on new covariate values:
 
@@ -148,9 +183,10 @@ or non-identifiable designs are rejected rather than pseudo-inverted.
 
 Parametric inference supports models fitted by RS, CG, or Torch L-BFGS.
 Conditional linear-coefficient inference supports additive RS and CG fits.
-Conditional pointwise smooth inference supports additive RS and CG fits.
-Full joint inference across spline coefficients, smooth terms, and smoothing
-parameters remains separate future work.
+Conditional smooth inference and within-curve simultaneous bands support
+additive RS and CG fits. Full joint inference across spline coefficients,
+different smooth terms, and smoothing parameters remains separate future
+work.
 
 These are local Wald approximations. They do not replace profile likelihood,
 bootstrap inference, robust sandwich covariance, or corrections for
