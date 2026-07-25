@@ -379,6 +379,204 @@ def test_dataloader_api_controls_are_validated():
         model.fit_minibatch_loader(loader, non_blocking=1)
     with pytest.raises(ValueError, match="validation loader"):
         model.fit_minibatch_loader(loader, validation_loader=[])
+    with pytest.raises(ValueError, match="checkpoint_frequency"):
+        model.fit_minibatch_loader(loader, checkpoint_frequency=0)
+
+
+def test_checkpoint_resume_exactly_matches_uninterrupted_dropout_fit(tmp_path):
+    x, response, designs = _linear_data(43, seed=601)
+    dataset = _RowDataset(
+        response,
+        {
+            "mu": designs["mu"][:, :1],
+            "sigma": designs["sigma"],
+        },
+        shared_input=x.unsqueeze(-1),
+    )
+    initial_model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        shared_predictor=SharedMLPPredictor(
+            1,
+            ("mu",),
+            (8,),
+            dropout=0.25,
+        ),
+        dtype=torch.float64,
+    )
+    continuous_model = copy.deepcopy(initial_model)
+    partial_model = copy.deepcopy(initial_model)
+    resumed_model = copy.deepcopy(initial_model)
+
+    def loader(seed):
+        return DataLoader(
+            dataset,
+            batch_size=9,
+            shuffle=True,
+            generator=torch.Generator().manual_seed(seed),
+        )
+
+    def control(epochs):
+        return MiniBatchControl(
+            epochs=epochs,
+            learning_rate=0.02,
+            learning_rate_decay=0.97,
+            minimum_epochs=1,
+            patience=20,
+            tolerance_change=0.0,
+            tolerance_gradient=0.0,
+            evaluation_frequency=1,
+        )
+
+    torch.manual_seed(602)
+    continuous_result = continuous_model.fit_minibatch_loader(
+        loader(603),
+        control=control(4),
+    )
+    checkpoint_path = tmp_path / "dropout-checkpoint.pt"
+    torch.manual_seed(602)
+    partial_model.fit_minibatch_loader(
+        loader(603),
+        control=control(2),
+        checkpoint_path=checkpoint_path,
+    )
+    resumed_result = resumed_model.fit_minibatch_loader(
+        loader(999),
+        control=control(4),
+        resume_from=checkpoint_path,
+    )
+
+    assert checkpoint_path.is_file()
+    assert resumed_result == continuous_result
+    for name, value in continuous_model.state_dict().items():
+        torch.testing.assert_close(
+            resumed_model.state_dict()[name],
+            value,
+            rtol=0.0,
+            atol=0.0,
+        )
+
+
+def test_checkpoint_preserves_validation_patience_and_best_state(tmp_path):
+    _, response, designs = _linear_data(41, seed=611)
+    _, validation_response, validation_designs = _linear_data(23, seed=612)
+    dataset = _RowDataset(response, designs)
+    validation_dataset = _RowDataset(
+        validation_response,
+        validation_designs,
+    )
+    initial_model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        dtype=torch.float64,
+    )
+    continuous_model = copy.deepcopy(initial_model)
+    partial_model = copy.deepcopy(initial_model)
+    resumed_model = copy.deepcopy(initial_model)
+
+    def loaders(seed):
+        return (
+            DataLoader(
+                dataset,
+                batch_size=8,
+                shuffle=True,
+                generator=torch.Generator().manual_seed(seed),
+            ),
+            DataLoader(validation_dataset, batch_size=6),
+        )
+
+    def control(epochs):
+        return MiniBatchControl(
+            epochs=epochs,
+            learning_rate=0.03,
+            minimum_epochs=1,
+            evaluation_frequency=1,
+            validation_patience=3,
+            validation_minimum_delta=1e6,
+        )
+
+    torch.manual_seed(613)
+    training_loader, validation_loader = loaders(614)
+    continuous_result = continuous_model.fit_minibatch_loader(
+        training_loader,
+        validation_loader=validation_loader,
+        control=control(10),
+    )
+    checkpoint_path = tmp_path / "validation-checkpoint.pt"
+    torch.manual_seed(613)
+    training_loader, validation_loader = loaders(614)
+    partial_model.fit_minibatch_loader(
+        training_loader,
+        validation_loader=validation_loader,
+        control=control(1),
+        checkpoint_path=checkpoint_path,
+    )
+    training_loader, validation_loader = loaders(999)
+    resumed_result = resumed_model.fit_minibatch_loader(
+        training_loader,
+        validation_loader=validation_loader,
+        control=control(10),
+        resume_from=checkpoint_path,
+    )
+
+    assert continuous_result.stop_reason == "validation"
+    assert continuous_result.epochs == 3
+    assert resumed_result == continuous_result
+    for name, value in continuous_model.state_dict().items():
+        torch.testing.assert_close(
+            resumed_model.state_dict()[name],
+            value,
+            rtol=0.0,
+            atol=0.0,
+        )
+
+
+def test_checkpoint_rejects_invalid_schema_and_changed_control(tmp_path):
+    _, response, designs = _linear_data(12, seed=621)
+    dataset = _RowDataset(response, designs)
+
+    def loader():
+        return DataLoader(dataset, batch_size=4, shuffle=False)
+
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        dtype=torch.float64,
+    )
+    malformed_path = tmp_path / "malformed.pt"
+    torch.save({"format": "not-a-checkpoint"}, malformed_path)
+    with pytest.raises(ValueError, match="invalid schema"):
+        model.fit_minibatch_loader(
+            loader(),
+            control=MiniBatchControl(epochs=1, minimum_epochs=1),
+            resume_from=malformed_path,
+        )
+
+    checkpoint_path = tmp_path / "valid.pt"
+    model.fit_minibatch_loader(
+        loader(),
+        control=MiniBatchControl(
+            epochs=1,
+            minimum_epochs=1,
+            learning_rate=0.01,
+        ),
+        checkpoint_path=checkpoint_path,
+    )
+    resumed_model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        dtype=torch.float64,
+    )
+    with pytest.raises(ValueError, match="learning_rate"):
+        resumed_model.fit_minibatch_loader(
+            loader(),
+            control=MiniBatchControl(
+                epochs=2,
+                minimum_epochs=1,
+                learning_rate=0.02,
+            ),
+            resume_from=checkpoint_path,
+        )
 
 
 def test_dataloader_rejects_a_stream_that_changes_between_passes():
@@ -416,7 +614,8 @@ def test_dataloader_rejects_a_stream_that_changes_between_passes():
         )
 
 
-def test_streaming_benchmark_cli_smoke():
+def test_streaming_benchmark_cli_smoke(tmp_path):
+    checkpoint_path = tmp_path / "benchmark.pt"
     completed = subprocess.run(
         [
             sys.executable,
@@ -437,6 +636,8 @@ def test_streaming_benchmark_cli_smoke():
             "1",
             "--minimum-epochs",
             "1",
+            "--checkpoint-path",
+            str(checkpoint_path),
             "--device",
             "cpu",
             "--dtype",
@@ -454,6 +655,8 @@ def test_streaming_benchmark_cli_smoke():
     assert report["batch_size"] == 32
     assert report["updates"] == 4
     assert report["validation_negative_log_likelihood"] is not None
+    assert report["checkpoint_enabled"]
+    assert report["checkpoint_bytes"] == checkpoint_path.stat().st_size
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
@@ -520,3 +723,84 @@ def test_cpu_dataloader_streams_shared_inputs_to_cuda():
     assert math.isfinite(result.negative_log_likelihood)
     assert result.validation_negative_log_likelihood is not None
     assert next(model.parameters()).device.type == "cuda"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_checkpoint_restores_device_rng_exactly(tmp_path):
+    x, response, designs = _linear_data(
+        47,
+        seed=701,
+        dtype=torch.float32,
+    )
+    dataset = _RowDataset(
+        response,
+        {
+            "mu": designs["mu"][:, :1],
+            "sigma": designs["sigma"],
+        },
+        shared_input=x.unsqueeze(-1),
+    )
+    initial_model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        shared_predictor=SharedMLPPredictor(
+            1,
+            ("mu",),
+            (8,),
+            dropout=0.2,
+        ),
+        dtype=torch.float32,
+        device="cuda",
+    )
+    continuous_model = copy.deepcopy(initial_model)
+    partial_model = copy.deepcopy(initial_model)
+    resumed_model = copy.deepcopy(initial_model)
+
+    def loader(seed):
+        return DataLoader(
+            dataset,
+            batch_size=10,
+            shuffle=True,
+            generator=torch.Generator().manual_seed(seed),
+            pin_memory=True,
+        )
+
+    def control(epochs):
+        return MiniBatchControl(
+            epochs=epochs,
+            minimum_epochs=1,
+            patience=10,
+            tolerance_change=0.0,
+            tolerance_gradient=0.0,
+            evaluation_frequency=1,
+        )
+
+    torch.manual_seed(702)
+    continuous_result = continuous_model.fit_minibatch_loader(
+        loader(703),
+        control=control(3),
+        non_blocking=True,
+    )
+    checkpoint_path = tmp_path / "cuda.pt"
+    torch.manual_seed(702)
+    partial_model.fit_minibatch_loader(
+        loader(703),
+        control=control(1),
+        non_blocking=True,
+        checkpoint_path=checkpoint_path,
+    )
+    resumed_result = resumed_model.fit_minibatch_loader(
+        loader(999),
+        control=control(3),
+        non_blocking=True,
+        resume_from=checkpoint_path,
+    )
+
+    assert resumed_result == continuous_result
+    for name, value in continuous_model.state_dict().items():
+        torch.testing.assert_close(
+            resumed_model.state_dict()[name],
+            value,
+            rtol=0.0,
+            atol=0.0,
+        )

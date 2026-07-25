@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import math
+import os
+import pickle
+import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import torch
@@ -147,6 +151,10 @@ class _LoaderMetadata:
     total_weight: Tensor
     maximum_batch_size: int
     batches: int
+
+
+_LOADER_CHECKPOINT_FORMAT = "torchgamlss.minibatch_loader"
+_LOADER_CHECKPOINT_VERSION = 1
 
 
 def fit_minibatch(
@@ -505,6 +513,9 @@ def fit_minibatch_loader(
     validation_loader: DataLoader[Any] | None = None,
     control: MiniBatchControl | None = None,
     non_blocking: bool = False,
+    checkpoint_path: str | os.PathLike[str] | None = None,
+    checkpoint_frequency: int = 1,
+    resume_from: str | os.PathLike[str] | None = None,
 ) -> MiniBatchFitResult:
     """Fit from re-iterable DataLoaders without resident full-data tensors.
 
@@ -520,6 +531,14 @@ def fit_minibatch_loader(
         raise ValueError("control must be a MiniBatchControl")
     if not isinstance(non_blocking, bool):
         raise ValueError("non_blocking must be boolean")
+    if (
+        isinstance(checkpoint_frequency, bool)
+        or not isinstance(checkpoint_frequency, int)
+        or checkpoint_frequency < 1
+    ):
+        raise ValueError("checkpoint_frequency must be an integer of at least 1")
+    if resume_from is not None and checkpoint_path is None:
+        checkpoint_path = resume_from
     _validate_loader_configuration(loader, context="training loader")
     if validation_loader is not None:
         _validate_loader_configuration(
@@ -542,12 +561,6 @@ def fit_minibatch_loader(
             non_blocking=non_blocking,
         )
     )
-    objective_history = [initial_objective]
-    evaluation_epochs = [0]
-    validation_history: list[float] = []
-    validation_epochs: list[int] = []
-    best_validation_loss: float | None = None
-    best_epoch: int | None = None
     validation_metadata: _LoaderMetadata | None = None
     if validation_loader is not None:
         initial_validation_nll, validation_metadata = (
@@ -558,13 +571,12 @@ def fit_minibatch_loader(
                 context="validation loader",
             )
         )
-        best_validation_loss = (
+        initial_validation_loss = (
             initial_validation_nll
             / float(validation_metadata.total_weight)
         )
-        validation_history.append(best_validation_loss)
-        validation_epochs.append(0)
-        best_epoch = 0
+    else:
+        initial_validation_loss = None
 
     parameters = list(model.parameters())
     optimizer = torch.optim.Adam(
@@ -579,16 +591,52 @@ def fit_minibatch_loader(
     )
     original_training_mode = model.training
     model.train()
-    stable_evaluations = 0
-    evaluations_without_improvement = 0
-    best_state = (
-        _state_dict_copy(model)
-        if validation_loader is not None
-        and control.restore_best_parameters
-        else None
-    )
-    updates = 0
-    completed_epochs = 0
+    if resume_from is None:
+        objective_history = [initial_objective]
+        evaluation_epochs = [0]
+        validation_history = (
+            [initial_validation_loss]
+            if initial_validation_loss is not None
+            else []
+        )
+        validation_epochs = [0] if validation_loader is not None else []
+        best_validation_loss = initial_validation_loss
+        best_epoch = 0 if validation_loader is not None else None
+        stable_evaluations = 0
+        evaluations_without_improvement = 0
+        best_state = (
+            _state_dict_copy(model)
+            if validation_loader is not None
+            and control.restore_best_parameters
+            else None
+        )
+        updates = 0
+        completed_epochs = 0
+    else:
+        checkpoint = _load_loader_checkpoint(
+            resume_from,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            control=control,
+            training_metadata=training_metadata,
+            validation_metadata=validation_metadata,
+            loader=loader,
+            validation_loader=validation_loader,
+        )
+        objective_history = list(checkpoint["objective_history"])
+        evaluation_epochs = list(checkpoint["evaluation_epochs"])
+        validation_history = list(checkpoint["validation_history"])
+        validation_epochs = list(checkpoint["validation_epochs"])
+        best_validation_loss = checkpoint["best_validation_loss"]
+        best_epoch = checkpoint["best_epoch"]
+        stable_evaluations = checkpoint["stable_evaluations"]
+        evaluations_without_improvement = checkpoint[
+            "evaluations_without_improvement"
+        ]
+        best_state = checkpoint["best_state"]
+        updates = checkpoint["updates"]
+        completed_epochs = checkpoint["completed_epochs"]
     stop_reason: Literal[
         "loss_change",
         "validation",
@@ -597,7 +645,7 @@ def fit_minibatch_loader(
     ] = "max_epochs"
 
     try:
-        for epoch in range(1, control.epochs + 1):
+        for epoch in range(completed_epochs + 1, control.epochs + 1):
             epoch_observations = 0
             epoch_total_weight = torch.zeros_like(
                 training_metadata.total_weight
@@ -683,68 +731,104 @@ def fit_minibatch_loader(
                 epoch % control.evaluation_frequency == 0
                 or epoch == control.epochs
             )
-            if not should_evaluate:
-                continue
-
-            _, objective, _ = _loader_objective_values(
-                model,
-                loader,
-                non_blocking=non_blocking,
-                expected_metadata=training_metadata,
-            )
-            previous = objective_history[-1]
-            relative_change = abs(objective - previous) / max(
-                1.0,
-                abs(previous),
-            )
-            objective_history.append(objective)
-            evaluation_epochs.append(epoch)
-            if validation_loader is None:
-                if relative_change <= control.tolerance_change:
-                    stable_evaluations += 1
-                else:
-                    stable_evaluations = 0
-                if (
-                    epoch >= control.minimum_epochs
-                    and stable_evaluations >= control.patience
-                ):
-                    stop_reason = "loss_change"
-                    break
-            else:
-                assert validation_metadata is not None
-                validation_nll, _ = _loader_likelihood_values(
+            stop_after_checkpoint = False
+            if should_evaluate:
+                _, objective, _ = _loader_objective_values(
                     model,
-                    validation_loader,
+                    loader,
                     non_blocking=non_blocking,
-                    context="validation loader",
-                    expected_metadata=validation_metadata,
+                    expected_metadata=training_metadata,
                 )
-                validation_loss = (
-                    validation_nll
-                    / float(validation_metadata.total_weight)
+                previous = objective_history[-1]
+                relative_change = abs(objective - previous) / max(
+                    1.0,
+                    abs(previous),
                 )
-                validation_history.append(validation_loss)
-                validation_epochs.append(epoch)
-                assert best_validation_loss is not None
-                if (
-                    validation_loss
-                    < best_validation_loss
-                    - control.validation_minimum_delta
-                ):
-                    best_validation_loss = validation_loss
-                    best_epoch = epoch
-                    evaluations_without_improvement = 0
-                    if control.restore_best_parameters:
-                        best_state = _state_dict_copy(model)
+                objective_history.append(objective)
+                evaluation_epochs.append(epoch)
+                if validation_loader is None:
+                    if relative_change <= control.tolerance_change:
+                        stable_evaluations += 1
+                    else:
+                        stable_evaluations = 0
+                    if (
+                        epoch >= control.minimum_epochs
+                        and stable_evaluations >= control.patience
+                    ):
+                        stop_reason = "loss_change"
+                        stop_after_checkpoint = True
                 else:
-                    evaluations_without_improvement += 1
-                if (
-                    epoch >= control.minimum_epochs
-                    and evaluations_without_improvement
-                    >= control.validation_patience
-                ):
-                    stop_reason = "validation"
-                    break
+                    assert validation_metadata is not None
+                    validation_nll, _ = _loader_likelihood_values(
+                        model,
+                        validation_loader,
+                        non_blocking=non_blocking,
+                        context="validation loader",
+                        expected_metadata=validation_metadata,
+                    )
+                    validation_loss = (
+                        validation_nll
+                        / float(validation_metadata.total_weight)
+                    )
+                    validation_history.append(validation_loss)
+                    validation_epochs.append(epoch)
+                    assert best_validation_loss is not None
+                    if (
+                        validation_loss
+                        < best_validation_loss
+                        - control.validation_minimum_delta
+                    ):
+                        best_validation_loss = validation_loss
+                        best_epoch = epoch
+                        evaluations_without_improvement = 0
+                        if control.restore_best_parameters:
+                            best_state = _state_dict_copy(model)
+                    else:
+                        evaluations_without_improvement += 1
+                    if (
+                        epoch >= control.minimum_epochs
+                        and evaluations_without_improvement
+                        >= control.validation_patience
+                    ):
+                        stop_reason = "validation"
+                        stop_after_checkpoint = True
+
+            should_checkpoint = (
+                checkpoint_path is not None
+                and (
+                    epoch % checkpoint_frequency == 0
+                    or epoch == control.epochs
+                    or stop_after_checkpoint
+                )
+            )
+            if should_checkpoint:
+                assert checkpoint_path is not None
+                _save_loader_checkpoint(
+                    checkpoint_path,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    control=control,
+                    completed_epochs=completed_epochs,
+                    updates=updates,
+                    objective_history=objective_history,
+                    evaluation_epochs=evaluation_epochs,
+                    validation_history=validation_history,
+                    validation_epochs=validation_epochs,
+                    stable_evaluations=stable_evaluations,
+                    evaluations_without_improvement=(
+                        evaluations_without_improvement
+                    ),
+                    best_validation_loss=best_validation_loss,
+                    best_epoch=best_epoch,
+                    best_state=best_state,
+                    training_metadata=training_metadata,
+                    validation_metadata=validation_metadata,
+                    loader=loader,
+                    validation_loader=validation_loader,
+                )
+            if stop_after_checkpoint:
+                break
 
         restored_best_parameters = False
         if (
@@ -975,6 +1059,635 @@ def _preserve_loader_rng(loader: DataLoader[Any]) -> Iterator[None]:
         torch.random.set_rng_state(global_state)
         for generator, state in generators:
             generator.set_state(state)
+
+
+def _save_loader_checkpoint(
+    path: str | os.PathLike[str],
+    *,
+    model: GAMLSS,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    control: MiniBatchControl,
+    completed_epochs: int,
+    updates: int,
+    objective_history: list[float],
+    evaluation_epochs: list[int],
+    validation_history: list[float],
+    validation_epochs: list[int],
+    stable_evaluations: int,
+    evaluations_without_improvement: int,
+    best_validation_loss: float | None,
+    best_epoch: int | None,
+    best_state: dict[str, Tensor] | None,
+    training_metadata: _LoaderMetadata,
+    validation_metadata: _LoaderMetadata | None,
+    loader: DataLoader[Any],
+    validation_loader: DataLoader[Any] | None,
+) -> None:
+    model_parameter = next(model.parameters())
+    checkpoint = {
+        "format": _LOADER_CHECKPOINT_FORMAT,
+        "version": _LOADER_CHECKPOINT_VERSION,
+        "model_dtype": str(model_parameter.dtype),
+        "model_device_type": model_parameter.device.type,
+        "family_parameters": tuple(model.family.parameter_names),
+        "family_signature": _family_checkpoint_signature(model),
+        "control": asdict(control),
+        "completed_epochs": completed_epochs,
+        "updates": updates,
+        "objective_history": tuple(objective_history),
+        "evaluation_epochs": tuple(evaluation_epochs),
+        "validation_history": tuple(validation_history),
+        "validation_epochs": tuple(validation_epochs),
+        "stable_evaluations": stable_evaluations,
+        "evaluations_without_improvement": (
+            evaluations_without_improvement
+        ),
+        "best_validation_loss": best_validation_loss,
+        "best_epoch": best_epoch,
+        "best_state": best_state,
+        "training_metadata": _checkpoint_metadata(training_metadata),
+        "validation_metadata": (
+            _checkpoint_metadata(validation_metadata)
+            if validation_metadata is not None
+            else None
+        ),
+        "model_state_dict": _state_dict_copy(model),
+        "optimizer_state_dict": _checkpoint_cpu_copy(
+            optimizer.state_dict()
+        ),
+        "scheduler_state_dict": _checkpoint_cpu_copy(
+            scheduler.state_dict()
+        ),
+        "torch_rng_state": torch.random.get_rng_state().clone(),
+        "cuda_rng_state": (
+            torch.cuda.get_rng_state(model_parameter.device).cpu()
+            if model_parameter.device.type == "cuda"
+            else None
+        ),
+        "training_loader_generators": _loader_generator_states(loader),
+        "validation_loader_generators": (
+            _loader_generator_states(validation_loader)
+            if validation_loader is not None
+            else None
+        ),
+    }
+    target = Path(path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=target.parent,
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        torch.save(checkpoint, temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _load_loader_checkpoint(
+    path: str | os.PathLike[str],
+    *,
+    model: GAMLSS,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    control: MiniBatchControl,
+    training_metadata: _LoaderMetadata,
+    validation_metadata: _LoaderMetadata | None,
+    loader: DataLoader[Any],
+    validation_loader: DataLoader[Any] | None,
+) -> dict[str, Any]:
+    source = Path(path).expanduser()
+    try:
+        checkpoint = torch.load(
+            source,
+            map_location="cpu",
+            weights_only=True,
+        )
+    except (
+        EOFError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        pickle.UnpicklingError,
+    ) as error:
+        raise ValueError(
+            f"could not load mini-batch checkpoint {str(source)!r}"
+        ) from error
+    if not isinstance(checkpoint, dict):
+        raise ValueError("mini-batch checkpoint must contain a dictionary")
+    required = {
+        "format",
+        "version",
+        "model_dtype",
+        "model_device_type",
+        "family_parameters",
+        "family_signature",
+        "control",
+        "completed_epochs",
+        "updates",
+        "objective_history",
+        "evaluation_epochs",
+        "validation_history",
+        "validation_epochs",
+        "stable_evaluations",
+        "evaluations_without_improvement",
+        "best_validation_loss",
+        "best_epoch",
+        "best_state",
+        "training_metadata",
+        "validation_metadata",
+        "model_state_dict",
+        "optimizer_state_dict",
+        "scheduler_state_dict",
+        "torch_rng_state",
+        "cuda_rng_state",
+        "training_loader_generators",
+        "validation_loader_generators",
+    }
+    if set(checkpoint) != required:
+        raise ValueError("mini-batch checkpoint has an invalid schema")
+    if (
+        checkpoint["format"] != _LOADER_CHECKPOINT_FORMAT
+        or checkpoint["version"] != _LOADER_CHECKPOINT_VERSION
+    ):
+        raise ValueError("mini-batch checkpoint format is not supported")
+    model_parameter = next(model.parameters())
+    if checkpoint["model_dtype"] != str(model_parameter.dtype):
+        raise ValueError("mini-batch checkpoint model dtype does not match")
+    if checkpoint["model_device_type"] != model_parameter.device.type:
+        raise ValueError(
+            "mini-batch checkpoint model device type does not match"
+        )
+    if tuple(checkpoint["family_parameters"]) != tuple(
+        model.family.parameter_names
+    ):
+        raise ValueError("mini-batch checkpoint family parameters do not match")
+    if checkpoint["family_signature"] != _family_checkpoint_signature(model):
+        raise ValueError("mini-batch checkpoint family does not match")
+    _validate_checkpoint_control(checkpoint["control"], control)
+    completed_epochs = checkpoint["completed_epochs"]
+    if (
+        isinstance(completed_epochs, bool)
+        or not isinstance(completed_epochs, int)
+        or completed_epochs < 1
+        or completed_epochs > control.epochs
+    ):
+        raise ValueError(
+            "mini-batch checkpoint epoch is incompatible with control.epochs"
+        )
+    _validate_checkpoint_progress(
+        checkpoint,
+        completed_epochs=completed_epochs,
+        has_validation=validation_metadata is not None,
+    )
+    saved_training_metadata = _metadata_from_checkpoint(
+        checkpoint["training_metadata"],
+        reference=training_metadata,
+        context="training",
+    )
+    _validate_loader_metadata(
+        training_metadata,
+        saved_training_metadata,
+        context="resumed training loader",
+    )
+    saved_validation = checkpoint["validation_metadata"]
+    if (saved_validation is None) != (validation_metadata is None):
+        raise ValueError(
+            "mini-batch checkpoint validation-loader presence does not match"
+        )
+    if validation_metadata is not None:
+        saved_validation_metadata = _metadata_from_checkpoint(
+            saved_validation,
+            reference=validation_metadata,
+            context="validation",
+        )
+        _validate_loader_metadata(
+            validation_metadata,
+            saved_validation_metadata,
+            context="resumed validation loader",
+        )
+    try:
+        model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+    except (KeyError, RuntimeError, TypeError, ValueError) as error:
+        raise ValueError(
+            "mini-batch checkpoint state does not match the model"
+        ) from error
+    _restore_checkpoint_rng(
+        checkpoint,
+        model_device=model_parameter.device,
+        loader=loader,
+        validation_loader=validation_loader,
+    )
+    return checkpoint
+
+
+def _validate_checkpoint_control(
+    saved_control: Any,
+    control: MiniBatchControl,
+) -> None:
+    if not isinstance(saved_control, dict):
+        raise ValueError("mini-batch checkpoint control is invalid")
+    current_control = asdict(control)
+    ignored = {"epochs", "batch_size", "shuffle"}
+    for name, current_value in current_control.items():
+        if name in ignored:
+            continue
+        if name not in saved_control or saved_control[name] != current_value:
+            raise ValueError(
+                f"mini-batch checkpoint control {name!r} does not match"
+            )
+
+
+def _family_checkpoint_signature(model: GAMLSS) -> dict[str, Any]:
+    family_type = type(model.family)
+    return {
+        "type": f"{family_type.__module__}.{family_type.__qualname__}",
+        "name": model.family.name,
+        "links": {
+            parameter: (
+                f"{type(link).__module__}.{type(link).__qualname__}"
+            )
+            for parameter, link in model.family.links.items()
+        },
+    }
+
+
+def _validate_checkpoint_progress(
+    checkpoint: Mapping[str, Any],
+    *,
+    completed_epochs: int,
+    has_validation: bool,
+) -> None:
+    integer_fields = {
+        "updates": checkpoint["updates"],
+        "stable_evaluations": checkpoint["stable_evaluations"],
+        "evaluations_without_improvement": checkpoint[
+            "evaluations_without_improvement"
+        ],
+    }
+    for name, value in integer_fields.items():
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 0
+        ):
+            raise ValueError(
+                f"mini-batch checkpoint field {name!r} is invalid"
+            )
+    if checkpoint["updates"] < completed_epochs:
+        raise ValueError("mini-batch checkpoint update count is invalid")
+    objective_history = _checkpoint_float_sequence(
+        checkpoint["objective_history"],
+        context="objective history",
+        nonempty=True,
+    )
+    evaluation_epochs = _checkpoint_epoch_sequence(
+        checkpoint["evaluation_epochs"],
+        context="evaluation epochs",
+        completed_epochs=completed_epochs,
+        nonempty=True,
+    )
+    if len(objective_history) != len(evaluation_epochs):
+        raise ValueError(
+            "mini-batch checkpoint objective history is misaligned"
+        )
+    validation_history = _checkpoint_float_sequence(
+        checkpoint["validation_history"],
+        context="validation history",
+        nonempty=has_validation,
+    )
+    validation_epochs = _checkpoint_epoch_sequence(
+        checkpoint["validation_epochs"],
+        context="validation epochs",
+        completed_epochs=completed_epochs,
+        nonempty=has_validation,
+    )
+    if len(validation_history) != len(validation_epochs):
+        raise ValueError(
+            "mini-batch checkpoint validation history is misaligned"
+        )
+    best_validation_loss = checkpoint["best_validation_loss"]
+    best_epoch = checkpoint["best_epoch"]
+    best_state = checkpoint["best_state"]
+    if has_validation:
+        if validation_epochs != evaluation_epochs:
+            raise ValueError(
+                "mini-batch checkpoint validation epochs are misaligned"
+            )
+        if (
+            isinstance(best_validation_loss, bool)
+            or not isinstance(best_validation_loss, (int, float))
+            or not math.isfinite(best_validation_loss)
+        ):
+            raise ValueError(
+                "mini-batch checkpoint best validation loss is invalid"
+            )
+        if (
+            isinstance(best_epoch, bool)
+            or not isinstance(best_epoch, int)
+            or best_epoch not in validation_epochs
+        ):
+            raise ValueError(
+                "mini-batch checkpoint best epoch is invalid"
+            )
+        if not any(
+            loss == float(best_validation_loss)
+            for loss in validation_history
+        ):
+            raise ValueError(
+                "mini-batch checkpoint best validation loss is inconsistent"
+            )
+        restore_best = checkpoint["control"].get(
+            "restore_best_parameters"
+        )
+        if (
+            restore_best is True
+            and not isinstance(best_state, dict)
+        ) or (
+            restore_best is False
+            and best_state is not None
+        ):
+            raise ValueError(
+                "mini-batch checkpoint best model state is invalid"
+            )
+    elif (
+        validation_history
+        or validation_epochs
+        or best_validation_loss is not None
+        or best_epoch is not None
+        or best_state is not None
+    ):
+        raise ValueError(
+            "mini-batch checkpoint unexpectedly contains validation state"
+        )
+    mapping_fields = {
+        "model_state_dict": checkpoint["model_state_dict"],
+        "optimizer_state_dict": checkpoint["optimizer_state_dict"],
+        "scheduler_state_dict": checkpoint["scheduler_state_dict"],
+    }
+    for name, value in mapping_fields.items():
+        if not isinstance(value, dict):
+            raise ValueError(
+                f"mini-batch checkpoint field {name!r} is invalid"
+            )
+
+
+def _checkpoint_float_sequence(
+    value: Any,
+    *,
+    context: str,
+    nonempty: bool,
+) -> list[float]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"mini-batch checkpoint {context} is invalid")
+    result = []
+    for item in value:
+        if (
+            isinstance(item, bool)
+            or not isinstance(item, (int, float))
+            or not math.isfinite(item)
+        ):
+            raise ValueError(
+                f"mini-batch checkpoint {context} is invalid"
+            )
+        result.append(float(item))
+    if nonempty and not result:
+        raise ValueError(f"mini-batch checkpoint {context} is empty")
+    if not nonempty and result:
+        raise ValueError(
+            f"mini-batch checkpoint {context} must be empty"
+        )
+    return result
+
+
+def _checkpoint_epoch_sequence(
+    value: Any,
+    *,
+    context: str,
+    completed_epochs: int,
+    nonempty: bool,
+) -> list[int]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"mini-batch checkpoint {context} is invalid")
+    if any(
+        isinstance(item, bool)
+        or not isinstance(item, int)
+        or item < 0
+        or item > completed_epochs
+        for item in value
+    ):
+        raise ValueError(f"mini-batch checkpoint {context} is invalid")
+    result = list(value)
+    if nonempty:
+        if (
+            not result
+            or result[0] != 0
+            or any(
+                current <= previous
+                for previous, current in zip(result, result[1:])
+            )
+        ):
+            raise ValueError(
+                f"mini-batch checkpoint {context} is invalid"
+            )
+    elif result:
+        raise ValueError(
+            f"mini-batch checkpoint {context} must be empty"
+        )
+    return result
+
+
+def _checkpoint_metadata(metadata: _LoaderMetadata) -> dict[str, Any]:
+    return {
+        "observation_count": metadata.observation_count,
+        "total_weight": float(metadata.total_weight),
+        "maximum_batch_size": metadata.maximum_batch_size,
+        "batches": metadata.batches,
+    }
+
+
+def _metadata_from_checkpoint(
+    value: Any,
+    *,
+    reference: _LoaderMetadata,
+    context: str,
+) -> _LoaderMetadata:
+    if not isinstance(value, dict) or set(value) != {
+        "observation_count",
+        "total_weight",
+        "maximum_batch_size",
+        "batches",
+    }:
+        raise ValueError(
+            f"mini-batch checkpoint {context} metadata is invalid"
+        )
+    saved_total_weight = value["total_weight"]
+    if (
+        isinstance(saved_total_weight, bool)
+        or not isinstance(saved_total_weight, (int, float))
+        or not math.isfinite(saved_total_weight)
+        or saved_total_weight <= 0
+    ):
+        raise ValueError(
+            f"mini-batch checkpoint {context} metadata is invalid"
+        )
+    try:
+        total_weight = torch.as_tensor(
+            saved_total_weight,
+            dtype=reference.total_weight.dtype,
+            device=reference.total_weight.device,
+        )
+        return _LoaderMetadata(
+            observation_count=_checkpoint_integer(
+                value["observation_count"],
+                context=f"{context} observation count",
+                minimum=1,
+            ),
+            total_weight=total_weight,
+            maximum_batch_size=_checkpoint_integer(
+                value["maximum_batch_size"],
+                context=f"{context} maximum batch size",
+                minimum=1,
+            ),
+            batches=_checkpoint_integer(
+                value["batches"],
+                context=f"{context} batch count",
+                minimum=1,
+            ),
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"mini-batch checkpoint {context} metadata is invalid"
+        ) from error
+
+
+def _checkpoint_integer(
+    value: Any,
+    *,
+    context: str,
+    minimum: int,
+) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < minimum
+    ):
+        raise ValueError(f"mini-batch checkpoint {context} is invalid")
+    return value
+
+
+def _checkpoint_cpu_copy(value: Any) -> Any:
+    if isinstance(value, Tensor):
+        return value.detach().cpu().clone()
+    if isinstance(value, dict):
+        return {
+            key: _checkpoint_cpu_copy(nested)
+            for key, nested in value.items()
+        }
+    if isinstance(value, list):
+        return [_checkpoint_cpu_copy(nested) for nested in value]
+    if isinstance(value, tuple):
+        return tuple(_checkpoint_cpu_copy(nested) for nested in value)
+    return value
+
+
+def _loader_generator_states(loader: DataLoader[Any]) -> dict[str, Tensor]:
+    states: dict[str, Tensor] = {}
+    owners = {
+        "loader": loader,
+        "sampler": getattr(loader, "sampler", None),
+        "batch_sampler": getattr(loader, "batch_sampler", None),
+        "batch_sampler.sampler": getattr(
+            getattr(loader, "batch_sampler", None),
+            "sampler",
+            None,
+        ),
+    }
+    for name, owner in owners.items():
+        generator = getattr(owner, "generator", None)
+        if isinstance(generator, torch.Generator):
+            states[name] = generator.get_state().clone()
+    return states
+
+
+def _restore_loader_generator_states(
+    loader: DataLoader[Any],
+    saved_states: Any,
+    *,
+    context: str,
+) -> None:
+    if not isinstance(saved_states, dict):
+        raise ValueError(
+            f"mini-batch checkpoint {context} generator states are invalid"
+        )
+    current_states = _loader_generator_states(loader)
+    if set(current_states) != set(saved_states):
+        raise ValueError(
+            f"mini-batch checkpoint {context} generator configuration "
+            "does not match"
+        )
+    owners = {
+        "loader": loader,
+        "sampler": getattr(loader, "sampler", None),
+        "batch_sampler": getattr(loader, "batch_sampler", None),
+        "batch_sampler.sampler": getattr(
+            getattr(loader, "batch_sampler", None),
+            "sampler",
+            None,
+        ),
+    }
+    for name, state in saved_states.items():
+        if not isinstance(state, Tensor):
+            raise ValueError(
+                f"mini-batch checkpoint {context} generator state is invalid"
+            )
+        generator = getattr(owners[name], "generator")
+        generator.set_state(state.cpu())
+
+
+def _restore_checkpoint_rng(
+    checkpoint: Mapping[str, Any],
+    *,
+    model_device: torch.device,
+    loader: DataLoader[Any],
+    validation_loader: DataLoader[Any] | None,
+) -> None:
+    torch_rng_state = checkpoint["torch_rng_state"]
+    if not isinstance(torch_rng_state, Tensor):
+        raise ValueError("mini-batch checkpoint Torch RNG state is invalid")
+    torch.random.set_rng_state(torch_rng_state.cpu())
+    cuda_rng_state = checkpoint["cuda_rng_state"]
+    if model_device.type == "cuda":
+        if not isinstance(cuda_rng_state, Tensor):
+            raise ValueError("mini-batch checkpoint CUDA RNG state is missing")
+        torch.cuda.set_rng_state(cuda_rng_state.cpu(), device=model_device)
+    elif cuda_rng_state is not None:
+        raise ValueError(
+            "CUDA mini-batch checkpoint cannot resume on a CPU model"
+        )
+    _restore_loader_generator_states(
+        loader,
+        checkpoint["training_loader_generators"],
+        context="training loader",
+    )
+    saved_validation_states = checkpoint["validation_loader_generators"]
+    if validation_loader is None:
+        if saved_validation_states is not None:
+            raise ValueError(
+                "mini-batch checkpoint validation generator state does not match"
+            )
+    else:
+        _restore_loader_generator_states(
+            validation_loader,
+            saved_validation_states,
+            context="validation loader",
+        )
 
 
 def _loader_likelihood_values(

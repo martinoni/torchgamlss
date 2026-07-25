@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -1214,6 +1215,9 @@ class GAMLSS(nn.Module):
         validation_loader: DataLoader[Any] | None = None,
         control: MiniBatchControl | None = None,
         non_blocking: bool = False,
+        checkpoint_path: str | os.PathLike[str] | None = None,
+        checkpoint_frequency: int = 1,
+        resume_from: str | os.PathLike[str] | None = None,
     ) -> MiniBatchFitResult:
         """Fit a fixed-lambda model from re-iterable DataLoaders."""
         return run_minibatch_loader_fit(
@@ -1222,6 +1226,9 @@ class GAMLSS(nn.Module):
             validation_loader=validation_loader,
             control=control,
             non_blocking=non_blocking,
+            checkpoint_path=checkpoint_path,
+            checkpoint_frequency=checkpoint_frequency,
+            resume_from=resume_from,
         )
 
     def fit_rs(

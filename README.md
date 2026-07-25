@@ -38,7 +38,8 @@ The current implementation contains:
   objective evaluation, holdout early stopping with best-state restoration,
   and CPU/CUDA benchmarking;
 - re-iterable `Dataset`/`DataLoader` fitting that streams CPU or on-disk
-  batches to the model device without resident full-data tensors;
+  batches to the model device without resident full-data tensors, with atomic
+  epoch checkpoints and exact optimizer/RNG resumption;
 - optional Torch modules and a standard MLP predictor for selected
   distribution parameters, composable with linear terms, P-splines, and
   offsets;

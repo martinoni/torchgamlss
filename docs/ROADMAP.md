@@ -59,3 +59,5 @@ as supported.
 - [x] Holdout validation and out-of-sample early stopping
 - [x] CPU/GPU benchmarks and reproducibility guidance
 - [x] Streaming `Dataset`/`DataLoader` inputs with exact weighted objectives
+- [x] Atomic checkpoints and exact epoch-boundary resumption
+- [ ] CUDA automatic mixed precision for neural mini-batch fitting

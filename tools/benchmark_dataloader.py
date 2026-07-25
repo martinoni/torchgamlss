@@ -7,6 +7,7 @@ import json
 import math
 import platform
 import time
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -97,6 +98,9 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--validation-minimum-delta", type=float, default=5e-5)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pin-memory", action="store_true")
+    parser.add_argument("--checkpoint-path", type=Path)
+    parser.add_argument("--checkpoint-frequency", type=int, default=1)
+    parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--dtype", choices=("float32", "float64"), default="float32")
     parser.add_argument("--seed", type=int, default=2026)
@@ -192,7 +196,7 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
             if arguments.minimum_epochs is None
             else arguments.minimum_epochs
         ),
-        patience=arguments.epochs,
+        patience=1_000_000,
         evaluation_frequency=arguments.evaluation_frequency,
         validation_patience=arguments.validation_patience,
         validation_minimum_delta=arguments.validation_minimum_delta,
@@ -205,9 +209,15 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
         validation_loader=validation_loader,
         control=control,
         non_blocking=arguments.pin_memory and device.type == "cuda",
+        checkpoint_path=arguments.checkpoint_path,
+        checkpoint_frequency=arguments.checkpoint_frequency,
+        resume_from=arguments.resume_from,
     )
     _synchronize(device)
     elapsed = time.perf_counter() - started
+    checkpoint_file = (
+        arguments.checkpoint_path or arguments.resume_from
+    )
 
     return {
         "torch_version": torch.__version__,
@@ -227,6 +237,14 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
         "updates": result.updates,
         "num_workers": arguments.num_workers,
         "pin_memory": arguments.pin_memory,
+        "checkpoint_enabled": checkpoint_file is not None,
+        "checkpoint_bytes": (
+            checkpoint_file.stat().st_size
+            if checkpoint_file is not None
+            and checkpoint_file.is_file()
+            else None
+        ),
+        "resumed": arguments.resume_from is not None,
         "elapsed_seconds": elapsed,
         "training_rows_per_second": (
             arguments.rows * result.epochs / elapsed

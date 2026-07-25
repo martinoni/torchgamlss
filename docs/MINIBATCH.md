@@ -266,6 +266,62 @@ history, early stopping, best-state restoration, and the exact final gradient
 require repeated passes. This is bounded-memory optimization, not a one-pass
 online estimator.
 
+## Checkpoint and resume
+
+Long loader fits can write an atomic checkpoint after complete epochs:
+
+```python
+result = model.fit_minibatch_loader(
+    training_loader,
+    validation_loader=validation_loader,
+    control=MiniBatchControl(epochs=100),
+    checkpoint_path="checkpoints/model.pt",
+    checkpoint_frequency=5,
+)
+```
+
+If the process stops after epoch 37, for example, the checkpoint from epoch 35
+remains valid. Resume with the same model architecture and loaders:
+
+```python
+result = model.fit_minibatch_loader(
+    training_loader,
+    validation_loader=validation_loader,
+    control=MiniBatchControl(epochs=100),
+    resume_from="checkpoints/model.pt",
+)
+```
+
+`control.epochs` is the total target, not a number of additional epochs. It
+may be increased when resuming. Optimizer and stopping controls must otherwise
+match; `batch_size` and `shuffle` remain loader-owned and are ignored for
+compatibility checks.
+
+The checkpoint contains:
+
+- the complete model, Adam, and learning-rate scheduler states;
+- completed epochs, update count, objective and validation histories;
+- early-stopping counters, the best epoch, and the best model state;
+- exact training and validation population metadata;
+- CPU, model-device CUDA, and exposed loader/sampler RNG states.
+
+Model and optimizer tensors are stored on CPU. The format is a versioned
+tensor-and-primitive dictionary loaded with `weights_only=True`, and each save
+uses a temporary file followed by an atomic replacement. A failed write
+therefore does not replace the preceding valid checkpoint.
+
+Resume requires the same family parameters, architecture, dtype, CPU/CUDA
+device type, validation-loader presence, loader population, and generator
+configuration. The generator's saved state replaces its construction seed.
+Random state held privately inside persistent worker processes cannot be
+restored, so exact continuation still requires stable dataset output.
+
+Checkpoints are written after the scheduler and any scheduled validation
+evaluation, but before final best-state restoration. An interrupted run
+therefore continues its optimization trajectory rather than restarting from
+the restored inference model. An interruption within an epoch replays that
+epoch from the last completed checkpoint.
+
 ## CPU, CUDA, and reproducibility
 
 The model, response, designs, offsets, weights, and smooth covariates must be
@@ -366,6 +422,8 @@ python tools/benchmark_dataloader.py \
   --evaluation-frequency 1 \
   --validation-patience 4 \
   --pin-memory \
+  --checkpoint-path checkpoint.pt \
+  --checkpoint-frequency 5 \
   --device cuda \
   --dtype float32 \
   --deterministic
@@ -396,12 +454,17 @@ processed approximately 985 thousand training rows per second, and used
 was `0.536691`.
 
 The streaming command above was run on the same RTX 4090 and Torch build. It
-completed 20 epochs in 13.807 seconds, or approximately 724 thousand training
-rows per second, while generating all training and validation observations on
-demand. Peak allocated CUDA memory was 31.2 MB. The timing includes the
-initial scan, synthetic generation, holdout evaluation, complete training
-objective at every epoch, final objective, and exact final gradient; it is not
-an update-only throughput figure.
+completed 20 epochs without checkpoints in 13.807 seconds, or approximately
+724 thousand training rows per second, while generating all training and
+validation observations on demand. Peak allocated CUDA memory was 31.2 MB.
+The timing includes the initial scan, synthetic generation, holdout
+evaluation, complete training objective at every epoch, final objective, and
+exact final gradient; it is not an update-only throughput figure.
+
+Writing a checkpoint every five epochs on the same deterministic problem took
+13.943 seconds and produced a 101,299-byte final checkpoint. The fitted state
+and all reported statistical values were identical to the run without
+checkpointing.
 
 ## Scope
 
