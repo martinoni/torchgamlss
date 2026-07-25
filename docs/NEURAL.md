@@ -194,7 +194,8 @@ reproducibility record, not a performance guarantee.
 
 ## Current boundary
 
-Each network is currently evaluated from an input mapping owned by one
-distribution parameter. A representation explicitly shared across multiple
-parameters is the next extension. Input tensors remain resident in memory;
-streaming datasets and data loaders are separate future work.
+Exclusive networks use an input mapping owned by one distribution parameter.
+For a single backbone with multiple parameter-specific heads, use
+`SharedMLPPredictor` as described in [`SHARED.md`](SHARED.md). Input tensors
+remain resident in memory; streaming datasets and data loaders are separate
+future work.

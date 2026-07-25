@@ -39,6 +39,8 @@ The current implementation contains:
 - optional Torch modules and a standard MLP predictor for selected
   distribution parameters, composable with linear terms, P-splines, and
   offsets;
+- shared neural backbones with parameter-specific heads for learning common
+  representations across location, scale, and shape predictors;
 - likelihood weights and offsets for every distribution parameter;
 - R-compatible family defaults and user-supplied parameter-scale starting
   values for RS and CG fitting;
@@ -119,7 +121,8 @@ Likelihood criteria, model comparison, and quantile residuals are documented
 in [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md). Mini-batch optimization,
 CPU/CUDA benchmarks, and reproducibility guidance are in
 [`docs/MINIBATCH.md`](docs/MINIBATCH.md). Hybrid neural distributional
-predictors are described in [`docs/NEURAL.md`](docs/NEURAL.md).
+predictors are described in [`docs/NEURAL.md`](docs/NEURAL.md), and shared
+backbones in [`docs/SHARED.md`](docs/SHARED.md).
 
 ## Attribution and license
 

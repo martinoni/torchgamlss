@@ -81,6 +81,12 @@ gradient of the complete penalized objective. `gradient_max` is therefore not
 a last-batch diagnostic. A run is marked converged when loss-change stopping
 occurs or the final gradient satisfies `tolerance_gradient`.
 
+Neural modules use training mode during Adam updates and evaluation mode
+during complete-objective and final-gradient passes. This disables dropout
+and prevents full-data diagnostics from updating BatchNorm running
+statistics. The model's original train/evaluation mode is restored after a
+successful fit.
+
 Adam with a constant learning rate can keep moving around a likelihood
 optimum. Set `learning_rate_decay` below one when final numerical precision is
 important. For example, `0.99` multiplies the learning rate by `0.99` after

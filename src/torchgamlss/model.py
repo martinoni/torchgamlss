@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -71,6 +71,7 @@ class TermContributions:
     smooth: Mapping[str, Tensor]
     offset: Tensor
     neural: Tensor | None = None
+    shared: Tensor | None = None
 
     @property
     def total(self) -> Tensor:
@@ -80,6 +81,8 @@ class TermContributions:
             total = total + contribution
         if self.neural is not None:
             total = total + self.neural
+        if self.shared is not None:
+            total = total + self.shared
         return total + self.offset
 
 
@@ -97,6 +100,8 @@ class GAMLSS(nn.Module):
         *,
         smooth_terms: Mapping[str, Mapping[str, SmoothTerm]] | None = None,
         neural_predictors: Mapping[str, nn.Module] | None = None,
+        shared_predictor: nn.Module | None = None,
+        shared_parameters: Sequence[str] | None = None,
         dtype: torch.dtype = torch.float64,
         device: torch.device | str | None = None,
     ) -> None:
@@ -159,6 +164,68 @@ class GAMLSS(nn.Module):
             raise ValueError("Every neural predictor must be a torch.nn.Module")
         self.neural_predictors = nn.ModuleDict(dict(neural_predictors))
         self.neural_predictors.to(dtype=dtype, device=model_device)
+        if shared_predictor is not None and not isinstance(
+            shared_predictor,
+            nn.Module,
+        ):
+            raise ValueError("shared_predictor must be a torch.nn.Module")
+        inferred_shared_parameters = (
+            getattr(shared_predictor, "parameter_names", None)
+            if shared_predictor is not None
+            else None
+        )
+        if shared_predictor is None:
+            if shared_parameters is not None:
+                raise ValueError(
+                    "shared_parameters requires a shared_predictor"
+                )
+            normalized_shared_parameters: tuple[str, ...] = ()
+        else:
+            if shared_parameters is None:
+                if inferred_shared_parameters is None:
+                    raise ValueError(
+                        "shared_parameters is required for a custom "
+                        "shared_predictor"
+                    )
+                shared_parameters = inferred_shared_parameters
+            try:
+                normalized_shared_parameters = tuple(shared_parameters)
+            except TypeError as error:
+                raise ValueError(
+                    "shared_parameters must be a sequence of parameter names"
+                ) from error
+            if (
+                not normalized_shared_parameters
+                or any(
+                    not isinstance(parameter, str) or not parameter
+                    for parameter in normalized_shared_parameters
+                )
+                or len(set(normalized_shared_parameters))
+                != len(normalized_shared_parameters)
+            ):
+                raise ValueError(
+                    "shared_parameters must contain distinct parameter names"
+                )
+            unknown_shared_parameters = set(
+                normalized_shared_parameters
+            ).difference(expected)
+            if unknown_shared_parameters:
+                raise ValueError(
+                    "Shared predictor contains unknown parameters: "
+                    f"{sorted(unknown_shared_parameters)}"
+                )
+            if (
+                inferred_shared_parameters is not None
+                and tuple(inferred_shared_parameters)
+                != normalized_shared_parameters
+            ):
+                raise ValueError(
+                    "shared_parameters must match the shared predictor heads"
+                )
+        self.shared_parameters = normalized_shared_parameters
+        self.shared_predictor = shared_predictor
+        if self.shared_predictor is not None:
+            self.shared_predictor.to(dtype=dtype, device=model_device)
         self._formula_encoder: FormulaEncoder | None = None
 
     @classmethod
@@ -169,6 +236,8 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         neural_predictors: Mapping[str, nn.Module] | None = None,
+        shared_predictor: nn.Module | None = None,
+        shared_parameters: Sequence[str] | None = None,
         dtype: torch.dtype = torch.float64,
         device: torch.device | str | None = None,
     ) -> GAMLSS:
@@ -198,6 +267,8 @@ class GAMLSS(nn.Module):
             },
             smooth_terms=smooth_terms,
             neural_predictors=neural_predictors,
+            shared_predictor=shared_predictor,
+            shared_parameters=shared_parameters,
             dtype=dtype,
             device=device,
         )
@@ -281,6 +352,7 @@ class GAMLSS(nn.Module):
         *,
         weights: Any = None,
         neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
         max_iter: int = 100,
         tolerance_grad: float = 1e-9,
         tolerance_change: float = 1e-12,
@@ -290,6 +362,7 @@ class GAMLSS(nn.Module):
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
+        model_shared_input = self._formula_shared_input(data, shared_input)
         return self.fit(
             prepared.response,
             prepared.design_matrices,
@@ -297,6 +370,7 @@ class GAMLSS(nn.Module):
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
             max_iter=max_iter,
             tolerance_grad=tolerance_grad,
             tolerance_change=tolerance_change,
@@ -308,6 +382,7 @@ class GAMLSS(nn.Module):
         *,
         weights: Any = None,
         neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -316,6 +391,7 @@ class GAMLSS(nn.Module):
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
+        model_shared_input = self._formula_shared_input(data, shared_input)
         return self.fit_minibatch(
             prepared.response,
             prepared.design_matrices,
@@ -323,6 +399,7 @@ class GAMLSS(nn.Module):
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
             control=control,
             generator=generator,
         )
@@ -332,16 +409,19 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
         type: Literal["link", "response", "terms"] = "response",
     ) -> dict[str, Tensor] | dict[str, TermContributions]:
         """Predict from tabular data using the fitted formula encodings."""
         prepared = self.prepare_formula_data(data)
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
+        model_shared_input = self._formula_shared_input(data, shared_input)
         return self.predict(
             prepared.design_matrices,
             prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
             type=type,
         )
 
@@ -351,16 +431,19 @@ class GAMLSS(nn.Module):
         *,
         probabilities: Any,
         neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles from formula data."""
         prepared = self.prepare_formula_data(data)
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
+        model_shared_input = self._formula_shared_input(data, shared_input)
         return self.predict_quantiles(
             prepared.design_matrices,
             probabilities=probabilities,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
         )
 
     def predict_centiles_data(
@@ -369,6 +452,7 @@ class GAMLSS(nn.Module):
         *,
         centiles: Any,
         neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles from centile percentages."""
         probabilities = centiles_to_probabilities(
@@ -379,6 +463,7 @@ class GAMLSS(nn.Module):
             data,
             probabilities=probabilities,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
         )
 
     def quantile_bootstrap_data(
@@ -600,6 +685,7 @@ class GAMLSS(nn.Module):
         *,
         weights: Any = None,
         neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
         degrees_of_freedom: float | None = None,
     ) -> ModelDiagnostics:
         """Evaluate model-selection diagnostics from formula data."""
@@ -607,6 +693,7 @@ class GAMLSS(nn.Module):
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
+        model_shared_input = self._formula_shared_input(data, shared_input)
         return self.diagnostics(
             prepared.response,
             prepared.design_matrices,
@@ -614,6 +701,7 @@ class GAMLSS(nn.Module):
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
             degrees_of_freedom=degrees_of_freedom,
         )
 
@@ -622,6 +710,7 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
         uniforms: Any = None,
         generator: torch.Generator | None = None,
     ) -> Tensor:
@@ -634,12 +723,14 @@ class GAMLSS(nn.Module):
             context="uniforms",
         )
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
+        model_shared_input = self._formula_shared_input(data, shared_input)
         return self.quantile_residuals(
             prepared.response,
             prepared.design_matrices,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
             uniforms=uniform_tensor,
             generator=generator,
         )
@@ -651,6 +742,7 @@ class GAMLSS(nn.Module):
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
     ) -> dict[str, Tensor]:
         """Calculate one linear predictor for each distribution parameter."""
         return {
@@ -660,6 +752,7 @@ class GAMLSS(nn.Module):
                 offsets,
                 smooth_covariates=smooth_covariates,
                 neural_inputs=neural_inputs,
+                shared_input=shared_input,
             ).items()
         }
 
@@ -670,6 +763,7 @@ class GAMLSS(nn.Module):
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
     ) -> dict[str, TermContributions]:
         """Decompose parameter predictors into linear, smooth, and offset terms."""
         expected = set(self.family.parameter_names)
@@ -688,13 +782,8 @@ class GAMLSS(nn.Module):
                 f"Offsets contain unknown parameters: {sorted(extra_offsets)}"
             )
 
-        contributions = {}
         observation_count: int | None = None
         model_parameter = next(self.parameters())
-        validated_neural_inputs = self._validated_neural_inputs(
-            neural_inputs,
-            model_parameter,
-        )
         for parameter in self.family.parameter_names:
             design_matrix = design_matrices[parameter]
             if (
@@ -719,7 +808,34 @@ class GAMLSS(nn.Module):
                 )
             if not torch.isfinite(design_matrix).all():
                 raise ValueError(f"design matrix for {parameter!r} must be finite")
+        assert observation_count is not None
 
+        validated_neural_inputs = self._validated_neural_inputs(
+            neural_inputs,
+            model_parameter,
+        )
+        for parameter, neural_input in validated_neural_inputs.items():
+            if (
+                neural_input.ndim < 1
+                or neural_input.shape[0] != observation_count
+            ):
+                raise ValueError(
+                    f"neural input for {parameter!r} must have one row "
+                    "per observation"
+                )
+        validated_shared_input = self._validated_shared_input(
+            shared_input,
+            model_parameter,
+        )
+        shared_contributions = self._shared_contributions(
+            validated_shared_input,
+            observation_count,
+            model_parameter,
+        )
+
+        contributions = {}
+        for parameter in self.family.parameter_names:
+            design_matrix = design_matrices[parameter]
             linear = design_matrix * self.coefficients[parameter]
             linear_total = linear.sum(dim=-1)
             smooth = {}
@@ -729,17 +845,7 @@ class GAMLSS(nn.Module):
                 smooth[term_name] = self.smooth_terms[parameter][term_name](covariate)
             if parameter in self.neural_predictors:
                 neural_input = validated_neural_inputs[parameter]
-                if (
-                    neural_input.ndim < 1
-                    or neural_input.shape[0] != linear_total.numel()
-                ):
-                    raise ValueError(
-                        f"neural input for {parameter!r} must have one row "
-                        "per observation"
-                    )
-                neural = self.neural_predictors[parameter](
-                    neural_input
-                )
+                neural = self.neural_predictors[parameter](neural_input)
                 if not isinstance(neural, Tensor):
                     raise ValueError(
                         f"neural predictor for {parameter!r} must return a tensor"
@@ -762,6 +868,10 @@ class GAMLSS(nn.Module):
                     )
             else:
                 neural = torch.zeros_like(linear_total)
+            shared = shared_contributions.get(
+                parameter,
+                torch.zeros_like(linear_total),
+            )
             if parameter in offsets:
                 raw_offset = offsets[parameter]
                 if (
@@ -786,6 +896,7 @@ class GAMLSS(nn.Module):
                 smooth=smooth,
                 offset=offset,
                 neural=neural,
+                shared=shared,
             )
         return contributions
 
@@ -796,6 +907,7 @@ class GAMLSS(nn.Module):
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
         type: Literal["link", "response", "terms"] = "response",
     ) -> dict[str, Tensor] | dict[str, TermContributions]:
         """Predict family parameters, link predictors, or additive terms."""
@@ -807,12 +919,14 @@ class GAMLSS(nn.Module):
                 offsets,
                 smooth_covariates=smooth_covariates,
                 neural_inputs=neural_inputs,
+                shared_input=shared_input,
             )
         predictors = self.linear_predictors(
             design_matrices,
             offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
         )
         if type == "link":
             return predictors
@@ -828,6 +942,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles."""
         parameters = self.predict(
@@ -835,6 +950,7 @@ class GAMLSS(nn.Module):
             offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
             type="response",
         )
         assert isinstance(parameters, dict)
@@ -862,6 +978,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles from percentages."""
         probabilities = centiles_to_probabilities(
@@ -874,6 +991,7 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
         )
 
     def distribution(
@@ -883,6 +1001,7 @@ class GAMLSS(nn.Module):
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
     ) -> Distribution:
         """Build the fitted conditional response distribution."""
         predictors = self.linear_predictors(
@@ -890,6 +1009,7 @@ class GAMLSS(nn.Module):
             offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
         )
         parameters = self.family.parameters_from_predictors(predictors)
         return self.family.distribution(parameters)
@@ -901,12 +1021,14 @@ class GAMLSS(nn.Module):
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
     ) -> Distribution:
         return self.distribution(
             design_matrices,
             offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
         )
 
     def negative_log_likelihood(
@@ -918,6 +1040,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
         reduction: str = "sum",
     ) -> Tensor:
         """Return the negative log-likelihood with sum, mean, or no reduction."""
@@ -926,6 +1049,7 @@ class GAMLSS(nn.Module):
             offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
         ).log_prob(response)
         observation_weights = self._validated_weights(losses, weights)
         losses = losses * observation_weights
@@ -946,6 +1070,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
         max_iter: int = 100,
         tolerance_grad: float = 1e-9,
         tolerance_change: float = 1e-12,
@@ -984,6 +1109,7 @@ class GAMLSS(nn.Module):
                 offsets=offsets,
                 smooth_covariates=smooth_covariates,
                 neural_inputs=neural_inputs,
+                shared_input=shared_input,
             )
             loss = loss + 0.5 * self.smooth_penalty()
             if not torch.isfinite(loss):
@@ -1000,6 +1126,7 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
         ).detach()
         gradient_max = max(
             float(parameter.grad.detach().abs().max())
@@ -1027,6 +1154,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -1039,6 +1167,7 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
             control=control,
             generator=generator,
         )
@@ -1291,6 +1420,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
         degrees_of_freedom: float | None = None,
     ) -> ModelDiagnostics:
         """Return deviance and information criteria for the current model."""
@@ -1302,6 +1432,7 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
             degrees_of_freedom=degrees_of_freedom,
         )
 
@@ -1313,6 +1444,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
         uniforms: Tensor | None = None,
         generator: torch.Generator | None = None,
     ) -> Tensor:
@@ -1324,6 +1456,7 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
+            shared_input=shared_input,
             uniforms=uniforms,
             generator=generator,
         )
@@ -1410,6 +1543,87 @@ class GAMLSS(nn.Module):
             validated[parameter] = inputs
         return validated
 
+    def _validated_shared_input(
+        self,
+        shared_input: Tensor | None,
+        model_parameter: Tensor,
+    ) -> Tensor | None:
+        if self.shared_predictor is None:
+            if shared_input is not None:
+                raise ValueError(
+                    "shared_input was supplied without a shared_predictor"
+                )
+            return None
+        if shared_input is None:
+            raise ValueError(
+                "shared_input is required for the configured shared_predictor"
+            )
+        if not isinstance(shared_input, Tensor):
+            raise ValueError("shared_input must be a tensor")
+        if (
+            shared_input.ndim < 1
+            or shared_input.dtype != model_parameter.dtype
+            or shared_input.device != model_parameter.device
+            or not torch.isfinite(shared_input).all()
+        ):
+            raise ValueError(
+                "shared_input must be finite and match the model dtype and device"
+            )
+        return shared_input
+
+    def _shared_contributions(
+        self,
+        shared_input: Tensor | None,
+        observation_count: int,
+        model_parameter: Tensor,
+    ) -> dict[str, Tensor]:
+        if self.shared_predictor is None:
+            return {}
+        assert shared_input is not None
+        if shared_input.shape[0] != observation_count:
+            raise ValueError(
+                "shared_input must have one row per observation"
+            )
+        raw_contributions = self.shared_predictor(shared_input)
+        if not isinstance(raw_contributions, Mapping):
+            raise ValueError(
+                "shared_predictor must return a mapping from parameter names "
+                "to tensors"
+            )
+        expected = set(self.shared_parameters)
+        received = set(raw_contributions)
+        if expected != received:
+            raise ValueError(
+                "Shared predictor outputs do not match configured parameters: "
+                f"missing={sorted(expected - received)}, "
+                f"extra={sorted(received - expected)}"
+            )
+        contributions = {}
+        for parameter, raw_contribution in raw_contributions.items():
+            if not isinstance(raw_contribution, Tensor):
+                raise ValueError(
+                    f"shared contribution for {parameter!r} must be a tensor"
+                )
+            contribution = raw_contribution
+            if contribution.shape == (observation_count, 1):
+                contribution = contribution.squeeze(-1)
+            if contribution.shape != (observation_count,):
+                raise ValueError(
+                    f"shared contribution for {parameter!r} must contain one "
+                    "value per observation"
+                )
+            if (
+                contribution.dtype != model_parameter.dtype
+                or contribution.device != model_parameter.device
+                or not torch.isfinite(contribution).all()
+            ):
+                raise ValueError(
+                    f"shared contribution for {parameter!r} must be finite "
+                    "and match the model dtype and device"
+                )
+            contributions[parameter] = contribution
+        return contributions
+
     def _require_formula_encoder(self) -> FormulaEncoder:
         if self._formula_encoder is None:
             raise RuntimeError(
@@ -1462,6 +1676,29 @@ class GAMLSS(nn.Module):
             )
         return result
 
+    def _formula_shared_input(
+        self,
+        data: Any,
+        value: Any,
+    ) -> Tensor | None:
+        if self.shared_predictor is None:
+            if value is not None:
+                raise ValueError(
+                    "shared_input was supplied without a shared_predictor"
+                )
+            return None
+        if value is None:
+            raise ValueError(
+                "shared_input is required for the configured shared_predictor"
+            )
+        tensor = self._formula_tensor(
+            data,
+            value,
+            context="shared input",
+        )
+        assert tensor is not None
+        return tensor.unsqueeze(-1) if tensor.ndim == 1 else tensor
+
     def _formula_initial_parameters(
         self,
         data: Any,
@@ -1486,9 +1723,9 @@ class GAMLSS(nn.Module):
         }
 
     def _require_no_neural_predictors(self, operation: str) -> None:
-        if self.neural_predictors:
+        if self.neural_predictors or self.shared_predictor is not None:
             raise ValueError(
-                f"{operation} does not support neural predictors; "
+                f"{operation} does not support neural or shared predictors; "
                 "use fit() or fit_minibatch() for neural models"
             )
 

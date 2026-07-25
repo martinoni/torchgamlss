@@ -72,6 +72,7 @@ def model_diagnostics(
     offsets: Mapping[str, Tensor] | None = None,
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     neural_inputs: Mapping[str, Tensor] | None = None,
+    shared_input: Tensor | None = None,
     degrees_of_freedom: float | None = None,
 ) -> ModelDiagnostics:
     """Evaluate likelihood criteria for the model's current fitted state."""
@@ -82,6 +83,7 @@ def model_diagnostics(
         offsets=offsets,
         smooth_covariates=smooth_covariates,
         neural_inputs=neural_inputs,
+        shared_input=shared_input,
         reduction="none",
     )
     if losses.ndim != 1 or losses.numel() != response.numel():
@@ -90,7 +92,7 @@ def model_diagnostics(
     if degrees_of_freedom is None:
         if any(
             model.smooth_terms[parameter] for parameter in model.family.parameter_names
-        ) or model.neural_predictors:
+        ) or model.neural_predictors or model.shared_predictor is not None:
             raise ValueError(
                 "degrees_of_freedom is required for models with smooth or "
                 "neural terms"
@@ -127,6 +129,7 @@ def quantile_residuals(
     offsets: Mapping[str, Tensor] | None = None,
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     neural_inputs: Mapping[str, Tensor] | None = None,
+    shared_input: Tensor | None = None,
     uniforms: Tensor | None = None,
     generator: torch.Generator | None = None,
 ) -> Tensor:
@@ -146,6 +149,7 @@ def quantile_residuals(
         offsets,
         smooth_covariates=smooth_covariates,
         neural_inputs=neural_inputs,
+        shared_input=shared_input,
         type="response",
     )
     model.family.validate_response(response, context="quantile residuals")

@@ -235,6 +235,28 @@ result = model.fit_minibatch_data(
 The same mapping is supplied to `predict_data()` for new data. See
 [`NEURAL.md`](NEURAL.md).
 
+A backbone shared by multiple distribution parameters instead receives one
+common matrix:
+
+```python
+model = GAMLSS.from_formula(
+    Normal(),
+    {"mu": "y ~ age", "sigma": "~ age"},
+    data,
+    shared_predictor=SharedMLPPredictor(
+        3,
+        ("mu", "sigma"),
+        (32, 32),
+    ),
+)
+result = model.fit_minibatch_data(
+    data,
+    shared_input=["sensor_1", "sensor_2", "sensor_3"],
+)
+```
+
+See [`SHARED.md`](SHARED.md) for custom shared modules and identifiability.
+
 ## P-splines
 
 `pb()` contributes its covariate to the linear design and attaches a named

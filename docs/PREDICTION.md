@@ -114,6 +114,7 @@ Each object contains:
 - `linear`: an `n × p` tensor with one contribution per design-matrix column;
 - `smooth`: a mapping from configured smooth-term names to `n`-vectors;
 - `neural`: the optional neural predictor contribution, or a zero vector;
+- `shared`: the optional shared-head contribution, or a zero vector;
 - `offset`: the broadcast offset, or a zero vector when no offset was given;
 - `total`: the reconstructed link-scale predictor.
 
@@ -144,6 +145,8 @@ differentiable and can participate in Torch autograd computations.
 Every configured neural predictor must likewise receive its parameter's
 tensor through `neural_inputs`. See [`NEURAL.md`](NEURAL.md) for arbitrary
 Torch modules, tabular column mappings, and train/evaluation mode.
+Shared backbones use one `shared_input` tensor and are documented in
+[`SHARED.md`](SHARED.md).
 
 The stored P-spline basis can evaluate covariates outside the training range,
 but exact parity with the natural-spline extrapolation helper used by R has

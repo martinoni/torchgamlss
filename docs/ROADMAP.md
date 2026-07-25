@@ -55,5 +55,5 @@ as supported.
 
 - [x] Mini-batch optimization for large data
 - [x] Neural predictors for selected distribution parameters
-- [ ] Shared representations across distribution parameters
+- [x] Shared representations across distribution parameters
 - [x] CPU/GPU benchmarks and reproducibility guidance

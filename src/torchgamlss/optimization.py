@@ -116,6 +116,7 @@ def fit_minibatch(
     offsets: Mapping[str, Tensor] | None = None,
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     neural_inputs: Mapping[str, Tensor] | None = None,
+    shared_input: Tensor | None = None,
     control: MiniBatchControl | None = None,
     generator: torch.Generator | None = None,
 ) -> MiniBatchFitResult:
@@ -145,6 +146,7 @@ def fit_minibatch(
         normalized_offsets,
         normalized_smooth_covariates,
         normalized_neural_inputs,
+        normalized_shared_input,
     ) = _validate_inputs(
         model,
         response,
@@ -153,10 +155,13 @@ def fit_minibatch(
         offsets,
         smooth_covariates,
         neural_inputs,
+        shared_input,
     )
     observation_count = response.numel()
     batch_size = min(control.batch_size, observation_count)
     total_weight = case_weights.sum().detach()
+    original_training_mode = model.training
+    model.train()
     parameters = list(model.parameters())
     optimizer = torch.optim.Adam(
         parameters,
@@ -177,6 +182,7 @@ def fit_minibatch(
         normalized_offsets,
         normalized_smooth_covariates,
         normalized_neural_inputs,
+        normalized_shared_input,
         batch_size,
         total_weight,
     )
@@ -202,6 +208,7 @@ def fit_minibatch(
                 normalized_offsets,
                 normalized_smooth_covariates,
                 normalized_neural_inputs,
+                normalized_shared_input,
                 batch_indices,
             )
             (
@@ -211,6 +218,7 @@ def fit_minibatch(
                 batch_offsets,
                 batch_smooth,
                 batch_neural,
+                batch_shared,
             ) = batch
             optimizer.zero_grad(set_to_none=True)
             batch_nll = _weighted_nll_sum(
@@ -221,6 +229,7 @@ def fit_minibatch(
                 batch_offsets,
                 batch_smooth,
                 batch_neural,
+                batch_shared,
             )
             likelihood_scale = (
                 observation_count / batch_response.numel()
@@ -259,6 +268,7 @@ def fit_minibatch(
             normalized_offsets,
             normalized_smooth_covariates,
             normalized_neural_inputs,
+            normalized_shared_input,
             batch_size,
             total_weight,
         )
@@ -285,6 +295,7 @@ def fit_minibatch(
         normalized_offsets,
         normalized_smooth_covariates,
         normalized_neural_inputs,
+        normalized_shared_input,
         batch_size,
         total_weight,
     )
@@ -299,13 +310,14 @@ def fit_minibatch(
         normalized_offsets,
         normalized_smooth_covariates,
         normalized_neural_inputs,
+        normalized_shared_input,
         batch_size,
         total_weight,
     )
     if stop_reason == "max_epochs" and gradient_max <= control.tolerance_gradient:
         stop_reason = "gradient"
 
-    return MiniBatchFitResult(
+    result = MiniBatchFitResult(
         negative_log_likelihood=final_nll,
         penalized_objective=final_objective,
         epochs=completed_epochs,
@@ -319,6 +331,8 @@ def fit_minibatch(
         learning_rate=control.learning_rate,
         final_learning_rate=float(optimizer.param_groups[0]["lr"]),
     )
+    model.train(original_training_mode)
+    return result
 
 
 def _validate_inputs(
@@ -329,11 +343,13 @@ def _validate_inputs(
     offsets: Mapping[str, Tensor] | None,
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None,
     neural_inputs: Mapping[str, Tensor] | None,
+    shared_input: Tensor | None,
 ) -> tuple[
     Tensor,
     dict[str, Tensor],
     dict[str, dict[str, Tensor]],
     dict[str, Tensor],
+    Tensor | None,
 ]:
     model_parameter = next(model.parameters())
     if (
@@ -460,11 +476,32 @@ def _validate_inputs(
                 "per response and matching dtype and device"
             )
         normalized_neural_inputs[parameter] = inputs
+    if model.shared_predictor is None:
+        if shared_input is not None:
+            raise ValueError(
+                "shared_input was supplied without a shared_predictor"
+            )
+        normalized_shared_input = None
+    else:
+        if (
+            not isinstance(shared_input, Tensor)
+            or shared_input.ndim < 1
+            or shared_input.shape[0] != response.numel()
+            or shared_input.dtype != response.dtype
+            or shared_input.device != response.device
+            or not torch.isfinite(shared_input).all()
+        ):
+            raise ValueError(
+                "shared_input must be finite with one row per response and "
+                "matching dtype and device"
+            )
+        normalized_shared_input = shared_input
     return (
         case_weights,
         normalized_offsets,
         normalized_smooth_covariates,
         normalized_neural_inputs,
+        normalized_shared_input,
     )
 
 
@@ -495,6 +532,7 @@ def _slice_inputs(
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
     neural_inputs: Mapping[str, Tensor],
+    shared_input: Tensor | None,
     indices: Tensor,
 ) -> tuple[
     Tensor,
@@ -503,6 +541,7 @@ def _slice_inputs(
     dict[str, Tensor],
     dict[str, dict[str, Tensor]],
     dict[str, Tensor],
+    Tensor | None,
 ]:
     return (
         response[indices],
@@ -526,6 +565,7 @@ def _slice_inputs(
             parameter: inputs[indices]
             for parameter, inputs in neural_inputs.items()
         },
+        shared_input[indices] if shared_input is not None else None,
     )
 
 
@@ -537,6 +577,7 @@ def _weighted_nll_sum(
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
     neural_inputs: Mapping[str, Tensor],
+    shared_input: Tensor | None,
 ) -> Tensor:
     losses = model.negative_log_likelihood(
         response,
@@ -544,6 +585,7 @@ def _weighted_nll_sum(
         offsets=offsets,
         smooth_covariates=smooth_covariates,
         neural_inputs=neural_inputs,
+        shared_input=shared_input,
         reduction="none",
     )
     return (losses * weights).sum()
@@ -567,33 +609,40 @@ def _objective_values(
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
     neural_inputs: Mapping[str, Tensor],
+    shared_input: Tensor | None,
     batch_size: int,
     total_weight: Tensor,
 ) -> tuple[float, float]:
-    with torch.no_grad():
-        negative_log_likelihood = torch.zeros(
-            (),
-            dtype=response.dtype,
-            device=response.device,
-        )
-        for indices in _sequential_indices(
-            response.numel(),
-            batch_size,
-            response.device,
-        ):
-            batch = _slice_inputs(
-                response,
-                design_matrices,
-                weights,
-                offsets,
-                smooth_covariates,
-                neural_inputs,
-                indices,
+    training_mode = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            negative_log_likelihood = torch.zeros(
+                (),
+                dtype=response.dtype,
+                device=response.device,
             )
-            negative_log_likelihood += _weighted_nll_sum(model, *batch)
-        penalized = (
-            negative_log_likelihood + 0.5 * model.smooth_penalty()
-        ) / total_weight
+            for indices in _sequential_indices(
+                response.numel(),
+                batch_size,
+                response.device,
+            ):
+                batch = _slice_inputs(
+                    response,
+                    design_matrices,
+                    weights,
+                    offsets,
+                    smooth_covariates,
+                    neural_inputs,
+                    shared_input,
+                    indices,
+                )
+                negative_log_likelihood += _weighted_nll_sum(model, *batch)
+            penalized = (
+                negative_log_likelihood + 0.5 * model.smooth_penalty()
+            ) / total_weight
+    finally:
+        model.train(training_mode)
     if not torch.isfinite(negative_log_likelihood) or not torch.isfinite(penalized):
         raise FloatingPointError("mini-batch full objective is not finite")
     return float(negative_log_likelihood), float(penalized)
@@ -607,36 +656,43 @@ def _full_gradient_max(
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
     neural_inputs: Mapping[str, Tensor],
+    shared_input: Tensor | None,
     batch_size: int,
     total_weight: Tensor,
 ) -> float:
     parameters = list(model.parameters())
+    training_mode = model.training
+    model.eval()
     model.zero_grad(set_to_none=True)
-    for indices in _sequential_indices(
-        response.numel(),
-        batch_size,
-        response.device,
-    ):
-        batch = _slice_inputs(
-            response,
-            design_matrices,
-            weights,
-            offsets,
-            smooth_covariates,
-            neural_inputs,
-            indices,
+    try:
+        for indices in _sequential_indices(
+            response.numel(),
+            batch_size,
+            response.device,
+        ):
+            batch = _slice_inputs(
+                response,
+                design_matrices,
+                weights,
+                offsets,
+                smooth_covariates,
+                neural_inputs,
+                shared_input,
+                indices,
+            )
+            (_weighted_nll_sum(model, *batch) / total_weight).backward()
+        penalty = model.smooth_penalty()
+        if penalty.requires_grad:
+            (0.5 * penalty / total_weight).backward()
+        _validate_gradients(parameters)
+        gradient_max = max(
+            float(parameter.grad.detach().abs().max())
+            for parameter in parameters
+            if parameter.grad is not None
         )
-        (_weighted_nll_sum(model, *batch) / total_weight).backward()
-    penalty = model.smooth_penalty()
-    if penalty.requires_grad:
-        (0.5 * penalty / total_weight).backward()
-    _validate_gradients(parameters)
-    gradient_max = max(
-        float(parameter.grad.detach().abs().max())
-        for parameter in parameters
-        if parameter.grad is not None
-    )
-    model.zero_grad(set_to_none=True)
+    finally:
+        model.zero_grad(set_to_none=True)
+        model.train(training_mode)
     return gradient_max
 
 
