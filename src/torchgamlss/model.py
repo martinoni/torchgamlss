@@ -891,6 +891,10 @@ class GAMLSS(nn.Module):
                         f"neural predictor for {parameter!r} must return one "
                         "value per observation"
                     )
+                neural = self._restore_autocast_dtype(
+                    neural,
+                    model_parameter,
+                )
                 if (
                     neural.dtype != model_parameter.dtype
                     or neural.device != model_parameter.device
@@ -1630,6 +1634,22 @@ class GAMLSS(nn.Module):
             )
         return shared_input
 
+    @staticmethod
+    def _restore_autocast_dtype(
+        contribution: Tensor,
+        model_parameter: Tensor,
+    ) -> Tensor:
+        if (
+            contribution.dtype != model_parameter.dtype
+            and model_parameter.dtype == torch.float32
+            and model_parameter.device.type == "cuda"
+            and contribution.device == model_parameter.device
+            and contribution.dtype in {torch.float16, torch.bfloat16}
+            and torch.is_autocast_enabled("cuda")
+        ):
+            return contribution.to(dtype=model_parameter.dtype)
+        return contribution
+
     def _shared_contributions(
         self,
         shared_input: Tensor | None,
@@ -1671,6 +1691,10 @@ class GAMLSS(nn.Module):
                     f"shared contribution for {parameter!r} must contain one "
                     "value per observation"
                 )
+            contribution = self._restore_autocast_dtype(
+                contribution,
+                model_parameter,
+            )
             if (
                 contribution.dtype != model_parameter.dtype
                 or contribution.device != model_parameter.device

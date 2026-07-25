@@ -381,6 +381,11 @@ def test_dataloader_api_controls_are_validated():
         model.fit_minibatch_loader(loader, validation_loader=[])
     with pytest.raises(ValueError, match="checkpoint_frequency"):
         model.fit_minibatch_loader(loader, checkpoint_frequency=0)
+    with pytest.raises(ValueError, match="CUDA model"):
+        model.fit_minibatch_loader(
+            loader,
+            control=MiniBatchControl(amp_dtype="float16"),
+        )
 
 
 def test_checkpoint_resume_exactly_matches_uninterrupted_dropout_fit(tmp_path):
@@ -545,7 +550,7 @@ def test_checkpoint_rejects_invalid_schema_and_changed_control(tmp_path):
     )
     malformed_path = tmp_path / "malformed.pt"
     torch.save({"format": "not-a-checkpoint"}, malformed_path)
-    with pytest.raises(ValueError, match="invalid schema"):
+    with pytest.raises(ValueError, match="format is not supported"):
         model.fit_minibatch_loader(
             loader(),
             control=MiniBatchControl(epochs=1, minimum_epochs=1),
@@ -577,6 +582,35 @@ def test_checkpoint_rejects_invalid_schema_and_changed_control(tmp_path):
             ),
             resume_from=checkpoint_path,
         )
+
+    legacy_checkpoint = torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=True,
+    )
+    legacy_checkpoint["version"] = 1
+    legacy_checkpoint.pop("skipped_updates")
+    legacy_checkpoint.pop("scaler_state_dict")
+    legacy_checkpoint["control"].pop("amp_dtype")
+    legacy_path = tmp_path / "legacy-v1.pt"
+    torch.save(legacy_checkpoint, legacy_path)
+    legacy_model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        dtype=torch.float64,
+    )
+    legacy_result = legacy_model.fit_minibatch_loader(
+        loader(),
+        control=MiniBatchControl(
+            epochs=2,
+            minimum_epochs=1,
+            learning_rate=0.01,
+        ),
+        resume_from=legacy_path,
+    )
+
+    assert legacy_result.epochs == 2
+    assert legacy_result.skipped_updates == 0
 
 
 def test_dataloader_rejects_a_stream_that_changes_between_passes():
@@ -773,6 +807,7 @@ def test_cuda_checkpoint_restores_device_rng_exactly(tmp_path):
             tolerance_change=0.0,
             tolerance_gradient=0.0,
             evaluation_frequency=1,
+            amp_dtype="float16",
         )
 
     torch.manual_seed(702)
@@ -803,4 +838,124 @@ def test_cuda_checkpoint_restores_device_rng_exactly(tmp_path):
             value,
             rtol=0.0,
             atol=0.0,
+        )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("amp_dtype", ["float16", "bfloat16"])
+@pytest.mark.parametrize("data_path", ["tensor", "loader"])
+def test_cuda_amp_runs_for_tensor_and_loader_paths(amp_dtype, data_path):
+    if amp_dtype == "bfloat16" and not torch.cuda.is_bf16_supported():
+        pytest.skip("CUDA bfloat16 is unavailable")
+    x, response, designs = _linear_data(
+        97,
+        seed=711,
+        dtype=torch.float32,
+    )
+    model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        shared_predictor=SharedMLPPredictor(
+            1,
+            ("mu",),
+            (16,),
+        ),
+        dtype=torch.float32,
+        device="cuda",
+    )
+    control = MiniBatchControl(
+        batch_size=24,
+        epochs=2,
+        minimum_epochs=2,
+        shuffle=False,
+        amp_dtype=amp_dtype,
+        clip_gradient_norm=1.0,
+    )
+
+    if data_path == "tensor":
+        result = model.fit_minibatch(
+            response.cuda(),
+            {
+                "mu": designs["mu"][:, :1].cuda(),
+                "sigma": designs["sigma"].cuda(),
+            },
+            shared_input=x.unsqueeze(-1).cuda(),
+            control=control,
+        )
+    else:
+        loader = DataLoader(
+            _RowDataset(
+                response,
+                {
+                    "mu": designs["mu"][:, :1],
+                    "sigma": designs["sigma"],
+                },
+                shared_input=x.unsqueeze(-1),
+            ),
+            batch_size=24,
+            shuffle=False,
+            pin_memory=True,
+        )
+        result = model.fit_minibatch_loader(
+            loader,
+            control=control,
+            non_blocking=True,
+        )
+
+    assert math.isfinite(result.negative_log_likelihood)
+    assert 0 <= result.skipped_updates <= result.updates
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_amp_runs_with_an_exclusive_neural_predictor():
+    x, response, designs = _linear_data(
+        41,
+        seed=712,
+        dtype=torch.float32,
+    )
+    model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        neural_predictors={"mu": MLPPredictor(1, (8,))},
+        dtype=torch.float32,
+        device="cuda",
+    )
+
+    result = model.fit_minibatch(
+        response.cuda(),
+        {
+            "mu": designs["mu"][:, :1].cuda(),
+            "sigma": designs["sigma"].cuda(),
+        },
+        neural_inputs={"mu": x.unsqueeze(-1).cuda()},
+        control=MiniBatchControl(
+            batch_size=16,
+            epochs=1,
+            minimum_epochs=1,
+            amp_dtype="float16",
+        ),
+    )
+
+    assert math.isfinite(result.negative_log_likelihood)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_cuda_amp_requires_a_float32_model():
+    _, response, designs = _linear_data(8, seed=713)
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        dtype=torch.float64,
+        device="cuda",
+    )
+
+    with pytest.raises(ValueError, match="float32 model"):
+        model.fit_minibatch(
+            response.cuda(),
+            {parameter: design.cuda() for parameter, design in designs.items()},
+            control=MiniBatchControl(
+                epochs=1,
+                minimum_epochs=1,
+                amp_dtype="float16",
+            ),
         )

@@ -36,7 +36,7 @@ The current implementation contains:
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
   objective evaluation, holdout early stopping with best-state restoration,
-  and CPU/CUDA benchmarking;
+  CUDA FP16/BF16 automatic mixed precision, and CPU/CUDA benchmarking;
 - re-iterable `Dataset`/`DataLoader` fitting that streams CPU or on-disk
   batches to the model device without resident full-data tensors, with atomic
   epoch checkpoints and exact optimizer/RNG resumption;

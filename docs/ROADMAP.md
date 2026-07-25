@@ -60,4 +60,4 @@ as supported.
 - [x] CPU/GPU benchmarks and reproducibility guidance
 - [x] Streaming `Dataset`/`DataLoader` inputs with exact weighted objectives
 - [x] Atomic checkpoints and exact epoch-boundary resumption
-- [ ] CUDA automatic mixed precision for neural mini-batch fitting
+- [x] CUDA automatic mixed precision for neural mini-batch fitting

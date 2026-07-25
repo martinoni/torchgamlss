@@ -103,6 +103,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--dtype", choices=("float32", "float64"), default="float32")
+    parser.add_argument("--amp-dtype", choices=("float16", "bfloat16"))
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--deterministic", action="store_true")
     return parser.parse_args()
@@ -200,6 +201,7 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
         evaluation_frequency=arguments.evaluation_frequency,
         validation_patience=arguments.validation_patience,
         validation_minimum_delta=arguments.validation_minimum_delta,
+        amp_dtype=arguments.amp_dtype,
     )
 
     _synchronize(device)
@@ -229,12 +231,14 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
             else platform.processor() or "CPU"
         ),
         "dtype": arguments.dtype,
+        "amp_dtype": arguments.amp_dtype,
         "rows": arguments.rows,
         "validation_rows": arguments.validation_rows,
         "features": arguments.features,
         "batch_size": result.batch_size,
         "epochs": result.epochs,
         "updates": result.updates,
+        "skipped_updates": result.skipped_updates,
         "num_workers": arguments.num_workers,
         "pin_memory": arguments.pin_memory,
         "checkpoint_enabled": checkpoint_file is not None,

@@ -170,6 +170,11 @@ require an explicit `degrees_of_freedom`.
 
 ## CUDA benchmark
 
+CUDA float32 mini-batch fits can use FP16 or BF16 autocast with
+`MiniBatchControl.amp_dtype`. Full-objective and final-gradient diagnostics
+remain float32; details are in
+[`MINIBATCH.md`](MINIBATCH.md#cuda-automatic-mixed-precision).
+
 Run:
 
 ```bash

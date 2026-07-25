@@ -266,6 +266,7 @@ def test_formula_minibatch_materializes_validation_data_with_same_columns():
         ("validation_patience", 0, "validation_patience"),
         ("validation_minimum_delta", -1.0, "validation_minimum_delta"),
         ("restore_best_parameters", 1, "restore_best_parameters"),
+        ("amp_dtype", "float32", "amp_dtype"),
     ],
 )
 def test_validation_control_is_validated(keyword, value, match):

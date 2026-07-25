@@ -40,6 +40,7 @@ class MiniBatchControl:
     validation_patience: int = 10
     validation_minimum_delta: float = 0.0
     restore_best_parameters: bool = True
+    amp_dtype: Literal["float16", "bfloat16"] | None = None
 
     def __post_init__(self) -> None:
         integer_fields = {
@@ -106,6 +107,10 @@ class MiniBatchControl:
             )
         if not isinstance(self.restore_best_parameters, bool):
             raise ValueError("restore_best_parameters must be boolean")
+        if self.amp_dtype not in {None, "float16", "bfloat16"}:
+            raise ValueError(
+                "amp_dtype must be None, 'float16', or 'bfloat16'"
+            )
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,7 @@ class MiniBatchFitResult:
     best_epoch: int | None = None
     best_validation_loss: float | None = None
     restored_best_parameters: bool = False
+    skipped_updates: int = 0
 
 
 @dataclass(frozen=True)
@@ -154,7 +160,64 @@ class _LoaderMetadata:
 
 
 _LOADER_CHECKPOINT_FORMAT = "torchgamlss.minibatch_loader"
-_LOADER_CHECKPOINT_VERSION = 1
+_LOADER_CHECKPOINT_VERSION = 2
+
+
+def _validated_amp_dtype(
+    model: GAMLSS,
+    control: MiniBatchControl,
+) -> torch.dtype | None:
+    if control.amp_dtype is None:
+        return None
+    model_parameter = next(model.parameters())
+    if model_parameter.device.type != "cuda":
+        raise ValueError("automatic mixed precision requires a CUDA model")
+    if model_parameter.dtype != torch.float32:
+        raise ValueError(
+            "automatic mixed precision requires a float32 model"
+        )
+    if (
+        control.amp_dtype == "bfloat16"
+        and not torch.cuda.is_bf16_supported()
+    ):
+        raise ValueError("this CUDA device does not support bfloat16")
+    return (
+        torch.float16
+        if control.amp_dtype == "float16"
+        else torch.bfloat16
+    )
+
+
+def _optimizer_step(
+    loss: Tensor,
+    *,
+    optimizer: torch.optim.Optimizer,
+    scaler: torch.amp.GradScaler,
+    parameters: list[Tensor],
+    clip_gradient_norm: float | None,
+) -> bool:
+    """Backpropagate and return whether GradScaler skipped the update."""
+    if scaler.is_enabled():
+        previous_scale = scaler.get_scale()
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        if clip_gradient_norm is not None:
+            torch.nn.utils.clip_grad_norm_(
+                parameters,
+                clip_gradient_norm,
+            )
+        scaler.step(optimizer)
+        scaler.update()
+        return scaler.get_scale() < previous_scale
+    loss.backward()
+    _validate_gradients(parameters)
+    if clip_gradient_norm is not None:
+        torch.nn.utils.clip_grad_norm_(
+            parameters,
+            clip_gradient_norm,
+        )
+    optimizer.step()
+    return False
 
 
 def fit_minibatch(
@@ -183,6 +246,7 @@ def fit_minibatch(
     control = control or MiniBatchControl()
     if not isinstance(control, MiniBatchControl):
         raise ValueError("control must be a MiniBatchControl")
+    amp_dtype = _validated_amp_dtype(model, control)
     if generator is not None and torch.device(generator.device).type != "cpu":
         raise ValueError("mini-batch permutation generator must be on the CPU")
     if any(
@@ -250,6 +314,10 @@ def fit_minibatch(
         betas=control.betas,
         eps=control.epsilon,
     )
+    scaler = torch.amp.GradScaler(
+        next(model.parameters()).device.type,
+        enabled=amp_dtype == torch.float16,
+    )
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
         optimizer,
         gamma=control.learning_rate_decay,
@@ -294,6 +362,7 @@ def fit_minibatch(
         if control.restore_best_parameters:
             best_state = _state_dict_copy(model)
     updates = 0
+    skipped_updates = 0
     completed_epochs = 0
     stop_reason: Literal[
         "loss_change",
@@ -330,20 +399,25 @@ def fit_minibatch(
                 batch_shared,
             ) = batch
             optimizer.zero_grad(set_to_none=True)
-            batch_nll = _weighted_nll_sum(
-                model,
-                batch_response,
-                batch_designs,
-                batch_weights,
-                batch_offsets,
-                batch_smooth,
-                batch_neural,
-                batch_shared,
-            )
-            likelihood_scale = (
-                observation_count / batch_response.numel()
-            ) / total_weight
-            loss = likelihood_scale * batch_nll
+            with torch.autocast(
+                device_type=response.device.type,
+                dtype=amp_dtype,
+                enabled=amp_dtype is not None,
+            ):
+                batch_nll = _weighted_nll_sum(
+                    model,
+                    batch_response,
+                    batch_designs,
+                    batch_weights,
+                    batch_offsets,
+                    batch_smooth,
+                    batch_neural,
+                    batch_shared,
+                )
+                likelihood_scale = (
+                    observation_count / batch_response.numel()
+                ) / total_weight
+                loss = likelihood_scale * batch_nll
             penalty = model.smooth_penalty()
             if penalty.requires_grad:
                 loss = loss + 0.5 * penalty / total_weight
@@ -351,15 +425,15 @@ def fit_minibatch(
                 raise FloatingPointError(
                     "mini-batch penalized objective is not finite"
                 )
-            loss.backward()
-            _validate_gradients(parameters)
-            if control.clip_gradient_norm is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    parameters,
-                    control.clip_gradient_norm,
-                )
-            optimizer.step()
+            skipped = _optimizer_step(
+                loss,
+                optimizer=optimizer,
+                scaler=scaler,
+                parameters=parameters,
+                clip_gradient_norm=control.clip_gradient_norm,
+            )
             updates += 1
+            skipped_updates += int(skipped)
 
         scheduler.step()
         completed_epochs = epoch
@@ -501,6 +575,7 @@ def fit_minibatch(
         best_epoch=best_epoch,
         best_validation_loss=best_validation_loss,
         restored_best_parameters=restored_best_parameters,
+        skipped_updates=skipped_updates,
     )
     model.train(original_training_mode)
     return result
@@ -529,6 +604,7 @@ def fit_minibatch_loader(
     control = control or MiniBatchControl()
     if not isinstance(control, MiniBatchControl):
         raise ValueError("control must be a MiniBatchControl")
+    amp_dtype = _validated_amp_dtype(model, control)
     if not isinstance(non_blocking, bool):
         raise ValueError("non_blocking must be boolean")
     if (
@@ -585,6 +661,10 @@ def fit_minibatch_loader(
         betas=control.betas,
         eps=control.epsilon,
     )
+    scaler = torch.amp.GradScaler(
+        next(model.parameters()).device.type,
+        enabled=amp_dtype == torch.float16,
+    )
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
         optimizer,
         gamma=control.learning_rate_decay,
@@ -611,6 +691,7 @@ def fit_minibatch_loader(
             else None
         )
         updates = 0
+        skipped_updates = 0
         completed_epochs = 0
     else:
         checkpoint = _load_loader_checkpoint(
@@ -618,6 +699,7 @@ def fit_minibatch_loader(
             model=model,
             optimizer=optimizer,
             scheduler=scheduler,
+            scaler=scaler,
             control=control,
             training_metadata=training_metadata,
             validation_metadata=validation_metadata,
@@ -636,6 +718,7 @@ def fit_minibatch_loader(
         ]
         best_state = checkpoint["best_state"]
         updates = checkpoint["updates"]
+        skipped_updates = checkpoint["skipped_updates"]
         completed_epochs = checkpoint["completed_epochs"]
     stop_reason: Literal[
         "loss_change",
@@ -677,21 +760,26 @@ def fit_minibatch_loader(
                 epoch_batches += 1
 
                 optimizer.zero_grad(set_to_none=True)
-                batch_nll = _weighted_nll_sum(
-                    model,
-                    batch_response,
-                    batch_designs,
-                    batch_weights,
-                    batch_offsets,
-                    batch_smooth,
-                    batch_neural,
-                    batch_shared,
-                )
-                likelihood_scale = (
-                    training_metadata.observation_count
-                    / batch_observations
-                ) / training_metadata.total_weight
-                loss = likelihood_scale * batch_nll
+                with torch.autocast(
+                    device_type=batch_response.device.type,
+                    dtype=amp_dtype,
+                    enabled=amp_dtype is not None,
+                ):
+                    batch_nll = _weighted_nll_sum(
+                        model,
+                        batch_response,
+                        batch_designs,
+                        batch_weights,
+                        batch_offsets,
+                        batch_smooth,
+                        batch_neural,
+                        batch_shared,
+                    )
+                    likelihood_scale = (
+                        training_metadata.observation_count
+                        / batch_observations
+                    ) / training_metadata.total_weight
+                    loss = likelihood_scale * batch_nll
                 penalty = model.smooth_penalty()
                 if penalty.requires_grad:
                     loss = (
@@ -704,15 +792,15 @@ def fit_minibatch_loader(
                     raise FloatingPointError(
                         "DataLoader mini-batch penalized objective is not finite"
                     )
-                loss.backward()
-                _validate_gradients(parameters)
-                if control.clip_gradient_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        parameters,
-                        control.clip_gradient_norm,
-                    )
-                optimizer.step()
+                skipped = _optimizer_step(
+                    loss,
+                    optimizer=optimizer,
+                    scaler=scaler,
+                    parameters=parameters,
+                    clip_gradient_norm=control.clip_gradient_norm,
+                )
                 updates += 1
+                skipped_updates += int(skipped)
 
             epoch_metadata = _LoaderMetadata(
                 observation_count=epoch_observations,
@@ -808,9 +896,11 @@ def fit_minibatch_loader(
                     model=model,
                     optimizer=optimizer,
                     scheduler=scheduler,
+                    scaler=scaler,
                     control=control,
                     completed_epochs=completed_epochs,
                     updates=updates,
+                    skipped_updates=skipped_updates,
                     objective_history=objective_history,
                     evaluation_epochs=evaluation_epochs,
                     validation_history=validation_history,
@@ -891,6 +981,7 @@ def fit_minibatch_loader(
             best_epoch=best_epoch,
             best_validation_loss=best_validation_loss,
             restored_best_parameters=restored_best_parameters,
+            skipped_updates=skipped_updates,
         )
     finally:
         model.zero_grad(set_to_none=True)
@@ -1067,9 +1158,11 @@ def _save_loader_checkpoint(
     model: GAMLSS,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
+    scaler: torch.amp.GradScaler,
     control: MiniBatchControl,
     completed_epochs: int,
     updates: int,
+    skipped_updates: int,
     objective_history: list[float],
     evaluation_epochs: list[int],
     validation_history: list[float],
@@ -1095,6 +1188,7 @@ def _save_loader_checkpoint(
         "control": asdict(control),
         "completed_epochs": completed_epochs,
         "updates": updates,
+        "skipped_updates": skipped_updates,
         "objective_history": tuple(objective_history),
         "evaluation_epochs": tuple(evaluation_epochs),
         "validation_history": tuple(validation_history),
@@ -1118,6 +1212,9 @@ def _save_loader_checkpoint(
         ),
         "scheduler_state_dict": _checkpoint_cpu_copy(
             scheduler.state_dict()
+        ),
+        "scaler_state_dict": _checkpoint_cpu_copy(
+            scaler.state_dict()
         ),
         "torch_rng_state": torch.random.get_rng_state().clone(),
         "cuda_rng_state": (
@@ -1154,6 +1251,7 @@ def _load_loader_checkpoint(
     model: GAMLSS,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
+    scaler: torch.amp.GradScaler,
     control: MiniBatchControl,
     training_metadata: _LoaderMetadata,
     validation_metadata: _LoaderMetadata | None,
@@ -1179,7 +1277,7 @@ def _load_loader_checkpoint(
         ) from error
     if not isinstance(checkpoint, dict):
         raise ValueError("mini-batch checkpoint must contain a dictionary")
-    required = {
+    required_v2 = {
         "format",
         "version",
         "model_dtype",
@@ -1189,6 +1287,7 @@ def _load_loader_checkpoint(
         "control",
         "completed_epochs",
         "updates",
+        "skipped_updates",
         "objective_history",
         "evaluation_epochs",
         "validation_history",
@@ -1203,18 +1302,36 @@ def _load_loader_checkpoint(
         "model_state_dict",
         "optimizer_state_dict",
         "scheduler_state_dict",
+        "scaler_state_dict",
         "torch_rng_state",
         "cuda_rng_state",
         "training_loader_generators",
         "validation_loader_generators",
     }
-    if set(checkpoint) != required:
-        raise ValueError("mini-batch checkpoint has an invalid schema")
-    if (
-        checkpoint["format"] != _LOADER_CHECKPOINT_FORMAT
-        or checkpoint["version"] != _LOADER_CHECKPOINT_VERSION
-    ):
+    required_v1 = required_v2 - {
+        "skipped_updates",
+        "scaler_state_dict",
+    }
+    checkpoint_version = checkpoint.get("version")
+    if checkpoint.get("format") != _LOADER_CHECKPOINT_FORMAT:
         raise ValueError("mini-batch checkpoint format is not supported")
+    if checkpoint_version == 1:
+        if set(checkpoint) != required_v1:
+            raise ValueError("mini-batch checkpoint has an invalid schema")
+        checkpoint["skipped_updates"] = 0
+        checkpoint["scaler_state_dict"] = {}
+        saved_control = checkpoint.get("control")
+        if isinstance(saved_control, dict):
+            saved_control = dict(saved_control)
+            saved_control["amp_dtype"] = None
+            checkpoint["control"] = saved_control
+    elif checkpoint_version == _LOADER_CHECKPOINT_VERSION:
+        if set(checkpoint) != required_v2:
+            raise ValueError("mini-batch checkpoint has an invalid schema")
+    else:
+        raise ValueError("mini-batch checkpoint format is not supported")
+    if set(checkpoint) != required_v2:
+        raise ValueError("mini-batch checkpoint has an invalid schema")
     model_parameter = next(model.parameters())
     if checkpoint["model_dtype"] != str(model_parameter.dtype):
         raise ValueError("mini-batch checkpoint model dtype does not match")
@@ -1274,6 +1391,8 @@ def _load_loader_checkpoint(
         model.load_state_dict(checkpoint["model_state_dict"], strict=True)
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        if checkpoint_version >= 2:
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
     except (KeyError, RuntimeError, TypeError, ValueError) as error:
         raise ValueError(
             "mini-batch checkpoint state does not match the model"
@@ -1326,6 +1445,7 @@ def _validate_checkpoint_progress(
 ) -> None:
     integer_fields = {
         "updates": checkpoint["updates"],
+        "skipped_updates": checkpoint["skipped_updates"],
         "stable_evaluations": checkpoint["stable_evaluations"],
         "evaluations_without_improvement": checkpoint[
             "evaluations_without_improvement"
@@ -1342,6 +1462,10 @@ def _validate_checkpoint_progress(
             )
     if checkpoint["updates"] < completed_epochs:
         raise ValueError("mini-batch checkpoint update count is invalid")
+    if checkpoint["skipped_updates"] > checkpoint["updates"]:
+        raise ValueError(
+            "mini-batch checkpoint skipped-update count is invalid"
+        )
     objective_history = _checkpoint_float_sequence(
         checkpoint["objective_history"],
         context="objective history",
@@ -1430,6 +1554,7 @@ def _validate_checkpoint_progress(
         "model_state_dict": checkpoint["model_state_dict"],
         "optimizer_state_dict": checkpoint["optimizer_state_dict"],
         "scheduler_state_dict": checkpoint["scheduler_state_dict"],
+        "scaler_state_dict": checkpoint["scaler_state_dict"],
     }
     for name, value in mapping_fields.items():
         if not isinstance(value, dict):

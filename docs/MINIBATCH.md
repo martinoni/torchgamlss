@@ -42,7 +42,8 @@ final full-gradient maximum, evaluated objective history, initial and final
 learning rates, and the stopping reason. When a validation holdout is
 supplied, it also reports the holdout history, best epoch, best validation
 loss, final holdout negative log-likelihood, and whether the best parameters
-were restored.
+were restored. `updates` counts attempted batches and `skipped_updates`
+reports the subset skipped by FP16 dynamic loss scaling.
 
 ## Objective scaling
 
@@ -299,8 +300,9 @@ compatibility checks.
 
 The checkpoint contains:
 
-- the complete model, Adam, and learning-rate scheduler states;
-- completed epochs, update count, objective and validation histories;
+- the complete model, Adam, learning-rate scheduler, and AMP scaler states;
+- completed epochs, attempted and skipped update counts, and objective and
+  validation histories;
 - early-stopping counters, the best epoch, and the best model state;
 - exact training and validation population metadata;
 - CPU, model-device CUDA, and exposed loader/sampler RNG states.
@@ -315,6 +317,11 @@ device type, validation-loader presence, loader population, and generator
 configuration. The generator's saved state replaces its construction seed.
 Random state held privately inside persistent worker processes cannot be
 restored, so exact continuation still requires stable dataset output.
+
+Checkpoint format version 2 adds AMP state. Version 1 checkpoints written by
+earlier TorchGAMLSS revisions remain resumable when `amp_dtype=None`; an AMP
+run cannot be resumed from a version 1 checkpoint because no loss-scaler state
+was stored.
 
 Checkpoints are written after the scheduler and any scheduled validation
 evaluation, but before final best-state restoration. An interrupted run
@@ -356,6 +363,45 @@ torch.use_deterministic_algorithms(True)
 Float64 remains the recommended dtype for tight R parity. Float32 is generally
 the relevant throughput dtype on GPUs. Exact cross-device equality is not
 promised because kernels, hardware, and Torch versions can differ.
+
+## CUDA automatic mixed precision
+
+Both `fit_minibatch()` and `fit_minibatch_loader()` can use automatic mixed
+precision for the stochastic updates of a CUDA float32 model:
+
+```python
+control = MiniBatchControl(
+    batch_size=8192,
+    epochs=20,
+    amp_dtype="float16",
+)
+result = model.fit_minibatch(
+    response,
+    design_matrices,
+    neural_inputs=neural_inputs,
+    shared_input=shared_input,
+    control=control,
+)
+```
+
+`amp_dtype` accepts `"float16"`, `"bfloat16"`, or `None`. The model and its
+inputs remain float32; Torch selects eligible CUDA operations for the lower
+throughput dtype. Float16 uses dynamic `GradScaler` scaling. Gradient clipping,
+when requested, occurs after gradients are unscaled. Bfloat16 uses autocast
+without loss scaling and requires a CUDA device with bfloat16 support.
+
+Only Adam update batches run under autocast. Complete training-objective
+evaluations, holdout validation, smooth penalties, and the exact final
+full-gradient diagnostic remain float32. This keeps stopping and reported
+objectives on the existing diagnostic path. Mixed-precision optimization is
+not expected to reproduce an FP32 trajectory bit for bit, so statistical
+agreement should be assessed with a problem-appropriate tolerance.
+
+`result.updates - result.skipped_updates` is the number of applied optimizer
+updates. A nonzero skipped count means the float16 scaler detected an overflow,
+skipped that Adam step, and reduced its scale. Loader checkpoints preserve the
+scaler and skipped count, allowing exact epoch-boundary continuation on the
+same CUDA setup.
 
 ## Benchmark command
 
@@ -426,8 +472,13 @@ python tools/benchmark_dataloader.py \
   --checkpoint-frequency 5 \
   --device cuda \
   --dtype float32 \
+  --amp-dtype float16 \
   --deterministic
 ```
+
+Omit `--amp-dtype` for the FP32 baseline, or use
+`--amp-dtype bfloat16` on supported CUDA devices. The JSON report records the
+requested AMP dtype and the number of scaler-skipped updates.
 
 One local CPU measurement on 2026-07-25 used Torch 2.13.0, float32,
 deterministic algorithms, 100,000 rows, eight covariates, batch size 2,048,
@@ -465,6 +516,18 @@ Writing a checkpoint every five epochs on the same deterministic problem took
 13.943 seconds and produced a 101,299-byte final checkpoint. The fitted state
 and all reported statistical values were identical to the run without
 checkpointing.
+
+AMP was measured separately on 2026-07-25 with the same RTX 4090 and Torch
+build, 500,000 training rows, 100,000 validation rows, two 64-unit hidden
+layers, batch size 8,192, and 20 deterministic epochs. FP32 took 15.121
+seconds (661 thousand training rows per second), FP16 took 14.831 seconds
+(674 thousand rows per second), and BF16 took 16.444 seconds (608 thousand
+rows per second). All 1,240 FP16 updates were applied without a scaler skip.
+The final training NLL per row was `0.423574`, `0.423530`, and `0.423402`,
+respectively. Peak allocated memory was approximately 31.2 MB in all three
+runs. This small streaming MLP is substantially affected by data generation
+and full-precision diagnostic passes, so its modest FP16 gain and slower BF16
+run must not be generalized to larger neural architectures.
 
 ## Scope
 

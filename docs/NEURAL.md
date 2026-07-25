@@ -170,6 +170,11 @@ print(torch.cuda.is_available())
 print(torch.cuda.get_device_name(0))
 ```
 
+CUDA float32 mini-batch fits can opt into FP16 or BF16 autocast through
+`MiniBatchControl.amp_dtype`; diagnostics remain float32. See the precision,
+loss-scaling, and checkpoint guarantees in
+[`MINIBATCH.md`](MINIBATCH.md#cuda-automatic-mixed-precision).
+
 Run the hybrid benchmark with:
 
 ```bash
