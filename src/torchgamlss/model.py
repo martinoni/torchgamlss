@@ -36,6 +36,11 @@ from torchgamlss.inference import (
     smooth_term_bootstrap,
     smooth_term_inference,
 )
+from torchgamlss.optimization import (
+    MiniBatchControl,
+    MiniBatchFitResult,
+)
+from torchgamlss.optimization import fit_minibatch as run_minibatch_fit
 from torchgamlss.quantiles import (
     QuantileBootstrapResult,
     QuantilePrediction,
@@ -269,6 +274,28 @@ class GAMLSS(nn.Module):
             max_iter=max_iter,
             tolerance_grad=tolerance_grad,
             tolerance_change=tolerance_change,
+        )
+
+    def fit_minibatch_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        control: MiniBatchControl | None = None,
+        generator: torch.Generator | None = None,
+    ) -> MiniBatchFitResult:
+        """Fit a formula model with bounded-memory stochastic updates."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        return self.fit_minibatch(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            control=control,
+            generator=generator,
         )
 
     def predict_data(
@@ -883,6 +910,29 @@ class GAMLSS(nn.Module):
             function_evaluations=function_evaluations,
             gradient_max=gradient_max,
             converged=bool(torch.isfinite(final_loss) and iterations < max_iter),
+        )
+
+    def fit_minibatch(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        control: MiniBatchControl | None = None,
+        generator: torch.Generator | None = None,
+    ) -> MiniBatchFitResult:
+        """Fit a fixed-lambda model with Adam mini-batches."""
+        return run_minibatch_fit(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            control=control,
+            generator=generator,
         )
 
     def fit_rs(

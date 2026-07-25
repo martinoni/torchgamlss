@@ -31,6 +31,8 @@ The current implementation contains:
   families;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
+- bounded-intermediate mini-batch fitting with Adam, deterministic chunked
+  objective evaluation, and CPU/CUDA benchmarking;
 - likelihood weights and offsets for every distribution parameter;
 - R-compatible family defaults and user-supplied parameter-scale starting
   values for RS and CG fitting;
@@ -108,7 +110,9 @@ documented in
 [`docs/FORMULAS.md`](docs/FORMULAS.md). See
 [`docs/INFERENCE.md`](docs/INFERENCE.md) for covariance and Wald inference.
 Likelihood criteria, model comparison, and quantile residuals are documented
-in [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md).
+in [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md). Mini-batch optimization,
+CPU/CUDA benchmarks, and reproducibility guidance are in
+[`docs/MINIBATCH.md`](docs/MINIBATCH.md).
 
 ## Attribution and license
 

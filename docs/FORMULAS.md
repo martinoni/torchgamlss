@@ -70,6 +70,28 @@ As in the tensor API, L-BFGS requires fixed smoothing parameters. Use
 `fit_rs_data()` or `fit_cg_data()` for automatic ML, target-EDF, GAIC, or GCV
 selection.
 
+For larger fixed-lambda models, the formula API can use bounded-intermediate
+Adam updates:
+
+```python
+import torch
+from torchgamlss import MiniBatchControl
+
+result = model.fit_minibatch_data(
+    data,
+    weights="weight",
+    control=MiniBatchControl(
+        batch_size=2048,
+        epochs=100,
+        learning_rate_decay=0.99,
+    ),
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+See [`MINIBATCH.md`](MINIBATCH.md) for objective scaling, convergence,
+CPU/CUDA benchmarking, and reproducibility.
+
 ## Prediction
 
 The stored formula encodings are applied to new tabular data:

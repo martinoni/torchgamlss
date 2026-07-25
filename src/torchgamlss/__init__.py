@@ -35,6 +35,7 @@ from torchgamlss.inference import (
 )
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
 from torchgamlss.model import GAMLSS, FitResult, TermContributions
+from torchgamlss.optimization import MiniBatchControl, MiniBatchFitResult
 from torchgamlss.quantiles import (
     QuantileBandResult,
     QuantileBootstrapResult,
@@ -64,6 +65,8 @@ __all__ = [
     "LogLink",
     "LogitLink",
     "ModelDiagnostics",
+    "MiniBatchControl",
+    "MiniBatchFitResult",
     "NegativeBinomial",
     "Normal",
     "Poisson",

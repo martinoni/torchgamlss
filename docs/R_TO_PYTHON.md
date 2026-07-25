@@ -543,6 +543,31 @@ distribution, not direct translations of an R `gamlss` return object.
 See [`DIAGNOSTICS.md`](DIAGNOSTICS.md) and
 [`INFERENCE.md`](INFERENCE.md).
 
+## Torch-native mini-batch fitting
+
+Large fixed-lambda designs can use Adam mini-batches:
+
+```python
+import torch
+from torchgamlss import MiniBatchControl
+
+fit = model.fit_minibatch_data(
+    data,
+    weights="weight",
+    control=MiniBatchControl(
+        batch_size=2048,
+        epochs=100,
+        learning_rate_decay=0.99,
+    ),
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+This is a TorchGAMLSS extension rather than an R `gamlss` algorithm
+translation. It optimizes the same fixed-lambda weighted penalized likelihood
+with an unbiased row-sampled likelihood gradient. RS, CG, and L-BFGS remain
+the numerical-reference paths. See [`MINIBATCH.md`](MINIBATCH.md).
+
 ## Low-level tensor API
 
 Advanced Torch workflows can bypass formulas:
