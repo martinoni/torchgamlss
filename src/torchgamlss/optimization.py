@@ -31,6 +31,9 @@ class MiniBatchControl:
     tolerance_gradient: float = 1e-5
     evaluation_frequency: int = 1
     clip_gradient_norm: float | None = None
+    validation_patience: int = 10
+    validation_minimum_delta: float = 0.0
+    restore_best_parameters: bool = True
 
     def __post_init__(self) -> None:
         integer_fields = {
@@ -39,6 +42,7 @@ class MiniBatchControl:
             "minimum_epochs": self.minimum_epochs,
             "patience": self.patience,
             "evaluation_frequency": self.evaluation_frequency,
+            "validation_patience": self.validation_patience,
         }
         for name, value in integer_fields.items():
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -87,6 +91,28 @@ class MiniBatchControl:
             raise ValueError(
                 "clip_gradient_norm must be finite and positive when supplied"
             )
+        if (
+            not math.isfinite(self.validation_minimum_delta)
+            or self.validation_minimum_delta < 0
+        ):
+            raise ValueError(
+                "validation_minimum_delta must be finite and non-negative"
+            )
+        if not isinstance(self.restore_best_parameters, bool):
+            raise ValueError("restore_best_parameters must be boolean")
+
+
+@dataclass(frozen=True)
+class MiniBatchValidationData:
+    """Fixed holdout tensors evaluated during mini-batch fitting."""
+
+    response: Tensor
+    design_matrices: Mapping[str, Tensor]
+    weights: Tensor | None = None
+    offsets: Mapping[str, Tensor] | None = None
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None
+    neural_inputs: Mapping[str, Tensor] | None = None
+    shared_input: Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -99,12 +125,18 @@ class MiniBatchFitResult:
     updates: int
     gradient_max: float
     converged: bool
-    stop_reason: Literal["loss_change", "gradient", "max_epochs"]
+    stop_reason: Literal["loss_change", "validation", "gradient", "max_epochs"]
     objective_history: tuple[float, ...]
     evaluation_epochs: tuple[int, ...]
     batch_size: int
     learning_rate: float
     final_learning_rate: float
+    validation_negative_log_likelihood: float | None = None
+    validation_history: tuple[float, ...] = ()
+    validation_epochs: tuple[int, ...] = ()
+    best_epoch: int | None = None
+    best_validation_loss: float | None = None
+    restored_best_parameters: bool = False
 
 
 def fit_minibatch(
@@ -117,6 +149,7 @@ def fit_minibatch(
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     neural_inputs: Mapping[str, Tensor] | None = None,
     shared_input: Tensor | None = None,
+    validation: MiniBatchValidationData | None = None,
     control: MiniBatchControl | None = None,
     generator: torch.Generator | None = None,
 ) -> MiniBatchFitResult:
@@ -125,7 +158,9 @@ def fit_minibatch(
     Uniform row sampling gives an unbiased gradient for the full weighted-mean
     penalized objective. End-of-epoch objectives and the final gradient are
     evaluated in deterministic chunks, so they do not allocate full predictor
-    or spline-basis tensors.
+    or spline-basis tensors. When a fixed holdout is supplied, its weighted
+    mean negative log-likelihood controls early stopping and can restore the
+    best complete model state.
     """
     control = control or MiniBatchControl()
     if not isinstance(control, MiniBatchControl):
@@ -157,6 +192,34 @@ def fit_minibatch(
         neural_inputs,
         shared_input,
     )
+    if validation is not None and not isinstance(
+        validation,
+        MiniBatchValidationData,
+    ):
+        raise ValueError("validation must be a MiniBatchValidationData")
+    if validation is None:
+        validation_values = None
+        validation_batch_size = None
+        validation_total_weight = None
+    else:
+        try:
+            validation_values = _validate_inputs(
+                model,
+                validation.response,
+                validation.design_matrices,
+                validation.weights,
+                validation.offsets,
+                validation.smooth_covariates,
+                validation.neural_inputs,
+                validation.shared_input,
+            )
+        except ValueError as error:
+            raise ValueError(f"invalid validation data: {error}") from error
+        validation_batch_size = min(
+            control.batch_size,
+            validation.response.numel(),
+        )
+        validation_total_weight = validation_values[0].sum().detach()
     observation_count = response.numel()
     batch_size = min(control.batch_size, observation_count)
     total_weight = case_weights.sum().detach()
@@ -189,9 +252,37 @@ def fit_minibatch(
     objective_history = [initial_objective]
     evaluation_epochs = [0]
     stable_evaluations = 0
+    validation_history: list[float] = []
+    validation_epochs: list[int] = []
+    best_validation_loss: float | None = None
+    best_epoch: int | None = None
+    best_state: dict[str, Tensor] | None = None
+    evaluations_without_improvement = 0
+    if validation is not None:
+        assert validation_values is not None
+        assert validation_batch_size is not None
+        assert validation_total_weight is not None
+        _, initial_validation_loss = _validation_values(
+            model,
+            validation,
+            validation_values,
+            validation_batch_size,
+            validation_total_weight,
+        )
+        validation_history.append(initial_validation_loss)
+        validation_epochs.append(0)
+        best_validation_loss = initial_validation_loss
+        best_epoch = 0
+        if control.restore_best_parameters:
+            best_state = _state_dict_copy(model)
     updates = 0
     completed_epochs = 0
-    stop_reason: Literal["loss_change", "gradient", "max_epochs"] = "max_epochs"
+    stop_reason: Literal[
+        "loss_change",
+        "validation",
+        "gradient",
+        "max_epochs",
+    ] = "max_epochs"
 
     for epoch in range(1, control.epochs + 1):
         for batch_indices in _batch_indices(
@@ -276,16 +367,59 @@ def fit_minibatch(
         relative_change = abs(objective - previous) / max(1.0, abs(previous))
         objective_history.append(objective)
         evaluation_epochs.append(epoch)
-        if relative_change <= control.tolerance_change:
-            stable_evaluations += 1
+        if validation is None:
+            if relative_change <= control.tolerance_change:
+                stable_evaluations += 1
+            else:
+                stable_evaluations = 0
+            if (
+                epoch >= control.minimum_epochs
+                and stable_evaluations >= control.patience
+            ):
+                stop_reason = "loss_change"
+                break
         else:
-            stable_evaluations = 0
-        if (
-            epoch >= control.minimum_epochs
-            and stable_evaluations >= control.patience
-        ):
-            stop_reason = "loss_change"
-            break
+            assert validation_values is not None
+            assert validation_batch_size is not None
+            assert validation_total_weight is not None
+            _, validation_loss = _validation_values(
+                model,
+                validation,
+                validation_values,
+                validation_batch_size,
+                validation_total_weight,
+            )
+            validation_history.append(validation_loss)
+            validation_epochs.append(epoch)
+            assert best_validation_loss is not None
+            if (
+                validation_loss
+                < best_validation_loss - control.validation_minimum_delta
+            ):
+                best_validation_loss = validation_loss
+                best_epoch = epoch
+                evaluations_without_improvement = 0
+                if control.restore_best_parameters:
+                    best_state = _state_dict_copy(model)
+            else:
+                evaluations_without_improvement += 1
+            if (
+                epoch >= control.minimum_epochs
+                and evaluations_without_improvement
+                >= control.validation_patience
+            ):
+                stop_reason = "validation"
+                break
+
+    restored_best_parameters = False
+    if (
+        validation is not None
+        and control.restore_best_parameters
+        and best_state is not None
+        and best_epoch != completed_epochs
+    ):
+        model.load_state_dict(best_state)
+        restored_best_parameters = True
 
     final_nll, final_objective = _objective_values(
         model,
@@ -302,6 +436,19 @@ def fit_minibatch(
     if evaluation_epochs[-1] != completed_epochs:
         objective_history.append(final_objective)
         evaluation_epochs.append(completed_epochs)
+    if validation is None:
+        final_validation_nll = None
+    else:
+        assert validation_values is not None
+        assert validation_batch_size is not None
+        assert validation_total_weight is not None
+        final_validation_nll, _ = _validation_values(
+            model,
+            validation,
+            validation_values,
+            validation_batch_size,
+            validation_total_weight,
+        )
     gradient_max = _full_gradient_max(
         model,
         response,
@@ -330,6 +477,12 @@ def fit_minibatch(
         batch_size=batch_size,
         learning_rate=control.learning_rate,
         final_learning_rate=float(optimizer.param_groups[0]["lr"]),
+        validation_negative_log_likelihood=final_validation_nll,
+        validation_history=tuple(validation_history),
+        validation_epochs=tuple(validation_epochs),
+        best_epoch=best_epoch,
+        best_validation_loss=best_validation_loss,
+        restored_best_parameters=restored_best_parameters,
     )
     model.train(original_training_mode)
     return result
@@ -646,6 +799,69 @@ def _objective_values(
     if not torch.isfinite(negative_log_likelihood) or not torch.isfinite(penalized):
         raise FloatingPointError("mini-batch full objective is not finite")
     return float(negative_log_likelihood), float(penalized)
+
+
+def _validation_values(
+    model: GAMLSS,
+    validation: MiniBatchValidationData,
+    validation_values: tuple[
+        Tensor,
+        dict[str, Tensor],
+        dict[str, dict[str, Tensor]],
+        dict[str, Tensor],
+        Tensor | None,
+    ],
+    batch_size: int,
+    total_weight: Tensor,
+) -> tuple[float, float]:
+    (
+        weights,
+        offsets,
+        smooth_covariates,
+        neural_inputs,
+        shared_input,
+    ) = validation_values
+    training_mode = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            negative_log_likelihood = torch.zeros(
+                (),
+                dtype=validation.response.dtype,
+                device=validation.response.device,
+            )
+            for indices in _sequential_indices(
+                validation.response.numel(),
+                batch_size,
+                validation.response.device,
+            ):
+                batch = _slice_inputs(
+                    validation.response,
+                    validation.design_matrices,
+                    weights,
+                    offsets,
+                    smooth_covariates,
+                    neural_inputs,
+                    shared_input,
+                    indices,
+                )
+                negative_log_likelihood += _weighted_nll_sum(model, *batch)
+            mean_loss = negative_log_likelihood / total_weight
+    finally:
+        model.train(training_mode)
+    if (
+        not torch.isfinite(negative_log_likelihood)
+        or not torch.isfinite(mean_loss)
+    ):
+        raise FloatingPointError("mini-batch validation loss is not finite")
+    return float(negative_log_likelihood), float(mean_loss)
+
+
+def _state_dict_copy(model: GAMLSS) -> dict[str, Tensor]:
+    return {
+        name: value.detach().cpu().clone()
+        for name, value in model.state_dict().items()
+    }
 
 
 def _full_gradient_max(

@@ -553,11 +553,13 @@ from torchgamlss import MiniBatchControl
 
 fit = model.fit_minibatch_data(
     data,
+    validation_data=validation_data,
     weights="weight",
     control=MiniBatchControl(
         batch_size=2048,
         epochs=100,
         learning_rate_decay=0.99,
+        validation_patience=5,
     ),
     generator=torch.Generator().manual_seed(2026),
 )
@@ -566,7 +568,8 @@ fit = model.fit_minibatch_data(
 This is a TorchGAMLSS extension rather than an R `gamlss` algorithm
 translation. It optimizes the same fixed-lambda weighted penalized likelihood
 with an unbiased row-sampled likelihood gradient. RS, CG, and L-BFGS remain
-the numerical-reference paths. See [`MINIBATCH.md`](MINIBATCH.md).
+the numerical-reference paths. A fixed holdout can drive out-of-sample early
+stopping and best-state restoration. See [`MINIBATCH.md`](MINIBATCH.md).
 
 ## Low-level tensor API
 

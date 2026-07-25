@@ -56,4 +56,6 @@ as supported.
 - [x] Mini-batch optimization for large data
 - [x] Neural predictors for selected distribution parameters
 - [x] Shared representations across distribution parameters
+- [x] Holdout validation and out-of-sample early stopping
 - [x] CPU/GPU benchmarks and reproducibility guidance
+- [ ] Streaming `Dataset`/`DataLoader` inputs with exact weighted objectives

@@ -39,6 +39,7 @@ from torchgamlss.inference import (
 from torchgamlss.optimization import (
     MiniBatchControl,
     MiniBatchFitResult,
+    MiniBatchValidationData,
 )
 from torchgamlss.optimization import fit_minibatch as run_minibatch_fit
 from torchgamlss.quantiles import (
@@ -383,6 +384,7 @@ class GAMLSS(nn.Module):
         weights: Any = None,
         neural_inputs: Mapping[str, Any] | None = None,
         shared_input: Any = None,
+        validation_data: Any = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -392,6 +394,32 @@ class GAMLSS(nn.Module):
         case_weights = self._formula_tensor(data, weights, context="weights")
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         model_shared_input = self._formula_shared_input(data, shared_input)
+        validation = None
+        if validation_data is not None:
+            prepared_validation = self.prepare_formula_data(
+                validation_data,
+                include_response=True,
+            )
+            assert prepared_validation.response is not None
+            validation = MiniBatchValidationData(
+                response=prepared_validation.response,
+                design_matrices=prepared_validation.design_matrices,
+                weights=self._formula_tensor(
+                    validation_data,
+                    weights,
+                    context="validation weights",
+                ),
+                offsets=prepared_validation.offsets,
+                smooth_covariates=prepared_validation.smooth_covariates,
+                neural_inputs=self._formula_neural_inputs(
+                    validation_data,
+                    neural_inputs,
+                ),
+                shared_input=self._formula_shared_input(
+                    validation_data,
+                    shared_input,
+                ),
+            )
         return self.fit_minibatch(
             prepared.response,
             prepared.design_matrices,
@@ -400,6 +428,7 @@ class GAMLSS(nn.Module):
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
             shared_input=model_shared_input,
+            validation=validation,
             control=control,
             generator=generator,
         )
@@ -1155,6 +1184,7 @@ class GAMLSS(nn.Module):
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
         neural_inputs: Mapping[str, Tensor] | None = None,
         shared_input: Tensor | None = None,
+        validation: MiniBatchValidationData | None = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -1168,6 +1198,7 @@ class GAMLSS(nn.Module):
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
             shared_input=shared_input,
+            validation=validation,
             control=control,
             generator=generator,
         )

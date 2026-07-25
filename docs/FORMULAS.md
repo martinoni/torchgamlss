@@ -79,6 +79,7 @@ from torchgamlss import MiniBatchControl
 
 result = model.fit_minibatch_data(
     data,
+    validation_data=validation_data,
     weights="weight",
     control=MiniBatchControl(
         batch_size=2048,
@@ -90,7 +91,9 @@ result = model.fit_minibatch_data(
 ```
 
 See [`MINIBATCH.md`](MINIBATCH.md) for objective scaling, convergence,
-CPU/CUDA benchmarking, and reproducibility.
+holdout early stopping, CPU/CUDA benchmarking, and reproducibility. The same
+column selectors for weights and neural inputs are applied to the training
+and validation frames.
 
 ## Prediction
 

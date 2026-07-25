@@ -35,7 +35,8 @@ The current implementation contains:
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
-  objective evaluation, and CPU/CUDA benchmarking;
+  objective evaluation, holdout early stopping with best-state restoration,
+  and CPU/CUDA benchmarking;
 - optional Torch modules and a standard MLP predictor for selected
   distribution parameters, composable with linear terms, P-splines, and
   offsets;

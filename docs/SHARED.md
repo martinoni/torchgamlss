@@ -197,5 +197,7 @@ a reproducibility record, not a performance guarantee.
 
 The input tensor still resides in memory, although intermediate activations
 are batch-bounded. Streaming `Dataset`/`DataLoader` support, automatic
-orthogonalization of structured and neural terms, validation splits, and
-early stopping on out-of-sample likelihood remain future work.
+orthogonalization of structured and neural terms, and automatic validation
+splitting remain future work. A user-supplied fixed holdout can already drive
+out-of-sample early stopping as described in
+[`MINIBATCH.md`](MINIBATCH.md).

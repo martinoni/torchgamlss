@@ -39,7 +39,10 @@ result = model.fit_minibatch_data(
 The returned `MiniBatchFitResult` contains the weighted negative
 log-likelihood, penalized mean objective, number of epochs and updates, exact
 final full-gradient maximum, evaluated objective history, initial and final
-learning rates, and the stopping reason.
+learning rates, and the stopping reason. When a validation holdout is
+supplied, it also reports the holdout history, best epoch, best validation
+loss, final holdout negative log-likelihood, and whether the best parameters
+were restored.
 
 ## Objective scaling
 
@@ -91,6 +94,82 @@ Adam with a constant learning rate can keep moving around a likelihood
 optimum. Set `learning_rate_decay` below one when final numerical precision is
 important. For example, `0.99` multiplies the learning rate by `0.99` after
 each epoch. Compare `learning_rate` with `final_learning_rate` in the result.
+
+## Holdout validation and early stopping
+
+Pass a fixed holdout through `MiniBatchValidationData`:
+
+```python
+from torchgamlss import (
+    MiniBatchControl,
+    MiniBatchValidationData,
+)
+
+validation = MiniBatchValidationData(
+    response=validation_response,
+    design_matrices=validation_design_matrices,
+    weights=validation_weights,
+    offsets=validation_offsets,
+    smooth_covariates=validation_smooth_covariates,
+    neural_inputs=validation_neural_inputs,
+    shared_input=validation_shared_input,
+)
+
+result = model.fit_minibatch(
+    response,
+    design_matrices,
+    weights=weights,
+    neural_inputs=neural_inputs,
+    shared_input=shared_input,
+    validation=validation,
+    control=MiniBatchControl(
+        batch_size=2048,
+        epochs=100,
+        minimum_epochs=10,
+        evaluation_frequency=2,
+        validation_patience=5,
+        validation_minimum_delta=1e-4,
+        restore_best_parameters=True,
+    ),
+)
+```
+
+The holdout is evaluated in deterministic sequential chunks at epoch zero
+and every `evaluation_frequency` epochs. `validation_history` stores its
+weighted mean negative log-likelihood; `validation_negative_log_likelihood`
+stores the final weighted sum to match the training NLL convention. The
+holdout criterion intentionally excludes the smooth penalty.
+
+An improvement must exceed `validation_minimum_delta`.
+`validation_patience` counts consecutive holdout evaluations without such an
+improvement, rather than raw epochs. With a holdout present, this criterion
+replaces training-loss-change stopping; `minimum_epochs` still prevents an
+early stop before the requested epoch.
+
+By default, the complete `state_dict()` from the best validation epoch is
+restored, including neural BatchNorm buffers. Epoch zero is eligible, so a
+run that immediately worsens can recover the exact initial state.
+`objective_history` and `validation_history` retain the optimization
+trajectory, while the final objectives describe the restored model. Set
+`restore_best_parameters=False` to retain the last trained state.
+
+Formula models prepare a validation frame with the encodings learned from the
+training frame:
+
+```python
+result = model.fit_minibatch_data(
+    training_data,
+    validation_data=validation_data,
+    weights="weight",
+    neural_inputs={"mu": ["sensor_1", "sensor_2"]},
+    shared_input=["common_1", "common_2"],
+    control=control,
+)
+```
+
+Column selectors are applied to both frames. When training and validation
+features already exist as separate tensors, use the low-level
+`MiniBatchValidationData` interface instead.
 
 ## CPU, CUDA, and reproducibility
 
@@ -156,6 +235,26 @@ python tools/benchmark_minibatch.py \
   --compare-full-batch
 ```
 
+The shared-representation benchmark also accepts a generated holdout:
+
+```bash
+python tools/benchmark_shared.py \
+  --rows 500000 \
+  --validation-rows 100000 \
+  --features 8 \
+  --hidden-size 64 \
+  --hidden-layers 2 \
+  --batch-size 8192 \
+  --epochs 30 \
+  --minimum-epochs 5 \
+  --evaluation-frequency 1 \
+  --validation-patience 4 \
+  --validation-minimum-delta 0.00005 \
+  --device cuda \
+  --dtype float32 \
+  --deterministic
+```
+
 One local CPU measurement on 2026-07-25 used Torch 2.13.0, float32,
 deterministic algorithms, 100,000 rows, eight covariates, batch size 2,048,
 and 20 epochs. It completed in 1.247 seconds, corresponding to approximately
@@ -170,6 +269,15 @@ and 20 epochs. It completed in 7.594 seconds, corresponding to approximately
 peak allocated CUDA memory. The benchmark reports its Torch build, device name,
 and peak allocated memory so a CPU-only installation cannot be mistaken for
 missing hardware.
+
+The holdout-enabled shared benchmark was also run locally on 2026-07-25 with
+the RTX 4090 and Torch 2.11.0+cu128. It used 500,000 training rows, 100,000
+validation rows, two 64-unit hidden layers, batch size 8,192, and deterministic
+float32 algorithms. Validation early stopping selected epoch 4, stopped at
+epoch 8, and restored the best state. The run completed in 4.063 seconds,
+processed approximately 985 thousand training rows per second, and used
+306 MB of peak allocated CUDA memory. The final weighted mean validation NLL
+was `0.536691`.
 
 ## Scope
 

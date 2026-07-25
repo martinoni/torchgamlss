@@ -198,4 +198,6 @@ Exclusive networks use an input mapping owned by one distribution parameter.
 For a single backbone with multiple parameter-specific heads, use
 `SharedMLPPredictor` as described in [`SHARED.md`](SHARED.md). Input tensors
 remain resident in memory; streaming datasets and data loaders are separate
-future work.
+future work. Fixed holdout validation and out-of-sample early stopping are
+available through the mini-batch API described in
+[`MINIBATCH.md`](MINIBATCH.md).

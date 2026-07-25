@@ -14,6 +14,7 @@ import torch
 from torchgamlss import (
     GAMLSS,
     MiniBatchControl,
+    MiniBatchValidationData,
     Normal,
     SharedMLPPredictor,
 )
@@ -27,9 +28,13 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--hidden-layers", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=2_048)
     parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--minimum-epochs", type=int)
     parser.add_argument("--learning-rate", type=float, default=0.01)
     parser.add_argument("--learning-rate-decay", type=float, default=0.98)
     parser.add_argument("--evaluation-frequency", type=int, default=5)
+    parser.add_argument("--validation-rows", type=int, default=0)
+    parser.add_argument("--validation-patience", type=int, default=10)
+    parser.add_argument("--validation-minimum-delta", type=float, default=0.0)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--dtype", choices=("float32", "float64"), default="float32")
     parser.add_argument("--seed", type=int, default=2026)
@@ -141,6 +146,28 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
             seed=arguments.seed,
         )
     )
+    validation = None
+    if arguments.validation_rows < 0:
+        raise ValueError("validation_rows must be non-negative")
+    if arguments.validation_rows > 0:
+        (
+            validation_response,
+            validation_designs,
+            validation_shared_input,
+            _,
+            _,
+        ) = _synthetic_problem(
+            rows=arguments.validation_rows,
+            features=arguments.features,
+            dtype=dtype,
+            device=device,
+            seed=arguments.seed + 1,
+        )
+        validation = MiniBatchValidationData(
+            response=validation_response,
+            design_matrices=validation_designs,
+            shared_input=validation_shared_input,
+        )
     model = GAMLSS(
         Normal(),
         {"mu": 1, "sigma": 1},
@@ -166,9 +193,15 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
         epochs=arguments.epochs,
         learning_rate=arguments.learning_rate,
         learning_rate_decay=arguments.learning_rate_decay,
-        minimum_epochs=arguments.epochs,
+        minimum_epochs=(
+            arguments.epochs
+            if arguments.minimum_epochs is None
+            else arguments.minimum_epochs
+        ),
         patience=arguments.epochs,
         evaluation_frequency=arguments.evaluation_frequency,
+        validation_patience=arguments.validation_patience,
+        validation_minimum_delta=arguments.validation_minimum_delta,
     )
 
     _synchronize(device)
@@ -177,6 +210,7 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
         response,
         designs,
         shared_input=shared_input,
+        validation=validation,
         control=control,
         generator=torch.Generator(device="cpu").manual_seed(arguments.seed),
     )
@@ -207,6 +241,7 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
         ),
         "dtype": arguments.dtype,
         "rows": arguments.rows,
+        "validation_rows": arguments.validation_rows,
         "features": arguments.features,
         "hidden_size": arguments.hidden_size,
         "hidden_layers": arguments.hidden_layers,
@@ -230,6 +265,12 @@ def run_benchmark(arguments: argparse.Namespace) -> dict[str, Any]:
         "stop_reason": result.stop_reason,
         "initial_learning_rate": result.learning_rate,
         "final_learning_rate": result.final_learning_rate,
+        "validation_negative_log_likelihood": (
+            result.validation_negative_log_likelihood
+        ),
+        "best_validation_loss": result.best_validation_loss,
+        "best_epoch": result.best_epoch,
+        "restored_best_parameters": result.restored_best_parameters,
         "deterministic_algorithms": arguments.deterministic,
         "peak_cuda_memory_bytes": (
             torch.cuda.max_memory_allocated(device)
