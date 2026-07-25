@@ -161,6 +161,7 @@ class _LoaderMetadata:
 
 _LOADER_CHECKPOINT_FORMAT = "torchgamlss.minibatch_loader"
 _LOADER_CHECKPOINT_VERSION = 2
+_AMP_INITIAL_SCALE = 256.0
 
 
 def _validated_amp_dtype(
@@ -317,6 +318,7 @@ def fit_minibatch(
     scaler = torch.amp.GradScaler(
         next(model.parameters()).device.type,
         enabled=amp_dtype == torch.float16,
+        init_scale=_AMP_INITIAL_SCALE,
     )
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
         optimizer,
@@ -372,6 +374,7 @@ def fit_minibatch(
     ] = "max_epochs"
 
     for epoch in range(1, control.epochs + 1):
+        applied_updates_in_epoch = 0
         for batch_indices in _batch_indices(
             observation_count,
             batch_size,
@@ -434,8 +437,10 @@ def fit_minibatch(
             )
             updates += 1
             skipped_updates += int(skipped)
+            applied_updates_in_epoch += int(not skipped)
 
-        scheduler.step()
+        if applied_updates_in_epoch > 0:
+            scheduler.step()
         completed_epochs = epoch
         should_evaluate = (
             epoch % control.evaluation_frequency == 0
@@ -664,6 +669,7 @@ def fit_minibatch_loader(
     scaler = torch.amp.GradScaler(
         next(model.parameters()).device.type,
         enabled=amp_dtype == torch.float16,
+        init_scale=_AMP_INITIAL_SCALE,
     )
     scheduler = torch.optim.lr_scheduler.ExponentialLR(
         optimizer,
@@ -735,6 +741,7 @@ def fit_minibatch_loader(
             )
             epoch_maximum_batch_size = 0
             epoch_batches = 0
+            applied_updates_in_epoch = 0
             for batch in _loader_batches(
                 model,
                 loader,
@@ -801,6 +808,7 @@ def fit_minibatch_loader(
                 )
                 updates += 1
                 skipped_updates += int(skipped)
+                applied_updates_in_epoch += int(not skipped)
 
             epoch_metadata = _LoaderMetadata(
                 observation_count=epoch_observations,
@@ -813,7 +821,8 @@ def fit_minibatch_loader(
                 training_metadata,
                 context=f"training loader epoch {epoch}",
             )
-            scheduler.step()
+            if applied_updates_in_epoch > 0:
+                scheduler.step()
             completed_epochs = epoch
             should_evaluate = (
                 epoch % control.evaluation_frequency == 0

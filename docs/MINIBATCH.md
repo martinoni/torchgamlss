@@ -390,6 +390,14 @@ throughput dtype. Float16 uses dynamic `GradScaler` scaling. Gradient clipping,
 when requested, occurs after gradients are unscaled. Bfloat16 uses autocast
 without loss scaling and requires a CUDA device with bfloat16 support.
 
+The FP16 scaler starts at `256`, rather than Torch's general-purpose default
+of `65536`. Heavy-tailed GAMLSS likelihoods can have finite gradients in the
+hundreds even after weighted-mean normalization; the lower starting scale
+avoids spending several initial batches reducing an unnecessarily large
+scale. Scaling remains dynamic and a genuine overflow still skips the update.
+An epoch containing no applied updates does not advance the learning-rate
+scheduler.
+
 Only Adam update batches run under autocast. Complete training-objective
 evaluations, holdout validation, smooth penalties, and the exact final
 full-gradient diagnostic remain float32. This keeps stopping and reported
@@ -402,6 +410,38 @@ updates. A nonzero skipped count means the float16 scaler detected an overflow,
 skipped that Adam step, and reduced its scale. Loader checkpoints preserve the
 scaler and skipped count, allowing exact epoch-boundary continuation on the
 same CUDA setup.
+
+### Family tail-stability matrix
+
+`tests/test_amp_stability.py` exercises Gamma, negative-binomial type I,
+BCCG, BCT, and BCPE with two parameter regimes per family and response
+quantiles from `0.0001` through `0.9999`. The resulting responses extend from
+`1.79e-6` to `1.22e4`. Each mode starts from the same float32 two-layer shared
+MLP and completes eight epochs over 32 attempted batches.
+
+The deterministic RTX 4090 run on 2026-07-25 produced:
+
+| Family | Response maximum | FP16 relative NLL difference | BF16 relative NLL difference | FP16 skips |
+| --- | ---: | ---: | ---: | ---: |
+| GA | 1,193 | `1.64e-2` | `2.97e-5` | 1 |
+| NBI | 1,214 | `7.01e-7` | `1.04e-5` | 0 |
+| BCCG | 4,226 | `2.36e-6` | `1.41e-5` | 0 |
+| BCT | 12,172 | `4.10e-7` | `1.99e-5` | 0 |
+| BCPE | 8,701 | `4.11e-5` | `4.50e-5` | 0 |
+
+The relative difference is measured against the final FP32 negative
+log-likelihood from the same initialization and batch order. All objectives,
+full gradients, and predicted parameters remained finite. The Gamma FP16 run
+correctly skipped one overflowing update and stayed within the committed 3%
+stress tolerance. This is a stability regression matrix, not a claim that
+such a short fit has converged or that every possible parameter extreme is
+safe.
+
+Run the matrix on a CUDA development machine with:
+
+```bash
+python -m pytest tests/test_amp_stability.py
+```
 
 ## Benchmark command
 
@@ -520,10 +560,10 @@ checkpointing.
 AMP was measured separately on 2026-07-25 with the same RTX 4090 and Torch
 build, 500,000 training rows, 100,000 validation rows, two 64-unit hidden
 layers, batch size 8,192, and 20 deterministic epochs. FP32 took 15.121
-seconds (661 thousand training rows per second), FP16 took 14.831 seconds
-(674 thousand rows per second), and BF16 took 16.444 seconds (608 thousand
+seconds (661 thousand training rows per second), FP16 took 14.817 seconds
+(675 thousand rows per second), and BF16 took 16.444 seconds (608 thousand
 rows per second). All 1,240 FP16 updates were applied without a scaler skip.
-The final training NLL per row was `0.423574`, `0.423530`, and `0.423402`,
+The final training NLL per row was `0.423574`, `0.423597`, and `0.423402`,
 respectively. Peak allocated memory was approximately 31.2 MB in all three
 runs. This small streaming MLP is substantially affected by data generation
 and full-precision diagnostic passes, so its modest FP16 gain and slower BF16

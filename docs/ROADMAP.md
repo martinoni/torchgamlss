@@ -61,3 +61,4 @@ as supported.
 - [x] Streaming `Dataset`/`DataLoader` inputs with exact weighted objectives
 - [x] Atomic checkpoints and exact epoch-boundary resumption
 - [x] CUDA automatic mixed precision for neural mini-batch fitting
+- [x] FP16/BF16 tail-stability matrix for non-normal response families

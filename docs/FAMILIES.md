@@ -112,7 +112,9 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - seeded response simulation, including probability-integral-transform checks
   for BCCG, BCT, and BCPE;
 - response quantiles at seven probabilities for all eight families;
-- weighted RS fits with parameter-specific offsets and formulas.
+- weighted RS fits with parameter-specific offsets and formulas;
+- CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, and BCPE
+  across central and extreme response quantiles.
 
 See [`PARITY.md`](PARITY.md) for package versions and regeneration commands.
 The three-parameter Box-Cox Cole-Green family is documented separately in
