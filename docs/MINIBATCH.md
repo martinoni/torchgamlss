@@ -171,6 +171,101 @@ Column selectors are applied to both frames. When training and validation
 features already exist as separate tensors, use the low-level
 `MiniBatchValidationData` interface instead.
 
+## Streaming datasets and data loaders
+
+`fit_minibatch_loader()` accepts a re-iterable Torch `DataLoader`. A
+map-style `Dataset` can return one observation at a time and use the standard
+Torch collation:
+
+```python
+import torch
+from torch.utils.data import DataLoader, Dataset
+
+
+class DistributionalDataset(Dataset):
+    def __len__(self):
+        return number_of_rows
+
+    def __getitem__(self, index):
+        return {
+            "response": response_for(index),
+            "design_matrices": {
+                "mu": mu_design_row(index),
+                "sigma": sigma_design_row(index),
+            },
+            "weights": weight_for(index),
+            "offsets": {"mu": mu_offset_for(index)},
+            "neural_inputs": {"mu": neural_features_for(index)},
+            "shared_input": shared_features_for(index),
+        }
+
+
+training_loader = DataLoader(
+    DistributionalDataset(),
+    batch_size=8192,
+    shuffle=True,
+    num_workers=4,
+    pin_memory=True,
+    generator=torch.Generator().manual_seed(2026),
+)
+
+result = model.fit_minibatch_loader(
+    training_loader,
+    validation_loader=validation_loader,
+    control=MiniBatchControl(
+        epochs=100,
+        learning_rate=0.01,
+        validation_patience=5,
+    ),
+    non_blocking=True,
+)
+```
+
+Only `response` and `design_matrices` are required. The complete batch schema
+also accepts `weights`, `offsets`, `smooth_covariates`, `neural_inputs`, and
+`shared_input`, with the same nested mappings as `fit_minibatch()`. A custom
+collate function or an `IterableDataset` may instead yield complete
+pre-batched mappings.
+
+The loader owns its batch size, sampling, collation, workers, and
+shuffle generator. Consequently, `MiniBatchControl.batch_size`,
+`MiniBatchControl.shuffle`, and the tensor API's `generator` do not configure
+this path. `MiniBatchFitResult.batch_size` reports the largest observed
+batch.
+
+The implementation makes an initial complete pass to infer the exact
+observation count and total case weight. Every later training, objective, and
+gradient pass must emit the same count and total weight; changes raise an
+error. `drop_last=True` is rejected. A batch may contain only zero-weight
+observations, but the complete loader must have positive total weight.
+
+This preserves the weighted objective without requiring duplicated metadata:
+
+```text
+n / (b sum_i w_i) * sum_{i in batch} w_i l_i(theta).
+```
+
+The usual unbiased-gradient argument requires batches sampled uniformly from
+the loader population. Replacement, importance, distributed, or
+data-dependent samplers can change that argument and are the user's
+responsibility. Torch RNG states exposed by the loader and sampler are
+preserved around diagnostic passes, so changing `evaluation_frequency` does
+not silently change subsequent shuffled index order. Random transformations
+inside persistent worker processes cannot be rewound; datasets used for exact
+diagnostics should emit a stable population on every pass.
+
+CPU batches are transferred to the model device one at a time. Their dtype
+must already match the model. Use `pin_memory=True` in the loader together
+with `non_blocking=True` for asynchronous-capable CPU-to-CUDA transfers.
+Multi-worker `IterableDataset` implementations must shard their stream so
+workers do not duplicate observations.
+
+A validation loader uses the same schema and remains streaming. The training
+and validation loaders must both be finite and re-iterable because objective
+history, early stopping, best-state restoration, and the exact final gradient
+require repeated passes. This is bounded-memory optimization, not a one-pass
+online estimator.
+
 ## CPU, CUDA, and reproducibility
 
 The model, response, designs, offsets, weights, and smooth covariates must be
@@ -255,6 +350,27 @@ python tools/benchmark_shared.py \
   --deterministic
 ```
 
+The streaming benchmark generates deterministic pre-batched observations on
+demand through an `IterableDataset`:
+
+```bash
+python tools/benchmark_dataloader.py \
+  --rows 500000 \
+  --validation-rows 100000 \
+  --features 8 \
+  --hidden-size 64 \
+  --hidden-layers 2 \
+  --batch-size 8192 \
+  --epochs 20 \
+  --minimum-epochs 5 \
+  --evaluation-frequency 1 \
+  --validation-patience 4 \
+  --pin-memory \
+  --device cuda \
+  --dtype float32 \
+  --deterministic
+```
+
 One local CPU measurement on 2026-07-25 used Torch 2.13.0, float32,
 deterministic algorithms, 100,000 rows, eight covariates, batch size 2,048,
 and 20 epochs. It completed in 1.247 seconds, corresponding to approximately
@@ -279,12 +395,21 @@ processed approximately 985 thousand training rows per second, and used
 306 MB of peak allocated CUDA memory. The final weighted mean validation NLL
 was `0.536691`.
 
+The streaming command above was run on the same RTX 4090 and Torch build. It
+completed 20 epochs in 13.807 seconds, or approximately 724 thousand training
+rows per second, while generating all training and validation observations on
+demand. Peak allocated CUDA memory was 31.2 MB. The timing includes the
+initial scan, synthetic generation, holdout evaluation, complete training
+objective at every epoch, final objective, and exact final gradient; it is not
+an update-only throughput figure.
+
 ## Scope
 
-The current implementation bounds model intermediates, including neural
-activations, but the input tensors still reside in memory. Streaming
-`Dataset`/`DataLoader` input is separate future work. RS and CG remain the
-reference paths for strict translation parity; L-BFGS and mini-batch Adam
-support neural predictors. Inference routines may also construct full-data
-information or design objects and should be assessed separately for very
-large samples.
+The tensor and formula paths keep their input tensors resident in memory.
+`fit_minibatch_loader()` additionally bounds input residency to the active
+and prefetched loader batches. Formula parsing itself is not performed
+lazily; an on-disk dataset must produce encoded design rows using a stable
+training schema. RS and CG remain the reference paths for strict translation
+parity; L-BFGS and mini-batch Adam support neural predictors. Inference
+routines may also construct full-data information or design objects and
+should be assessed separately for very large samples.

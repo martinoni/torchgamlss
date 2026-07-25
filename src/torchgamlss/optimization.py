@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from torch import Tensor
+from torch.utils.data import DataLoader
 
 if TYPE_CHECKING:
     from torchgamlss.model import GAMLSS
@@ -137,6 +139,14 @@ class MiniBatchFitResult:
     best_epoch: int | None = None
     best_validation_loss: float | None = None
     restored_best_parameters: bool = False
+
+
+@dataclass(frozen=True)
+class _LoaderMetadata:
+    observation_count: int
+    total_weight: Tensor
+    maximum_batch_size: int
+    batches: int
 
 
 def fit_minibatch(
@@ -488,6 +498,672 @@ def fit_minibatch(
     return result
 
 
+def fit_minibatch_loader(
+    model: GAMLSS,
+    loader: DataLoader[Any],
+    *,
+    validation_loader: DataLoader[Any] | None = None,
+    control: MiniBatchControl | None = None,
+    non_blocking: bool = False,
+) -> MiniBatchFitResult:
+    """Fit from re-iterable DataLoaders without resident full-data tensors.
+
+    Each loader batch must be a mapping with ``response`` and
+    ``design_matrices`` plus any optional tensor inputs accepted by
+    :meth:`GAMLSS.fit_minibatch`. The loader owns batching, sampling, workers,
+    and collation. A deterministic full pass before optimization infers the
+    observation count and total case weight used by the exact weighted
+    objective.
+    """
+    control = control or MiniBatchControl()
+    if not isinstance(control, MiniBatchControl):
+        raise ValueError("control must be a MiniBatchControl")
+    if not isinstance(non_blocking, bool):
+        raise ValueError("non_blocking must be boolean")
+    _validate_loader_configuration(loader, context="training loader")
+    if validation_loader is not None:
+        _validate_loader_configuration(
+            validation_loader,
+            context="validation loader",
+        )
+    if any(
+        term.estimates_smoothing_parameter
+        for terms in model.smooth_terms.values()
+        for term in terms.values()
+    ):
+        raise ValueError(
+            "automatic smoothing-parameter estimation requires fit_rs() or fit_cg()"
+        )
+
+    _, initial_objective, training_metadata = (
+        _loader_objective_values(
+            model,
+            loader,
+            non_blocking=non_blocking,
+        )
+    )
+    objective_history = [initial_objective]
+    evaluation_epochs = [0]
+    validation_history: list[float] = []
+    validation_epochs: list[int] = []
+    best_validation_loss: float | None = None
+    best_epoch: int | None = None
+    validation_metadata: _LoaderMetadata | None = None
+    if validation_loader is not None:
+        initial_validation_nll, validation_metadata = (
+            _loader_likelihood_values(
+                model,
+                validation_loader,
+                non_blocking=non_blocking,
+                context="validation loader",
+            )
+        )
+        best_validation_loss = (
+            initial_validation_nll
+            / float(validation_metadata.total_weight)
+        )
+        validation_history.append(best_validation_loss)
+        validation_epochs.append(0)
+        best_epoch = 0
+
+    parameters = list(model.parameters())
+    optimizer = torch.optim.Adam(
+        parameters,
+        lr=control.learning_rate,
+        betas=control.betas,
+        eps=control.epsilon,
+    )
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(
+        optimizer,
+        gamma=control.learning_rate_decay,
+    )
+    original_training_mode = model.training
+    model.train()
+    stable_evaluations = 0
+    evaluations_without_improvement = 0
+    best_state = (
+        _state_dict_copy(model)
+        if validation_loader is not None
+        and control.restore_best_parameters
+        else None
+    )
+    updates = 0
+    completed_epochs = 0
+    stop_reason: Literal[
+        "loss_change",
+        "validation",
+        "gradient",
+        "max_epochs",
+    ] = "max_epochs"
+
+    try:
+        for epoch in range(1, control.epochs + 1):
+            epoch_observations = 0
+            epoch_total_weight = torch.zeros_like(
+                training_metadata.total_weight
+            )
+            epoch_maximum_batch_size = 0
+            epoch_batches = 0
+            for batch in _loader_batches(
+                model,
+                loader,
+                non_blocking=non_blocking,
+                context="training loader",
+            ):
+                (
+                    batch_response,
+                    batch_designs,
+                    batch_weights,
+                    batch_offsets,
+                    batch_smooth,
+                    batch_neural,
+                    batch_shared,
+                ) = batch
+                batch_observations = batch_response.numel()
+                epoch_observations += batch_observations
+                epoch_total_weight += batch_weights.sum().detach()
+                epoch_maximum_batch_size = max(
+                    epoch_maximum_batch_size,
+                    batch_observations,
+                )
+                epoch_batches += 1
+
+                optimizer.zero_grad(set_to_none=True)
+                batch_nll = _weighted_nll_sum(
+                    model,
+                    batch_response,
+                    batch_designs,
+                    batch_weights,
+                    batch_offsets,
+                    batch_smooth,
+                    batch_neural,
+                    batch_shared,
+                )
+                likelihood_scale = (
+                    training_metadata.observation_count
+                    / batch_observations
+                ) / training_metadata.total_weight
+                loss = likelihood_scale * batch_nll
+                penalty = model.smooth_penalty()
+                if penalty.requires_grad:
+                    loss = (
+                        loss
+                        + 0.5
+                        * penalty
+                        / training_metadata.total_weight
+                    )
+                if not torch.isfinite(loss):
+                    raise FloatingPointError(
+                        "DataLoader mini-batch penalized objective is not finite"
+                    )
+                loss.backward()
+                _validate_gradients(parameters)
+                if control.clip_gradient_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        parameters,
+                        control.clip_gradient_norm,
+                    )
+                optimizer.step()
+                updates += 1
+
+            epoch_metadata = _LoaderMetadata(
+                observation_count=epoch_observations,
+                total_weight=epoch_total_weight,
+                maximum_batch_size=epoch_maximum_batch_size,
+                batches=epoch_batches,
+            )
+            _validate_loader_metadata(
+                epoch_metadata,
+                training_metadata,
+                context=f"training loader epoch {epoch}",
+            )
+            scheduler.step()
+            completed_epochs = epoch
+            should_evaluate = (
+                epoch % control.evaluation_frequency == 0
+                or epoch == control.epochs
+            )
+            if not should_evaluate:
+                continue
+
+            _, objective, _ = _loader_objective_values(
+                model,
+                loader,
+                non_blocking=non_blocking,
+                expected_metadata=training_metadata,
+            )
+            previous = objective_history[-1]
+            relative_change = abs(objective - previous) / max(
+                1.0,
+                abs(previous),
+            )
+            objective_history.append(objective)
+            evaluation_epochs.append(epoch)
+            if validation_loader is None:
+                if relative_change <= control.tolerance_change:
+                    stable_evaluations += 1
+                else:
+                    stable_evaluations = 0
+                if (
+                    epoch >= control.minimum_epochs
+                    and stable_evaluations >= control.patience
+                ):
+                    stop_reason = "loss_change"
+                    break
+            else:
+                assert validation_metadata is not None
+                validation_nll, _ = _loader_likelihood_values(
+                    model,
+                    validation_loader,
+                    non_blocking=non_blocking,
+                    context="validation loader",
+                    expected_metadata=validation_metadata,
+                )
+                validation_loss = (
+                    validation_nll
+                    / float(validation_metadata.total_weight)
+                )
+                validation_history.append(validation_loss)
+                validation_epochs.append(epoch)
+                assert best_validation_loss is not None
+                if (
+                    validation_loss
+                    < best_validation_loss
+                    - control.validation_minimum_delta
+                ):
+                    best_validation_loss = validation_loss
+                    best_epoch = epoch
+                    evaluations_without_improvement = 0
+                    if control.restore_best_parameters:
+                        best_state = _state_dict_copy(model)
+                else:
+                    evaluations_without_improvement += 1
+                if (
+                    epoch >= control.minimum_epochs
+                    and evaluations_without_improvement
+                    >= control.validation_patience
+                ):
+                    stop_reason = "validation"
+                    break
+
+        restored_best_parameters = False
+        if (
+            validation_loader is not None
+            and control.restore_best_parameters
+            and best_state is not None
+            and best_epoch != completed_epochs
+        ):
+            model.load_state_dict(best_state)
+            restored_best_parameters = True
+
+        final_nll, final_objective, _ = _loader_objective_values(
+            model,
+            loader,
+            non_blocking=non_blocking,
+            expected_metadata=training_metadata,
+        )
+        if evaluation_epochs[-1] != completed_epochs:
+            objective_history.append(final_objective)
+            evaluation_epochs.append(completed_epochs)
+        if validation_loader is None:
+            final_validation_nll = None
+        else:
+            assert validation_metadata is not None
+            final_validation_nll, _ = _loader_likelihood_values(
+                model,
+                validation_loader,
+                non_blocking=non_blocking,
+                context="validation loader",
+                expected_metadata=validation_metadata,
+            )
+        gradient_max = _loader_full_gradient_max(
+            model,
+            loader,
+            training_metadata,
+            non_blocking=non_blocking,
+        )
+        if (
+            stop_reason == "max_epochs"
+            and gradient_max <= control.tolerance_gradient
+        ):
+            stop_reason = "gradient"
+
+        return MiniBatchFitResult(
+            negative_log_likelihood=final_nll,
+            penalized_objective=final_objective,
+            epochs=completed_epochs,
+            updates=updates,
+            gradient_max=gradient_max,
+            converged=stop_reason != "max_epochs",
+            stop_reason=stop_reason,
+            objective_history=tuple(objective_history),
+            evaluation_epochs=tuple(evaluation_epochs),
+            batch_size=training_metadata.maximum_batch_size,
+            learning_rate=control.learning_rate,
+            final_learning_rate=float(optimizer.param_groups[0]["lr"]),
+            validation_negative_log_likelihood=final_validation_nll,
+            validation_history=tuple(validation_history),
+            validation_epochs=tuple(validation_epochs),
+            best_epoch=best_epoch,
+            best_validation_loss=best_validation_loss,
+            restored_best_parameters=restored_best_parameters,
+        )
+    finally:
+        model.zero_grad(set_to_none=True)
+        model.train(original_training_mode)
+
+
+def _validate_loader_configuration(
+    loader: DataLoader[Any],
+    *,
+    context: str,
+) -> None:
+    if not isinstance(loader, DataLoader):
+        raise ValueError(f"{context} must be a torch DataLoader")
+    if loader.drop_last:
+        raise ValueError(
+            f"{context} must use drop_last=False for an exact objective"
+        )
+
+
+def _loader_batches(
+    model: GAMLSS,
+    loader: DataLoader[Any],
+    *,
+    non_blocking: bool,
+    context: str,
+) -> Iterator[
+    tuple[
+        Tensor,
+        dict[str, Tensor],
+        Tensor,
+        dict[str, Tensor],
+        dict[str, dict[str, Tensor]],
+        dict[str, Tensor],
+        Tensor | None,
+    ]
+]:
+    model_parameter = next(model.parameters())
+    for batch_index, raw_batch in enumerate(loader, start=1):
+        batch_context = f"{context} batch {batch_index}"
+        if not isinstance(raw_batch, Mapping):
+            raise ValueError(f"{batch_context} must be a mapping")
+        required = {"response", "design_matrices"}
+        optional = {
+            "weights",
+            "offsets",
+            "smooth_covariates",
+            "neural_inputs",
+            "shared_input",
+        }
+        missing = required.difference(raw_batch)
+        extra = set(raw_batch).difference(required | optional)
+        if missing or extra:
+            raise ValueError(
+                f"{batch_context} fields do not match the loader schema: "
+                f"missing={sorted(missing)}, extra={sorted(extra, key=str)}"
+            )
+        moved = {
+            key: _move_loader_structure(
+                value,
+                device=model_parameter.device,
+                non_blocking=non_blocking,
+                context=f"{batch_context} field {key!r}",
+            )
+            for key, value in raw_batch.items()
+        }
+        response = moved["response"]
+        design_matrices = moved["design_matrices"]
+        weights = moved.get("weights")
+        offsets = moved.get("offsets")
+        smooth_covariates = moved.get("smooth_covariates")
+        neural_inputs = moved.get("neural_inputs")
+        shared_input = moved.get("shared_input")
+        if not isinstance(response, Tensor):
+            raise ValueError(f"{batch_context} response must be a tensor")
+        mapping_fields = {
+            "design_matrices": design_matrices,
+            "offsets": offsets,
+            "smooth_covariates": smooth_covariates,
+            "neural_inputs": neural_inputs,
+        }
+        for name, value in mapping_fields.items():
+            if value is not None and not isinstance(value, Mapping):
+                raise ValueError(
+                    f"{batch_context} {name} must be a mapping"
+                )
+        if weights is not None and not isinstance(weights, Tensor):
+            raise ValueError(f"{batch_context} weights must be a tensor")
+        if shared_input is not None and not isinstance(shared_input, Tensor):
+            raise ValueError(
+                f"{batch_context} shared_input must be a tensor"
+            )
+        try:
+            (
+                normalized_weights,
+                normalized_offsets,
+                normalized_smooth_covariates,
+                normalized_neural_inputs,
+                normalized_shared_input,
+            ) = _validate_inputs(
+                model,
+                response,
+                design_matrices,
+                weights,
+                offsets,
+                smooth_covariates,
+                neural_inputs,
+                shared_input,
+                require_positive_weight=False,
+            )
+        except ValueError as error:
+            raise ValueError(f"invalid {batch_context}: {error}") from error
+        yield (
+            response,
+            dict(design_matrices),
+            normalized_weights,
+            normalized_offsets,
+            normalized_smooth_covariates,
+            normalized_neural_inputs,
+            normalized_shared_input,
+        )
+
+
+def _move_loader_structure(
+    value: Any,
+    *,
+    device: torch.device,
+    non_blocking: bool,
+    context: str,
+) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, Tensor):
+        return value.to(device=device, non_blocking=non_blocking)
+    if isinstance(value, Mapping):
+        return {
+            key: _move_loader_structure(
+                nested,
+                device=device,
+                non_blocking=non_blocking,
+                context=f"{context}.{key}",
+            )
+            for key, nested in value.items()
+        }
+    raise ValueError(f"{context} must contain only tensors and mappings")
+
+
+@contextmanager
+def _preserve_loader_rng(loader: DataLoader[Any]) -> Iterator[None]:
+    global_state = torch.random.get_rng_state()
+    generators: list[tuple[torch.Generator, Tensor]] = []
+    seen: set[int] = set()
+    owners = [
+        loader,
+        getattr(loader, "sampler", None),
+        getattr(loader, "batch_sampler", None),
+        getattr(getattr(loader, "batch_sampler", None), "sampler", None),
+    ]
+    for owner in owners:
+        generator = getattr(owner, "generator", None)
+        if isinstance(generator, torch.Generator) and id(generator) not in seen:
+            seen.add(id(generator))
+            generators.append((generator, generator.get_state()))
+    try:
+        yield
+    finally:
+        torch.random.set_rng_state(global_state)
+        for generator, state in generators:
+            generator.set_state(state)
+
+
+def _loader_likelihood_values(
+    model: GAMLSS,
+    loader: DataLoader[Any],
+    *,
+    non_blocking: bool,
+    context: str,
+    expected_metadata: _LoaderMetadata | None = None,
+) -> tuple[float, _LoaderMetadata]:
+    model_parameter = next(model.parameters())
+    training_mode = model.training
+    model.eval()
+    negative_log_likelihood = torch.zeros(
+        (),
+        dtype=model_parameter.dtype,
+        device=model_parameter.device,
+    )
+    observation_count = 0
+    total_weight = torch.zeros_like(negative_log_likelihood)
+    maximum_batch_size = 0
+    batches = 0
+    try:
+        with _preserve_loader_rng(loader), torch.no_grad():
+            for batch in _loader_batches(
+                model,
+                loader,
+                non_blocking=non_blocking,
+                context=context,
+            ):
+                batch_response = batch[0]
+                batch_weights = batch[2]
+                batch_observations = batch_response.numel()
+                observation_count += batch_observations
+                total_weight += batch_weights.sum()
+                maximum_batch_size = max(
+                    maximum_batch_size,
+                    batch_observations,
+                )
+                batches += 1
+                negative_log_likelihood += _weighted_nll_sum(model, *batch)
+    finally:
+        model.train(training_mode)
+    metadata = _LoaderMetadata(
+        observation_count=observation_count,
+        total_weight=total_weight.detach(),
+        maximum_batch_size=maximum_batch_size,
+        batches=batches,
+    )
+    _validate_loader_metadata(
+        metadata,
+        expected_metadata,
+        context=context,
+    )
+    if not torch.isfinite(negative_log_likelihood):
+        raise FloatingPointError(f"{context} negative log-likelihood is not finite")
+    return float(negative_log_likelihood), metadata
+
+
+def _loader_objective_values(
+    model: GAMLSS,
+    loader: DataLoader[Any],
+    *,
+    non_blocking: bool,
+    expected_metadata: _LoaderMetadata | None = None,
+) -> tuple[float, float, _LoaderMetadata]:
+    negative_log_likelihood, metadata = _loader_likelihood_values(
+        model,
+        loader,
+        non_blocking=non_blocking,
+        context="training loader",
+        expected_metadata=expected_metadata,
+    )
+    penalty = float(model.smooth_penalty().detach())
+    penalized = (
+        negative_log_likelihood + 0.5 * penalty
+    ) / float(metadata.total_weight)
+    if not math.isfinite(penalized):
+        raise FloatingPointError("DataLoader full objective is not finite")
+    return negative_log_likelihood, penalized, metadata
+
+
+def _validate_loader_metadata(
+    actual: _LoaderMetadata,
+    expected: _LoaderMetadata | None,
+    *,
+    context: str,
+) -> None:
+    if (
+        actual.batches < 1
+        or actual.observation_count < 1
+        or actual.maximum_batch_size < 1
+    ):
+        raise ValueError(f"{context} must yield at least one non-empty batch")
+    if (
+        not torch.isfinite(actual.total_weight)
+        or actual.total_weight <= 0
+    ):
+        raise ValueError(
+            f"{context} must have a finite positive total case weight"
+        )
+    if expected is None:
+        return
+    if actual.observation_count != expected.observation_count:
+        raise ValueError(
+            f"{context} changed its observation count from "
+            f"{expected.observation_count} to {actual.observation_count}"
+        )
+    low_precision = expected.total_weight.dtype in {
+        torch.float16,
+        torch.bfloat16,
+        torch.float32,
+    }
+    relative_tolerance = 1e-5 if low_precision else 1e-10
+    absolute_tolerance = 1e-6 if low_precision else 1e-12
+    if not math.isclose(
+        float(actual.total_weight),
+        float(expected.total_weight),
+        rel_tol=relative_tolerance,
+        abs_tol=absolute_tolerance,
+    ):
+        raise ValueError(
+            f"{context} changed its total case weight from "
+            f"{float(expected.total_weight)} to "
+            f"{float(actual.total_weight)}"
+        )
+
+
+def _loader_full_gradient_max(
+    model: GAMLSS,
+    loader: DataLoader[Any],
+    metadata: _LoaderMetadata,
+    *,
+    non_blocking: bool,
+) -> float:
+    parameters = list(model.parameters())
+    training_mode = model.training
+    model.eval()
+    model.zero_grad(set_to_none=True)
+    observation_count = 0
+    total_weight = torch.zeros_like(metadata.total_weight)
+    maximum_batch_size = 0
+    batches = 0
+    try:
+        with _preserve_loader_rng(loader):
+            for batch in _loader_batches(
+                model,
+                loader,
+                non_blocking=non_blocking,
+                context="training loader",
+            ):
+                batch_observations = batch[0].numel()
+                observation_count += batch_observations
+                total_weight += batch[2].sum().detach()
+                maximum_batch_size = max(
+                    maximum_batch_size,
+                    batch_observations,
+                )
+                batches += 1
+                (
+                    _weighted_nll_sum(model, *batch)
+                    / metadata.total_weight
+                ).backward()
+        pass_metadata = _LoaderMetadata(
+            observation_count=observation_count,
+            total_weight=total_weight,
+            maximum_batch_size=maximum_batch_size,
+            batches=batches,
+        )
+        _validate_loader_metadata(
+            pass_metadata,
+            metadata,
+            context="training loader final-gradient pass",
+        )
+        penalty = model.smooth_penalty()
+        if penalty.requires_grad:
+            (0.5 * penalty / metadata.total_weight).backward()
+        _validate_gradients(parameters)
+        gradient_max = max(
+            float(parameter.grad.detach().abs().max())
+            for parameter in parameters
+            if parameter.grad is not None
+        )
+    finally:
+        model.zero_grad(set_to_none=True)
+        model.train(training_mode)
+    return gradient_max
+
+
 def _validate_inputs(
     model: GAMLSS,
     response: Tensor,
@@ -497,6 +1173,8 @@ def _validate_inputs(
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None,
     neural_inputs: Mapping[str, Tensor] | None,
     shared_input: Tensor | None,
+    *,
+    require_positive_weight: bool = True,
 ) -> tuple[
     Tensor,
     dict[str, Tensor],
@@ -543,7 +1221,11 @@ def _validate_inputs(
                 "the response dtype and device"
             )
 
-    case_weights = model._validated_weights(response, weights)
+    case_weights = _validated_minibatch_weights(
+        response,
+        weights,
+        require_positive_total=require_positive_weight,
+    )
     offsets = offsets or {}
     extra_offsets = set(offsets).difference(expected_parameters)
     if extra_offsets:
@@ -656,6 +1338,31 @@ def _validate_inputs(
         normalized_neural_inputs,
         normalized_shared_input,
     )
+
+
+def _validated_minibatch_weights(
+    response: Tensor,
+    weights: Tensor | None,
+    *,
+    require_positive_total: bool,
+) -> Tensor:
+    if weights is None:
+        return torch.ones_like(response)
+    if not isinstance(weights, Tensor):
+        raise ValueError("weights must be supplied as a tensor")
+    if weights.device != response.device:
+        raise ValueError("weights must be on the same device as the response")
+    try:
+        observation_weights = torch.broadcast_to(weights, response.shape)
+    except RuntimeError as error:
+        raise ValueError("weights are not broadcastable to the response") from error
+    if not torch.isfinite(observation_weights).all():
+        raise ValueError("weights must be finite")
+    if (observation_weights < 0).any():
+        raise ValueError("weights must be non-negative")
+    if require_positive_total and observation_weights.sum() <= 0:
+        raise ValueError("at least one observation weight must be positive")
+    return observation_weights
 
 
 def _batch_indices(

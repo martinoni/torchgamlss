@@ -37,6 +37,8 @@ The current implementation contains:
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
   objective evaluation, holdout early stopping with best-state restoration,
   and CPU/CUDA benchmarking;
+- re-iterable `Dataset`/`DataLoader` fitting that streams CPU or on-disk
+  batches to the model device without resident full-data tensors;
 - optional Torch modules and a standard MLP predictor for selected
   distribution parameters, composable with linear terms, P-splines, and
   offsets;

@@ -195,9 +195,10 @@ a reproducibility record, not a performance guarantee.
 
 ## Current boundary
 
-The input tensor still resides in memory, although intermediate activations
-are batch-bounded. Streaming `Dataset`/`DataLoader` support, automatic
-orthogonalization of structured and neural terms, and automatic validation
-splitting remain future work. A user-supplied fixed holdout can already drive
-out-of-sample early stopping as described in
+The tensor API keeps the complete shared input resident, although intermediate
+activations are batch-bounded. `fit_minibatch_loader()` can stream that input
+one batch at a time. Automatic orthogonalization of structured and neural
+terms and automatic validation splitting remain future work. A user-supplied
+fixed holdout or validation loader can drive out-of-sample early stopping as
+described in
 [`MINIBATCH.md`](MINIBATCH.md).

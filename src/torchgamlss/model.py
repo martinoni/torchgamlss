@@ -9,6 +9,7 @@ from typing import Any, Literal
 import torch
 from torch import Tensor, nn
 from torch.distributions import Distribution
+from torch.utils.data import DataLoader
 
 from torchgamlss.diagnostics import (
     ModelDiagnostics,
@@ -42,6 +43,9 @@ from torchgamlss.optimization import (
     MiniBatchValidationData,
 )
 from torchgamlss.optimization import fit_minibatch as run_minibatch_fit
+from torchgamlss.optimization import (
+    fit_minibatch_loader as run_minibatch_loader_fit,
+)
 from torchgamlss.quantiles import (
     QuantileBootstrapResult,
     QuantilePrediction,
@@ -1201,6 +1205,23 @@ class GAMLSS(nn.Module):
             validation=validation,
             control=control,
             generator=generator,
+        )
+
+    def fit_minibatch_loader(
+        self,
+        loader: DataLoader[Any],
+        *,
+        validation_loader: DataLoader[Any] | None = None,
+        control: MiniBatchControl | None = None,
+        non_blocking: bool = False,
+    ) -> MiniBatchFitResult:
+        """Fit a fixed-lambda model from re-iterable DataLoaders."""
+        return run_minibatch_loader_fit(
+            self,
+            loader,
+            validation_loader=validation_loader,
+            control=control,
+            non_blocking=non_blocking,
         )
 
     def fit_rs(

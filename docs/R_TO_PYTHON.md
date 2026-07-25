@@ -571,6 +571,12 @@ with an unbiased row-sampled likelihood gradient. RS, CG, and L-BFGS remain
 the numerical-reference paths. A fixed holdout can drive out-of-sample early
 stopping and best-state restoration. See [`MINIBATCH.md`](MINIBATCH.md).
 
+For data that should not reside completely in memory, construct a Torch
+`Dataset` that returns the response, per-parameter design rows, and optional
+weights or predictor inputs. Wrap it in a `DataLoader` and call
+`model.fit_minibatch_loader()`. This streaming path is also a TorchGAMLSS
+extension; R formula encoding is not performed lazily.
+
 ## Low-level tensor API
 
 Advanced Torch workflows can bypass formulas:

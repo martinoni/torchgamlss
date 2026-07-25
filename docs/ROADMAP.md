@@ -58,4 +58,4 @@ as supported.
 - [x] Shared representations across distribution parameters
 - [x] Holdout validation and out-of-sample early stopping
 - [x] CPU/GPU benchmarks and reproducibility guidance
-- [ ] Streaming `Dataset`/`DataLoader` inputs with exact weighted objectives
+- [x] Streaming `Dataset`/`DataLoader` inputs with exact weighted objectives

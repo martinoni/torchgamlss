@@ -196,8 +196,8 @@ reproducibility record, not a performance guarantee.
 
 Exclusive networks use an input mapping owned by one distribution parameter.
 For a single backbone with multiple parameter-specific heads, use
-`SharedMLPPredictor` as described in [`SHARED.md`](SHARED.md). Input tensors
-remain resident in memory; streaming datasets and data loaders are separate
-future work. Fixed holdout validation and out-of-sample early stopping are
-available through the mini-batch API described in
+`SharedMLPPredictor` as described in [`SHARED.md`](SHARED.md). The tensor API
+keeps inputs resident in memory; `fit_minibatch_loader()` can instead stream
+neural features from CPU or an on-disk dataset. Fixed holdout validation and
+out-of-sample early stopping are available through the mini-batch API in
 [`MINIBATCH.md`](MINIBATCH.md).
