@@ -9,7 +9,7 @@ from scipy.stats import gamma as scipy_gamma
 from torch import Tensor
 from torch.distributions import Gamma as TorchGamma
 
-from torchgamlss.families._scipy import scipy_cdf
+from torchgamlss.families._scipy import scipy_call, scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogLink
 
@@ -64,6 +64,24 @@ class Gamma(Family):
             response,
             shape,
             zeros,
+            scale,
+        )
+
+    def _quantile(
+        self,
+        probabilities: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        mu = parameters["mu"]
+        sigma = parameters["sigma"]
+        shape = sigma.square().reciprocal()
+        scale = mu * sigma.square()
+        return scipy_call(
+            probabilities,
+            scipy_gamma.ppf,
+            probabilities,
+            shape,
+            torch.zeros_like(probabilities),
             scale,
         )
 

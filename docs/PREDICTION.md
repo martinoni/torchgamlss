@@ -22,6 +22,65 @@ sigma = parameters["sigma"]
 The inverse link for each parameter is applied. For example, `Gamma()` returns
 its positive mean `mu` and coefficient of variation `sigma`.
 
+## Conditional quantiles and centiles
+
+Quantile prediction combines every fitted distribution parameter and returns
+values on the response scale:
+
+```python
+quantiles = model.predict_quantiles_data(
+    new_data,
+    probabilities=[0.03, 0.1, 0.5, 0.9, 0.97],
+)
+
+quantiles.probabilities
+quantiles.centiles
+quantiles.quantiles
+median = quantiles.at(0.5)
+quantile_table = quantiles.to_dataframe()
+```
+
+The equivalent percentage-oriented API is:
+
+```python
+centiles = model.predict_centiles_data(
+    new_data,
+    centiles=[3, 10, 50, 90, 97],
+)
+```
+
+Both return `QuantilePrediction`. Its `quantiles` tensor has one row per
+observation and one column per requested probability. For count families,
+the values are integer-valued discrete quantiles.
+
+Formula-free workflows use `predict_quantiles()` and `predict_centiles()`
+with the same design matrices, offsets, and smooth covariates as `predict()`.
+Quantile inversion is not differentiable for every family because SciPy is
+used where Torch has no reliable inverse CDF.
+
+For response-scale uncertainty with repeated model and lambda estimation:
+
+```python
+bootstrap = model.centile_bootstrap_data(
+    training_data,
+    centiles=[3, 10, 50, 90, 97],
+    weights="weight",
+    new_data=new_data,
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)
+
+bootstrap.standard_errors
+bootstrap.confidence_intervals
+all_centiles_band = bootstrap.simultaneous_confidence_bands()
+per_centile_bands = bootstrap.simultaneous_confidence_bands(joint=False)
+```
+
+The default band uses one max-|t| critical value over every prediction row and
+every requested centile. `joint=False` calibrates a separate simultaneous
+band over the prediction rows for each centile.
+
 ## Link scale
 
 Pass `type="link"` to obtain each complete additive predictor:
@@ -78,8 +137,8 @@ All parameter design matrices must:
 
 Every configured smooth term must receive its named covariate. P-splines reuse
 the fitted knots, coefficients, and smoothing parameter, so no basis is
-re-estimated for new observations. Prediction remains differentiable and can
-participate in Torch autograd computations.
+re-estimated for new observations. Parameter, link, and term prediction remain
+differentiable and can participate in Torch autograd computations.
 
 The stored P-spline basis can evaluate covariates outside the training range,
 but exact parity with the natural-spline extrapolation helper used by R has

@@ -10,12 +10,12 @@ import torch
 from torch import Tensor
 
 
-def scipy_cdf(
+def scipy_call(
     reference: Tensor,
     function: Callable[..., Any],
     *arguments: Tensor,
 ) -> Tensor:
-    """Evaluate a SciPy CDF and restore the reference dtype and device."""
+    """Evaluate a SciPy function and restore the reference dtype and device."""
     numpy_arguments = [
         argument.detach().to(device="cpu", dtype=torch.float64).numpy()
         for argument in arguments
@@ -26,3 +26,12 @@ def scipy_cdf(
         dtype=reference.dtype,
         device=reference.device,
     )
+
+
+def scipy_cdf(
+    reference: Tensor,
+    function: Callable[..., Any],
+    *arguments: Tensor,
+) -> Tensor:
+    """Evaluate a SciPy CDF and restore the reference dtype and device."""
+    return scipy_call(reference, function, *arguments)

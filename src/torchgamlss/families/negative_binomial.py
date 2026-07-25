@@ -9,7 +9,7 @@ from scipy.stats import nbinom as scipy_negative_binomial
 from torch import Tensor
 from torch.distributions import NegativeBinomial as TorchNegativeBinomial
 
-from torchgamlss.families._scipy import scipy_cdf
+from torchgamlss.families._scipy import scipy_call, scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogLink
 
@@ -62,6 +62,21 @@ class NegativeBinomial(Family):
             response,
             total_count,
             success_probability,
+        )
+
+    def _quantile(
+        self,
+        probabilities: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        mu = parameters["mu"]
+        sigma = parameters["sigma"]
+        return scipy_call(
+            probabilities,
+            scipy_negative_binomial.ppf,
+            probabilities,
+            sigma.reciprocal(),
+            (1.0 + mu * sigma).reciprocal(),
         )
 
     def score(

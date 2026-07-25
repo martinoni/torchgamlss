@@ -129,6 +129,22 @@ For several formula smooths, call `smooth_joint_bootstrap_data()` instead to
 obtain cross-term covariance and max-|t| bands calibrated over all selected
 curves.
 
+Response-scale centiles reuse every stored parameter formula:
+
+```python
+centiles = model.predict_centiles_data(
+    new_data,
+    centiles=[3, 10, 50, 90, 97],
+)
+centile_bootstrap = model.centile_bootstrap_data(
+    data,
+    centiles=[3, 10, 50, 90, 97],
+    new_data=new_data,
+    replicates=999,
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
 The original fitted model is not changed. See
 [`INFERENCE.md`](INFERENCE.md) for intervals, failed-refit accounting, and the
 fixed-design interpretation.

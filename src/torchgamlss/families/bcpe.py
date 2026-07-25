@@ -6,10 +6,12 @@ import math
 from collections.abc import Mapping
 
 import torch
+from scipy.special import gammaincinv
 from torch import Tensor
 from torch.distributions import Distribution, Gamma, constraints
 from torch.distributions.utils import broadcast_all
 
+from torchgamlss.families._scipy import scipy_call
 from torchgamlss.families.base import Family
 from torchgamlss.families.bccg import (
     _box_cox_response,
@@ -140,6 +142,26 @@ def _power_exponential_cdf(value: Tensor, tau: Tensor) -> Tensor:
         gamma_argument,
     )
     return 0.5 * (1.0 + gamma_probability * value.sign())
+
+
+def _power_exponential_icdf(probability: Tensor, tau: Tensor) -> Tensor:
+    probability, tau = torch.broadcast_tensors(probability, tau)
+    gamma_probability = (2.0 * probability - 1.0).abs()
+    gamma_quantile = scipy_call(
+        probability,
+        gammaincinv,
+        tau.reciprocal(),
+        gamma_probability,
+    )
+    magnitude = (
+        torch.exp(_log_scale(tau))
+        * (2.0 * gamma_quantile).pow(tau.reciprocal())
+    )
+    return torch.where(
+        probability < 0.5,
+        -magnitude,
+        torch.where(probability > 0.5, magnitude, torch.zeros_like(magnitude)),
+    )
 
 
 def _sample_power_exponential(tau: Tensor) -> Tensor:
@@ -273,6 +295,32 @@ class BoxCoxPowerExponentialDistribution(Distribution):
             unadjusted / denominator,
         )
         return probabilities.clamp(0.0, 1.0)
+
+    def icdf(self, probability: Tensor) -> Tensor:
+        mu, sigma, nu, tau, probability = torch.broadcast_tensors(
+            self.mu,
+            self.sigma,
+            self.nu,
+            self.tau,
+            probability,
+        )
+        zero_nu = nu == 0
+        safe_absolute_nu = torch.where(zero_nu, torch.ones_like(nu), nu.abs())
+        boundary = 1.0 / (sigma * safe_absolute_nu)
+        boundary = torch.where(
+            zero_nu,
+            torch.full_like(boundary, float("inf")),
+            boundary,
+        )
+        normalizer = _power_exponential_cdf(boundary, tau)
+        lower_truncation = _power_exponential_cdf(-boundary, tau)
+        latent_probability = torch.where(
+            nu > 0,
+            lower_truncation + probability * normalizer,
+            torch.where(nu < 0, probability * normalizer, probability),
+        )
+        score = _power_exponential_icdf(latent_probability, tau)
+        return _box_cox_response(score, mu, sigma, nu)
 
 
 class BoxCoxPowerExponential(Family):

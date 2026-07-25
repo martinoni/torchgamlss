@@ -6,10 +6,12 @@ import math
 from collections.abc import Mapping
 
 import torch
+from scipy.stats import t as scipy_student_t
 from torch import Tensor
 from torch.distributions import Distribution, StudentT, constraints
 from torch.distributions.utils import broadcast_all
 
+from torchgamlss.families._scipy import scipy_call
 from torchgamlss.families.base import Family
 from torchgamlss.families.bccg import (
     BoxCoxColeGreenDistribution,
@@ -270,6 +272,37 @@ class BoxCoxTDistribution(Distribution):
             unadjusted / denominator,
         )
         return probabilities.clamp(0.0, 1.0)
+
+    def icdf(self, probability: Tensor) -> Tensor:
+        mu, sigma, nu, tau, probability = torch.broadcast_tensors(
+            self.mu,
+            self.sigma,
+            self.nu,
+            self.tau,
+            probability,
+        )
+        zero_nu = nu == 0
+        safe_absolute_nu = torch.where(zero_nu, torch.ones_like(nu), nu.abs())
+        boundary = 1.0 / (sigma * safe_absolute_nu)
+        boundary = torch.where(
+            zero_nu,
+            torch.full_like(boundary, float("inf")),
+            boundary,
+        )
+        normalizer = _student_t_cdf(boundary, tau)
+        lower_truncation = _student_t_cdf(-boundary, tau)
+        latent_probability = torch.where(
+            nu > 0,
+            lower_truncation + probability * normalizer,
+            torch.where(nu < 0, probability * normalizer, probability),
+        )
+        score = scipy_call(
+            probability,
+            scipy_student_t.ppf,
+            latent_probability,
+            tau,
+        )
+        return _box_cox_response(score, mu, sigma, nu)
 
 
 class BoxCoxT(Family):

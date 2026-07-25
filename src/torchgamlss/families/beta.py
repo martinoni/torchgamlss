@@ -9,7 +9,7 @@ from scipy.stats import beta as scipy_beta
 from torch import Tensor
 from torch.distributions import Beta as TorchBeta
 
-from torchgamlss.families._scipy import scipy_cdf
+from torchgamlss.families._scipy import scipy_call, scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogitLink
 
@@ -63,6 +63,22 @@ class Beta(Family):
             response,
             concentration1,
             concentration0,
+        )
+
+    def _quantile(
+        self,
+        probabilities: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        mu = parameters["mu"]
+        sigma = parameters["sigma"]
+        precision = sigma.square().reciprocal() - 1.0
+        return scipy_call(
+            probabilities,
+            scipy_beta.ppf,
+            probabilities,
+            mu * precision,
+            (1.0 - mu) * precision,
         )
 
     def score(

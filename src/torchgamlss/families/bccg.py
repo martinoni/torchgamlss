@@ -195,6 +195,34 @@ class BoxCoxColeGreenDistribution(Distribution):
         )
         return probabilities.clamp(0.0, 1.0)
 
+    def icdf(self, probability: Tensor) -> Tensor:
+        mu, sigma, nu, probability = torch.broadcast_tensors(
+            self.mu,
+            self.sigma,
+            self.nu,
+            probability,
+        )
+        zero_nu = nu == 0
+        safe_absolute_nu = torch.where(zero_nu, torch.ones_like(nu), nu.abs())
+        boundary = 1.0 / (sigma * safe_absolute_nu)
+        boundary = torch.where(
+            zero_nu,
+            torch.full_like(boundary, float("inf")),
+            boundary,
+        )
+        normalizer = torch.special.ndtr(boundary)
+        lower_truncation = torch.special.ndtr(-boundary)
+        latent_probability = torch.where(
+            nu > 0,
+            lower_truncation + probability * normalizer,
+            torch.where(nu < 0, probability * normalizer, probability),
+        )
+        finfo = torch.finfo(probability.dtype)
+        score = torch.special.ndtri(
+            latent_probability.clamp(finfo.tiny, 1.0 - finfo.eps)
+        )
+        return _box_cox_response(score, mu, sigma, nu)
+
 
 class BoxCoxColeGreen(Family):
     """Box-Cox Cole-Green family compatible with ``gamlss.dist::BCCG``."""

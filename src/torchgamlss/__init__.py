@@ -33,6 +33,11 @@ from torchgamlss.inference import (
 )
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
 from torchgamlss.model import GAMLSS, FitResult, TermContributions
+from torchgamlss.quantiles import (
+    QuantileBandResult,
+    QuantileBootstrapResult,
+    QuantilePrediction,
+)
 from torchgamlss.smooths import PSpline, SmoothTerm
 
 __all__ = [
@@ -61,6 +66,9 @@ __all__ = [
     "Normal",
     "Poisson",
     "PSpline",
+    "QuantileBandResult",
+    "QuantileBootstrapResult",
+    "QuantilePrediction",
     "RSControl",
     "RSFitResult",
     "SmoothBootstrapResult",

@@ -170,6 +170,12 @@ one parameter. TorchGAMLSS exposes the corresponding full within-curve
 covariance and simulation-based simultaneous band as extensions; the R
 fixtures directly validate the covariance diagonal.
 
+Quantile fixtures compare seven probabilities for all eight families directly
+against `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`, `qBCCG`, `qBCT`, and `qBCPE`.
+Discrete tests additionally verify the smallest-count CDF definition.
+Response-scale centile bootstrap bands are a simulate-and-refit extension over
+these parity-tested quantiles.
+
 Parametric smooth bootstrap is also an extension: it composes the
 parity-tested family distributions, RS/CG fitting, and smoothing-selection
 updates rather than reproducing a single `gamlss` return value. Seeded

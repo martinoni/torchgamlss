@@ -43,7 +43,8 @@ The current implementation contains:
 - target-EDF P-splines compatible with `pb(x, df=...)`;
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with
   `pb.control(method=...)`;
-- prediction on response, link, and additive-term scales, including new data;
+- prediction on response, link, additive-term, quantile, and centile scales,
+  including new data;
 - joint full-Hessian covariance, standard errors, Wald tests, and confidence
   intervals for parametric models and conditional linear-coefficient inference
   with fitted smooth contributions held fixed;
@@ -54,6 +55,8 @@ The current implementation contains:
   joint bands that refit RS or CG and repeat smoothing-parameter selection;
 - aligned bootstrap inference for smooth contrasts, differences, derivatives,
   extrema, and linearly interpolated crossings;
+- fixed-design bootstrap intervals and joint bands for response-scale centile
+  curves, including repeated smoothing selection;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
 - continuous and randomized discrete normal quantile residuals;
 - Wilkinson formulas for tabular fitting and prediction, including categorical

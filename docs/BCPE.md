@@ -95,7 +95,9 @@ Committed R fixtures cover:
 - the `nu = 0` log-power-exponential and `tau = 2` BCCG limits;
 - a converged weighted RS fit with parameter-specific formulas and offsets;
 - prediction, full-Hessian inference, likelihood criteria, and quantile
-  residuals.
+  residuals;
+- response sampling and conditional quantiles matched to `qBCPE`.
 
-Sampling and inverse-CDF methods are not yet exposed by the custom Torch
-distribution.
+The custom Torch distribution exposes `sample()` and `icdf()`. Quantile
+evaluation inverts the truncated power-exponential probability through the
+regularized-gamma representation.

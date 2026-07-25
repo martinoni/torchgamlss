@@ -80,6 +80,25 @@ respectively.
 This interface is used by the fixed-design parametric smooth bootstrap
 described in [`INFERENCE.md`](INFERENCE.md).
 
+## Conditional quantiles
+
+Every public family implements
+`family.quantile(probabilities, parameters)`. Parameter tensors are
+broadcast, and the returned final dimension follows the probability vector.
+Quantiles are numerically matched to `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`,
+`qBCCG`, `qBCT`, and `qBCPE`.
+
+For Poisson and NBI, the result uses the usual left-continuous discrete
+definition: the smallest non-negative integer whose CDF is at least the
+requested probability. Continuous-family quantiles invert the corresponding
+CDF on the response support.
+
+The public model methods `predict_quantiles*()` and `predict_centiles*()` use
+this interface after combining every fitted distribution parameter. SciPy
+inverse distribution functions are used where Torch lacks a reliable
+`icdf`; returned tensors preserve the model dtype and device, but quantile
+inversion is not currently an autograd path for all families.
+
 ## Verified behavior
 
 Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
@@ -92,6 +111,7 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - response-support validation;
 - seeded response simulation, including probability-integral-transform checks
   for BCCG, BCT, and BCPE;
+- response quantiles at seven probabilities for all eight families;
 - weighted RS fits with parameter-specific offsets and formulas.
 
 See [`PARITY.md`](PARITY.md) for package versions and regeneration commands.

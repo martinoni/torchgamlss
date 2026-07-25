@@ -9,7 +9,7 @@ from scipy.stats import poisson as scipy_poisson
 from torch import Tensor
 from torch.distributions import Poisson as TorchPoisson
 
-from torchgamlss.families._scipy import scipy_cdf
+from torchgamlss.families._scipy import scipy_call, scipy_cdf
 from torchgamlss.families.base import Family
 from torchgamlss.links import Link, LogLink
 
@@ -42,6 +42,18 @@ class Poisson(Family):
             scipy_poisson.cdf,
             response,
             mu,
+        )
+
+    def _quantile(
+        self,
+        probabilities: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        return scipy_call(
+            probabilities,
+            scipy_poisson.ppf,
+            probabilities,
+            parameters["mu"],
         )
 
     def score(

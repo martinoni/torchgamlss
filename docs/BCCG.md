@@ -78,8 +78,9 @@ Committed R fixtures cover:
 - the exact lognormal limit at `nu = 0`;
 - a weighted RS fit with parameter-specific predictors and offsets;
 - formula prediction, full-Hessian Wald inference, likelihood criteria, and
-  quantile residuals.
+  quantile residuals;
+- response sampling and conditional quantiles matched to `qBCCG`.
 
-Sampling and an inverse-CDF method are not yet exposed by the custom Torch
-distribution. The implemented surface covers fitting, prediction, inference,
-and post-fit diagnostics.
+The custom Torch distribution exposes both `sample()` and `icdf()`. The
+inverse maps a truncated-normal probability through the Box-Cox response
+transformation.

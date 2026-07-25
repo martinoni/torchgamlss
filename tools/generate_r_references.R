@@ -128,6 +128,9 @@ model_diagnostics_path <- file.path(
 quantile_residual_path <- file.path(
   reference_dir, "quantile_residual_reference.csv"
 )
+quantile_prediction_path <- file.path(
+  reference_dir, "quantile_prediction_reference.csv"
+)
 
 family <- NO()
 cases <- read.csv(cases_path)
@@ -581,6 +584,106 @@ quantile_residual_reference <- do.call(rbind, list(
       bcpe_cases$sigma,
       bcpe_cases$nu,
       bcpe_cases$tau
+    )
+  )
+))
+
+quantile_probabilities <- c(0.03, 0.1, 0.25, 0.5, 0.75, 0.9, 0.97)
+
+quantile_prediction_rows <- function(family_code, cases, quantiles) {
+  probability_count <- length(quantile_probabilities)
+  data.frame(
+    family = family_code,
+    case_index = rep(seq_len(nrow(cases)) - 1, each = probability_count),
+    probability = rep(quantile_probabilities, times = nrow(cases)),
+    quantile = quantiles,
+    gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+  )
+}
+
+expanded_probabilities <- function(cases) {
+  rep(quantile_probabilities, times = nrow(cases))
+}
+
+expanded_parameter <- function(values) {
+  rep(values, each = length(quantile_probabilities))
+}
+
+quantile_prediction_reference <- do.call(rbind, list(
+  quantile_prediction_rows(
+    "NO",
+    cases,
+    qNO(
+      expanded_probabilities(cases),
+      expanded_parameter(cases$mu),
+      expanded_parameter(cases$sigma)
+    )
+  ),
+  quantile_prediction_rows(
+    "GA",
+    ga_cases,
+    qGA(
+      expanded_probabilities(ga_cases),
+      expanded_parameter(ga_cases$mu),
+      expanded_parameter(ga_cases$sigma)
+    )
+  ),
+  quantile_prediction_rows(
+    "PO",
+    po_cases,
+    qPO(
+      expanded_probabilities(po_cases),
+      expanded_parameter(po_cases$mu)
+    )
+  ),
+  quantile_prediction_rows(
+    "NBI",
+    nbi_cases,
+    qNBI(
+      expanded_probabilities(nbi_cases),
+      expanded_parameter(nbi_cases$mu),
+      expanded_parameter(nbi_cases$sigma)
+    )
+  ),
+  quantile_prediction_rows(
+    "BE",
+    be_cases,
+    qBE(
+      expanded_probabilities(be_cases),
+      expanded_parameter(be_cases$mu),
+      expanded_parameter(be_cases$sigma)
+    )
+  ),
+  quantile_prediction_rows(
+    "BCCG",
+    bccg_cases,
+    qBCCG(
+      expanded_probabilities(bccg_cases),
+      expanded_parameter(bccg_cases$mu),
+      expanded_parameter(bccg_cases$sigma),
+      expanded_parameter(bccg_cases$nu)
+    )
+  ),
+  quantile_prediction_rows(
+    "BCT",
+    bct_cases,
+    qBCT(
+      expanded_probabilities(bct_cases),
+      expanded_parameter(bct_cases$mu),
+      expanded_parameter(bct_cases$sigma),
+      expanded_parameter(bct_cases$nu),
+      expanded_parameter(bct_cases$tau)
+    )
+  ),
+  quantile_prediction_rows(
+    "BCPE",
+    bcpe_cases,
+    qBCPE(
+      expanded_probabilities(bcpe_cases),
+      expanded_parameter(bcpe_cases$mu),
+      expanded_parameter(bcpe_cases$sigma),
+      expanded_parameter(bcpe_cases$nu),
+      expanded_parameter(bcpe_cases$tau)
     )
   )
 ))
@@ -2095,6 +2198,11 @@ if (check_only) {
     quantile_residual_path,
     tolerance = 1e-12
   )
+  assert_close(
+    quantile_prediction_reference,
+    quantile_prediction_path,
+    tolerance = 1e-10
+  )
   message("R reference parity checks passed")
 } else {
   options(digits = 17, scipen = 999)
@@ -2238,5 +2346,6 @@ if (check_only) {
   write_csv_lf(smooth_inference_reference_data, smooth_inference_path)
   write_csv_lf(model_diagnostics_reference, model_diagnostics_path)
   write_csv_lf(quantile_residual_reference, quantile_residual_path)
+  write_csv_lf(quantile_prediction_reference, quantile_prediction_path)
   message("Wrote R reference fixtures to ", reference_dir)
 }

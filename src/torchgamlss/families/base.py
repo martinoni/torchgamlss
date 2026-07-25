@@ -99,6 +99,104 @@ class Family(ABC):
                 f"CDF is not implemented for the {self.name} family"
             ) from error
 
+    def quantile(
+        self,
+        probabilities: Any,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate conditional response quantiles.
+
+        The final tensor dimension follows the supplied probability vector;
+        preceding dimensions follow the broadcast family-parameter shape.
+        """
+        missing = set(self.parameter_names).difference(parameters)
+        extra = set(parameters).difference(self.parameter_names)
+        if missing or extra:
+            raise ValueError(
+                "Quantile parameters do not match family parameters: "
+                f"missing={sorted(missing)}, extra={sorted(extra)}"
+            )
+        reference = parameters[self.parameter_names[0]]
+        if not isinstance(reference, Tensor) or not reference.is_floating_point():
+            raise ValueError("quantile parameters must be floating-point tensors")
+        parameter_values = []
+        for parameter in self.parameter_names:
+            value = parameters[parameter]
+            if (
+                not isinstance(value, Tensor)
+                or value.dtype != reference.dtype
+                or value.device != reference.device
+                or not torch.isfinite(value).all()
+            ):
+                raise ValueError(
+                    "quantile parameters must be finite tensors with one "
+                    "common dtype and device"
+                )
+            parameter_values.append(value)
+        try:
+            broadcast_values = torch.broadcast_tensors(*parameter_values)
+        except RuntimeError as error:
+            raise ValueError(
+                "quantile parameters cannot be broadcast together"
+            ) from error
+
+        try:
+            probability_tensor = torch.as_tensor(
+                probabilities,
+                dtype=reference.dtype,
+                device=reference.device,
+            )
+        except (TypeError, ValueError, RuntimeError) as error:
+            raise ValueError(
+                "probabilities must be convertible to a floating-point tensor"
+            ) from error
+        if (
+            probability_tensor.ndim != 1
+            or probability_tensor.numel() < 1
+            or not torch.isfinite(probability_tensor).all()
+            or not torch.all((probability_tensor > 0) & (probability_tensor < 1))
+        ):
+            raise ValueError(
+                "probabilities must be a non-empty finite vector strictly "
+                "between zero and one"
+            )
+
+        batch_shape = broadcast_values[0].shape
+        output_shape = batch_shape + (probability_tensor.numel(),)
+        expanded_probabilities = probability_tensor.reshape(
+            (1,) * len(batch_shape) + (probability_tensor.numel(),)
+        ).expand(output_shape)
+        expanded_parameters = {
+            parameter: value.unsqueeze(-1).expand(output_shape)
+            for parameter, value in zip(
+                self.parameter_names,
+                broadcast_values,
+                strict=True,
+            )
+        }
+        quantiles = self._quantile(
+            expanded_probabilities,
+            expanded_parameters,
+        )
+        if quantiles.shape != output_shape or not torch.isfinite(quantiles).all():
+            raise RuntimeError(
+                f"{self.name} quantile evaluation returned invalid values"
+            )
+        return quantiles
+
+    def _quantile(
+        self,
+        probabilities: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate already validated and broadcast quantile inputs."""
+        try:
+            return self.distribution(parameters).icdf(probabilities)
+        except NotImplementedError as error:
+            raise NotImplementedError(
+                f"quantiles are not implemented for the {self.name} family"
+            ) from error
+
     @abstractmethod
     def score(
         self, response: Tensor, parameters: Mapping[str, Tensor]

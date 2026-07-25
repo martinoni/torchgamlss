@@ -34,6 +34,14 @@ from torchgamlss.inference import (
     smooth_term_bootstrap,
     smooth_term_inference,
 )
+from torchgamlss.quantiles import (
+    QuantileBootstrapResult,
+    QuantilePrediction,
+    centiles_to_probabilities,
+)
+from torchgamlss.quantiles import (
+    quantile_bootstrap as run_quantile_bootstrap,
+)
 from torchgamlss.smooths import PSpline, SmoothTerm
 
 
@@ -274,6 +282,108 @@ class GAMLSS(nn.Module):
             prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             type=type,
+        )
+
+    def predict_quantiles_data(
+        self,
+        data: Any,
+        *,
+        probabilities: Any,
+    ) -> QuantilePrediction:
+        """Predict conditional response quantiles from formula data."""
+        prepared = self.prepare_formula_data(data)
+        return self.predict_quantiles(
+            prepared.design_matrices,
+            probabilities=probabilities,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+        )
+
+    def predict_centiles_data(
+        self,
+        data: Any,
+        *,
+        centiles: Any,
+    ) -> QuantilePrediction:
+        """Predict conditional response quantiles from centile percentages."""
+        probabilities = centiles_to_probabilities(
+            centiles,
+            next(self.parameters()),
+        )
+        return self.predict_quantiles_data(
+            data,
+            probabilities=probabilities,
+        )
+
+    def quantile_bootstrap_data(
+        self,
+        data: Any,
+        *,
+        probabilities: Any,
+        weights: Any = None,
+        new_data: Any = None,
+        replicates: int = 999,
+        max_attempts: int | None = None,
+        algorithm: Literal["rs", "cg"] = "rs",
+        control: RSControl | CGControl | None = None,
+        confidence_level: float = 0.95,
+        generator: torch.Generator | None = None,
+    ) -> QuantileBootstrapResult:
+        """Bootstrap conditional response quantiles from formula data."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        evaluation = (
+            prepared if new_data is None else self.prepare_formula_data(new_data)
+        )
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        return self.quantile_bootstrap(
+            prepared.response,
+            prepared.design_matrices,
+            probabilities=probabilities,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            evaluation_design_matrices=evaluation.design_matrices,
+            evaluation_offsets=evaluation.offsets,
+            evaluation_smooth_covariates=evaluation.smooth_covariates,
+            replicates=replicates,
+            max_attempts=max_attempts,
+            algorithm=algorithm,
+            control=control,
+            confidence_level=confidence_level,
+            generator=generator,
+        )
+
+    def centile_bootstrap_data(
+        self,
+        data: Any,
+        *,
+        centiles: Any,
+        weights: Any = None,
+        new_data: Any = None,
+        replicates: int = 999,
+        max_attempts: int | None = None,
+        algorithm: Literal["rs", "cg"] = "rs",
+        control: RSControl | CGControl | None = None,
+        confidence_level: float = 0.95,
+        generator: torch.Generator | None = None,
+    ) -> QuantileBootstrapResult:
+        """Bootstrap conditional quantiles from centile percentages."""
+        probabilities = centiles_to_probabilities(
+            centiles,
+            next(self.parameters()),
+        )
+        return self.quantile_bootstrap_data(
+            data,
+            probabilities=probabilities,
+            weights=weights,
+            new_data=new_data,
+            replicates=replicates,
+            max_attempts=max_attempts,
+            algorithm=algorithm,
+            control=control,
+            confidence_level=confidence_level,
+            generator=generator,
         )
 
     def inference_data(
@@ -564,6 +674,58 @@ class GAMLSS(nn.Module):
         if type == "response":
             return self.family.parameters_from_predictors(predictors)
         raise AssertionError("unreachable prediction type")
+
+    def predict_quantiles(
+        self,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        probabilities: Any,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    ) -> QuantilePrediction:
+        """Predict conditional response quantiles."""
+        parameters = self.predict(
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+            type="response",
+        )
+        assert isinstance(parameters, dict)
+        quantiles = self.family.quantile(
+            probabilities,
+            parameters,
+        )
+        model_parameter = next(self.parameters())
+        probability_tensor = torch.as_tensor(
+            probabilities,
+            dtype=model_parameter.dtype,
+            device=model_parameter.device,
+        )
+        return QuantilePrediction(
+            family=self.family.name,
+            probabilities=probability_tensor.detach().clone(),
+            quantiles=quantiles,
+        )
+
+    def predict_centiles(
+        self,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        centiles: Any,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    ) -> QuantilePrediction:
+        """Predict conditional response quantiles from percentages."""
+        probabilities = centiles_to_probabilities(
+            centiles,
+            next(self.parameters()),
+        )
+        return self.predict_quantiles(
+            design_matrices,
+            probabilities=probabilities,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+        )
 
     def distribution(
         self,
@@ -859,6 +1021,47 @@ class GAMLSS(nn.Module):
             generator=generator,
         )
         return SmoothJointBootstrapResult._from_curves(curves)
+
+    def quantile_bootstrap(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        probabilities: Any,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        evaluation_design_matrices: Mapping[str, Tensor] | None = None,
+        evaluation_offsets: Mapping[str, Tensor] | None = None,
+        evaluation_smooth_covariates: (
+            Mapping[str, Mapping[str, Tensor]] | None
+        ) = None,
+        replicates: int = 999,
+        max_attempts: int | None = None,
+        algorithm: Literal["rs", "cg"] = "rs",
+        control: RSControl | CGControl | None = None,
+        confidence_level: float = 0.95,
+        generator: torch.Generator | None = None,
+    ) -> QuantileBootstrapResult:
+        """Bootstrap conditional response quantiles with complete refits."""
+        return run_quantile_bootstrap(
+            self,
+            response,
+            design_matrices,
+            probabilities=probabilities,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            evaluation_design_matrices=evaluation_design_matrices,
+            evaluation_offsets=evaluation_offsets,
+            evaluation_smooth_covariates=evaluation_smooth_covariates,
+            replicates=replicates,
+            max_attempts=max_attempts,
+            algorithm=algorithm,
+            control=control,
+            confidence_level=confidence_level,
+            generator=generator,
+        )
 
     def diagnostics(
         self,

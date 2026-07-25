@@ -103,6 +103,29 @@ family = Normal(mu_link=LogLink())
 The public link classes are `IdentityLink`, `LogLink`, `LogitLink`, and
 `InverseLink`.
 
+## Quantile and centile prediction
+
+R family quantile functions map to one common model API:
+
+| R | TorchGAMLSS |
+| --- | --- |
+| `qNO()`, `qGA()`, `qBE()` | `model.predict_quantiles_data(...)` |
+| `qPO()`, `qNBI()` | `model.predict_quantiles_data(...)` |
+| `qBCCG()`, `qBCT()`, `qBCPE()` | `model.predict_quantiles_data(...)` |
+| centile percentages | `model.predict_centiles_data(...)` |
+
+```python
+centiles = model.predict_centiles_data(
+    new_data,
+    centiles=[3, 10, 50, 90, 97],
+)
+```
+
+Unlike calling one R `q*` function with manually assembled parameters, the
+model method predicts every parameter from its own formula before evaluating
+the response quantile. `centile_bootstrap_data()` repeats the complete RS or
+CG fit and returns pointwise intervals plus max-|t| bands.
+
 ## Parameter formulas
 
 R gives the first parameter the main formula and uses named formula arguments

@@ -48,6 +48,7 @@ as supported.
 - [x] Parametric smooth bootstrap and bands with repeated lambda selection
 - [x] Joint bootstrap covariance and simultaneous multi-smooth bands
 - [x] Bootstrap smooth contrasts, derivatives, extrema, and crossings
+- [x] Response-scale quantile/centile prediction and bootstrap bands
 - [ ] Analytic joint covariance for penalized smooth terms
 
 ## Phase 4 — Torch-native extensions

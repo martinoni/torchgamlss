@@ -255,6 +255,56 @@ If a smoothing parameter is fixed in the formula, its bootstrap variance is
 zero and its correlations are undefined (`nan`). Its covariance with every
 other smoothing parameter is zero up to numerical precision.
 
+## Response quantile and centile bootstrap
+
+`quantile_bootstrap_data()` and `centile_bootstrap_data()` propagate the
+complete fitted distribution into response-scale quantile curves:
+
+```python
+centile_bootstrap = model.centile_bootstrap_data(
+    data,
+    centiles=[3, 10, 50, 90, 97],
+    weights="weight",
+    new_data=new_data,
+    replicates=999,
+    algorithm="rs",
+    generator=torch.Generator().manual_seed(2026),
+)
+
+centile_bootstrap.estimates
+centile_bootstrap.bootstrap_estimates
+centile_bootstrap.standard_errors
+centile_bootstrap.confidence_intervals
+centile_bootstrap.covariance_matrix
+centile_table = centile_bootstrap.to_dataframe()
+```
+
+Each successful replicate simulates one training response, refits every
+distribution parameter, repeats configured smoothing selection, predicts all
+parameters on `new_data`, and then evaluates the requested family quantiles.
+Thus a BCT or BCPE centile curve, for example, propagates the joint variation
+of `mu`, `sigma`, `nu`, and `tau`.
+
+Pointwise limits are percentile bootstrap intervals. The flattened
+`covariance_matrix` follows prediction row first and probability second.
+`at(0.5)` selects the stored median intervals.
+
+```python
+joint_band = centile_bootstrap.simultaneous_confidence_bands()
+per_centile = centile_bootstrap.simultaneous_confidence_bands(joint=False)
+```
+
+The default band controls max-|t| over all prediction rows and all requested
+centiles with one critical value. With `joint=False`, each centile receives
+its own critical value and simultaneous band over prediction rows. Neither
+choice changes the already computed bootstrap replicates.
+
+For Poisson and NBI, fitted quantiles and bootstrap replicates are
+integer-valued. Percentile interpolation and max-|t| construction can produce
+non-integer interval limits. Some fitted coordinates can have zero bootstrap
+variance; a simultaneous band is unavailable if an entire requested band has
+no positive variance.
+
 ## Derived smooth functionals
 
 The joint result can transform all aligned replicates without another model
