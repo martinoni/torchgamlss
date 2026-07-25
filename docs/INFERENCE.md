@@ -156,6 +156,70 @@ R does not currently provide `se.fit=TRUE` for new data through
 the stored basis. Keep new covariates inside the fitted range when strict
 extrapolation compatibility matters.
 
+## Joint analytic penalized covariance
+
+`smooth_joint_inference_data()` constructs one fixed-`lambda` covariance for
+every linear and spline coefficient in the model:
+
+```python
+joint = model.smooth_joint_inference_data(
+    data,
+    weights="weight",
+    new_data=new_data,
+)
+
+joint.term_order
+joint.coefficient_names
+joint.coefficient_covariance_matrix
+joint.covariance_matrix
+mu_sigma_covariance = joint.covariance_block(
+    ("mu", "x"),
+    ("sigma", "z"),
+)
+joint_table = joint.to_dataframe()
+```
+
+The calculation stacks the reduced design matrices for all distribution
+parameters. For parameter pair `a, b`, the corresponding information block is
+
+```text
+Z_a' W_ab Z_b,
+```
+
+where `W_ab` is the expected link-scale information, including case weights.
+The diagonal spline blocks additionally contain `lambda D'D`. Each spline is
+restricted to the complement of its unpenalized null-function space under its
+parameter's working weights. This is the joint form of the null-space
+subtraction used by `gamlss.pb()`: it removes the non-identifiable allocation
+of a polynomial component between the linear and smooth predictors without
+discarding cross-smooth or cross-parameter covariance.
+
+`coefficient_covariance_matrix` follows `coefficient_names`;
+`linear_coefficient_slices` and `smooth_coefficient_slices` locate its blocks.
+The full-coordinate spline covariance is positive semidefinite rather than
+positive definite because the identifiability constraints have zero variance.
+`covariance_matrix` follows `term_order`, `term_slices`, and `point_labels`.
+
+Joint Gaussian max-|t| bands use the same covariance factor:
+
+```python
+joint_band = joint.simultaneous_confidence_bands(
+    simulations=10_000,
+    generator=torch.Generator().manual_seed(2026),
+)
+mu_x_band = joint_band["mu"]["x"]
+```
+
+One critical value is calibrated over every selected curve point. Pass
+`terms=[("mu", "x")]` to restrict the family. The calculation is analytic
+conditional on the fitted smoothing parameters; only the Gaussian critical
+value is simulated. R fixtures independently reconstruct the complete
+penalized `pb()` coefficient and curve covariance for the one-smooth Normal
+case, in which the result reduces to the standard `gamlss.pb()` variance.
+
+Use the parametric bootstrap below when uncertainty from estimating or
+selecting `lambda` must also be propagated.
+
 ## Parametric bootstrap with lambda reselection
 
 `smooth_bootstrap_data()` propagates response, coefficient, and
@@ -429,12 +493,12 @@ or non-identifiable designs are rejected rather than pseudo-inverted.
 Parametric inference supports models fitted by RS, CG, or Torch L-BFGS.
 Conditional linear-coefficient inference supports additive RS and CG fits.
 Conditional smooth inference and within-curve simultaneous bands support
-additive RS and CG fits. Parametric bootstrap smooth inference supports both
+additive RS and CG fits. Fixed-lambda analytic inference provides joint
+covariance across linear coefficients, spline coefficients, smooth terms, and
+distribution parameters. Parametric-bootstrap smooth inference supports both
 algorithms, repeats smoothing-parameter selection, and provides empirical
 joint covariance, simultaneous bands, and derived-curve functionals across
-fitted smooths. A closed-form analytic joint covariance across spline
-coefficients, different smooth terms, and smoothing parameters remains
-separate future work.
+fitted smooths.
 
 The Hessian and conditional smooth calculations are local Wald
 approximations. They do not replace profile likelihood or robust sandwich

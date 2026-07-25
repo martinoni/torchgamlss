@@ -122,6 +122,12 @@ conditional_inference_covariance_path <- file.path(
 smooth_inference_path <- file.path(
   reference_dir, "smooth_inference_reference.csv"
 )
+joint_smooth_coefficient_covariance_path <- file.path(
+  reference_dir, "joint_smooth_coefficient_covariance_reference.csv"
+)
+joint_smooth_curve_covariance_path <- file.path(
+  reference_dir, "joint_smooth_curve_covariance_reference.csv"
+)
 model_diagnostics_path <- file.path(
   reference_dir, "model_diagnostics_reference.csv"
 )
@@ -1932,6 +1938,141 @@ smooth_inference_reference_data <- do.call(
 )
 rownames(smooth_inference_reference_data) <- NULL
 
+right_null_space <- function(matrix, expected_nullity, context) {
+  decomposition <- svd(matrix, nu = 0, nv = ncol(matrix))
+  tolerance <- max(dim(matrix)) * .Machine$double.eps * max(decomposition$d)
+  rank <- sum(decomposition$d > tolerance)
+  nullity <- ncol(matrix) - rank
+  if (nullity != expected_nullity) {
+    stop(
+      context, " has nullity ", nullity,
+      ", expected ", expected_nullity
+    )
+  }
+  decomposition$v[, seq.int(rank + 1, ncol(matrix)), drop = FALSE]
+}
+
+joint_pb_normal_covariance_reference <- function(fit, case_name) {
+  smooth_variable <- model.frame(fit)[[2]]
+  basis <- as.matrix(attr(smooth_variable, "X"))
+  penalty <- as.matrix(attr(smooth_variable, "D"))
+  coefficient_count <- ncol(basis)
+  penalty_nullity <- coefficient_count - nrow(penalty)
+  penalty_null_space <- right_null_space(
+    penalty,
+    penalty_nullity,
+    "R pb penalty"
+  )
+  case_weights <- fit$weights
+  sigma <- fitted(fit, what = "sigma")
+  mu_information <- case_weights / sigma^2
+  sigma_information <- 2 * case_weights
+  null_functions <- basis %*% penalty_null_space
+  constraints <- t(null_functions) %*% (mu_information * basis)
+  transform <- right_null_space(
+    constraints,
+    coefficient_count - penalty_nullity,
+    "R pb identifiability constraints"
+  )
+
+  mu_linear_design <- as.matrix(fit$mu.x)
+  sigma_linear_design <- as.matrix(fit$sigma.x)
+  mu_reduced_design <- cbind(mu_linear_design, basis %*% transform)
+  mu_reduced_count <- ncol(mu_reduced_design)
+  sigma_reduced_count <- ncol(sigma_linear_design)
+  reduced_count <- mu_reduced_count + sigma_reduced_count
+  information <- matrix(0, nrow = reduced_count, ncol = reduced_count)
+  information[
+    seq_len(mu_reduced_count),
+    seq_len(mu_reduced_count)
+  ] <- t(mu_reduced_design) %*% (mu_information * mu_reduced_design)
+  sigma_indices <- seq.int(mu_reduced_count + 1, reduced_count)
+  information[sigma_indices, sigma_indices] <-
+    t(sigma_linear_design) %*% (
+      sigma_information * sigma_linear_design
+    )
+  smooth_reduced_indices <- seq.int(
+    ncol(mu_linear_design) + 1,
+    mu_reduced_count
+  )
+  information[
+    smooth_reduced_indices,
+    smooth_reduced_indices
+  ] <- information[
+    smooth_reduced_indices,
+    smooth_reduced_indices
+  ] + unname(getSmo(fit, parameter = "mu", which = 1)$lambda) *
+    t(transform) %*% t(penalty) %*% penalty %*% transform
+  reduced_covariance <- solve(information)
+
+  full_count <- ncol(mu_linear_design) +
+    coefficient_count +
+    ncol(sigma_linear_design)
+  coefficient_transform <- matrix(
+    0,
+    nrow = full_count,
+    ncol = reduced_count
+  )
+  mu_linear_indices <- seq_len(ncol(mu_linear_design))
+  coefficient_transform[mu_linear_indices, mu_linear_indices] <-
+    diag(ncol(mu_linear_design))
+  full_smooth_indices <- seq.int(
+    ncol(mu_linear_design) + 1,
+    ncol(mu_linear_design) + coefficient_count
+  )
+  coefficient_transform[
+    full_smooth_indices,
+    smooth_reduced_indices
+  ] <- transform
+  full_sigma_indices <- seq.int(
+    ncol(mu_linear_design) + coefficient_count + 1,
+    full_count
+  )
+  coefficient_transform[full_sigma_indices, sigma_indices] <-
+    diag(ncol(sigma_linear_design))
+  coefficient_covariance <- coefficient_transform %*%
+    reduced_covariance %*%
+    t(coefficient_transform)
+  curve_covariance <- basis %*%
+    coefficient_covariance[full_smooth_indices, full_smooth_indices] %*%
+    t(basis)
+
+  coefficient_grid <- expand.grid(
+    row_index = seq_len(full_count) - 1,
+    column_index = seq_len(full_count) - 1
+  )
+  curve_grid <- expand.grid(
+    row_index = seq_len(nrow(basis)) - 1,
+    column_index = seq_len(nrow(basis)) - 1
+  )
+  list(
+    coefficient = data.frame(
+      case = case_name,
+      coefficient_grid,
+      covariance = as.vector(coefficient_covariance),
+      gamlss_version = as.character(packageVersion("gamlss")),
+      gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+    ),
+    curve = data.frame(
+      case = case_name,
+      parameter = "mu",
+      term = "x",
+      curve_grid,
+      covariance = as.vector(curve_covariance),
+      gamlss_version = as.character(packageVersion("gamlss")),
+      gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+    )
+  )
+}
+
+joint_smooth_reference <- joint_pb_normal_covariance_reference(
+  pb_fit,
+  "NO_FIXED_RS"
+)
+joint_smooth_coefficient_covariance_reference <-
+  joint_smooth_reference$coefficient
+joint_smooth_curve_covariance_reference <- joint_smooth_reference$curve
+
 assert_close <- function(
   actual,
   expected_path,
@@ -2189,6 +2330,16 @@ if (check_only) {
     tolerance = 1e-6
   )
   assert_close(
+    joint_smooth_coefficient_covariance_reference,
+    joint_smooth_coefficient_covariance_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    joint_smooth_curve_covariance_reference,
+    joint_smooth_curve_covariance_path,
+    tolerance = 1e-10
+  )
+  assert_close(
     model_diagnostics_reference,
     model_diagnostics_path,
     tolerance = 1e-6
@@ -2344,6 +2495,14 @@ if (check_only) {
     conditional_inference_covariance_path
   )
   write_csv_lf(smooth_inference_reference_data, smooth_inference_path)
+  write_csv_lf(
+    joint_smooth_coefficient_covariance_reference,
+    joint_smooth_coefficient_covariance_path
+  )
+  write_csv_lf(
+    joint_smooth_curve_covariance_reference,
+    joint_smooth_curve_covariance_path
+  )
   write_csv_lf(model_diagnostics_reference, model_diagnostics_path)
   write_csv_lf(quantile_residual_reference, quantile_residual_path)
   write_csv_lf(quantile_prediction_reference, quantile_prediction_path)

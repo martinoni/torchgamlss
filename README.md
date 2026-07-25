@@ -51,6 +51,8 @@ The current implementation contains:
 - R-compatible pointwise standard errors, full within-curve covariance, and
   simulation-based simultaneous confidence bands for fitted P-spline
   contributions, conditional on their smoothing parameters;
+- analytic fixed-lambda joint covariance across linear coefficients, spline
+  coefficients, smooth terms, and distribution parameters;
 - fixed-design parametric bootstrap intervals, cross-smooth covariance, and
   joint bands that refit RS or CG and repeat smoothing-parameter selection;
 - aligned bootstrap inference for smooth contrasts, differences, derivatives,
@@ -68,10 +70,11 @@ The current implementation contains:
 
 Broader graphical diagnostics are planned work. The L-BFGS path remains a
 Torch-native numerical baseline and requires fixed smoothing parameters.
-Analytic joint uncertainty across different smooth terms and estimated
-smoothing parameters is not yet supported. Aligned parametric bootstrap
-refits provide empirical cross-term and cross-parameter covariance, including
-the dependence among reselected smoothing parameters.
+Analytic fixed-lambda inference now provides joint covariance across linear
+coefficients, penalized spline coefficients, smooth terms, and distribution
+parameters. Aligned parametric-bootstrap refits additionally propagate
+smoothing-parameter selection and retain the dependence among reselected
+parameters.
 
 ## Development
 

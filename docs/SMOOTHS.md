@@ -120,6 +120,30 @@ band.confidence_intervals
 The generator makes the Monte Carlo result reproducible. Neither kind of
 interval accounts for uncertainty from estimating the smoothing parameter.
 
+For covariance across several smooth terms or distribution parameters, use
+the joint fixed-lambda information matrix:
+
+```python
+joint_analytic = model.smooth_joint_inference(
+    y,
+    design,
+    smooth_covariates=smooth_covariates,
+)
+
+cross_covariance = joint_analytic.covariance_block(
+    ("mu", "x"),
+    ("sigma", "z"),
+)
+coefficient_covariance = joint_analytic.coefficient_covariance_matrix
+joint_analytic_bands = joint_analytic.simultaneous_confidence_bands(
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+This calculation includes linear and constrained spline coefficients in one
+expected penalized-information system. It retains cross-term and
+cross-parameter covariance while conditioning on the fitted lambdas.
+
 To propagate that uncertainty, simulate from the fitted distribution and
 repeat the complete fit, including lambda selection:
 
@@ -230,10 +254,11 @@ gcv_term = PSpline.from_data(
 - Only one-dimensional, equally spaced P-spline bases are available.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
-  additive models. Parametric bootstrap refits additionally propagate lambda
-  selection uncertainty and provide empirical covariance and simultaneous
-  bands across several curves. An analytic joint covariance across smooth
-  terms and smoothing parameters is not yet available.
+  additive models. Analytic fixed-lambda inference provides joint covariance
+  across linear coefficients, spline coefficients, smooth terms, and
+  distribution parameters. Parametric-bootstrap refits additionally propagate
+  lambda-selection uncertainty and provide empirical covariance and
+  simultaneous bands across several curves.
 - Automatic smoothing selection is available through `fit_rs()` and
   `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

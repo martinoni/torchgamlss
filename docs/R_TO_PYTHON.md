@@ -435,8 +435,8 @@ inference = model.inference_data(
 
 This corresponds to `vcov.gamlss(type="all")` and
 `summary.gamlss(type="vcov")`. It excludes uncertainty in the spline
-coefficients and smoothing parameters; full joint penalized-term inference is
-not yet implemented.
+coefficients and smoothing parameters. Use the separate joint penalized API
+below for fixed-lambda spline-coefficient uncertainty.
 
 Pointwise uncertainty for the smooth contributions corresponds to the
 `se.fit=TRUE` term calculation in R:
@@ -463,6 +463,31 @@ band = mu_x.simultaneous_confidence_band(
 The covariance and band extend the same fixed-`lambda` calculation; R parity
 fixtures directly compare its diagonal (the pointwise variances). The band
 does not account for smoothing-parameter selection uncertainty.
+
+For several smooths, TorchGAMLSS can assemble the complete expected
+penalized-information system:
+
+```python
+joint_analytic = model.smooth_joint_inference_data(
+    data,
+    weights="weight",
+    new_data=new_data,
+)
+cross_covariance = joint_analytic.covariance_block(
+    ("mu", "x"),
+    ("sigma", "z"),
+)
+coefficient_covariance = joint_analytic.coefficient_covariance_matrix
+joint_bands = joint_analytic.simultaneous_confidence_bands(
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+Spline null spaces are constrained using the same working-weight
+identifiability implied by `gamlss.pb()`. For one Normal `pb()` term, R
+fixtures reconstruct and compare the complete coefficient and curve
+covariance. Cross-smooth and cross-parameter blocks are a TorchGAMLSS
+extension, conditional on the fitted lambdas.
 
 TorchGAMLSS provides an explicit parametric-bootstrap path when lambda
 selection uncertainty matters:
@@ -569,7 +594,6 @@ Important exclusions include:
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;
-- analytic joint covariance across different penalized smooth terms;
 - the complete R plotting and diagnostic ecosystem;
 - exact P-spline extrapolation parity outside the training range.
 

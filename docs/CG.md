@@ -111,6 +111,7 @@ Committed R fixtures cover:
   outer iteration counts;
 - one-parameter fitting and control validation.
 
-CG supports the current one-dimensional `pb()` implementation and all
-smoothing-selection modes described in [`SMOOTHS.md`](SMOOTHS.md). Broader
-smooth families and joint uncertainty for penalized terms remain future work.
+CG supports the current one-dimensional `pb()` implementation, all
+smoothing-selection modes described in [`SMOOTHS.md`](SMOOTHS.md), and
+fixed-lambda analytic joint covariance for penalized terms. Broader smooth
+families remain future work.

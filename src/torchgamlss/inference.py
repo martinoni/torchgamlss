@@ -393,6 +393,250 @@ class SmoothJointBandResult:
 
 
 @dataclass(frozen=True)
+class SmoothJointInferenceBand:
+    """Gaussian max-|t| bands from the joint penalized covariance."""
+
+    bands: Mapping[str, Mapping[str, SmoothSimultaneousBand]]
+    term_order: tuple[tuple[str, str], ...]
+    critical_value: float
+    confidence_level: float
+    simulations: int
+    method: str = "analytic_joint_gaussian_max_t"
+
+    def __getitem__(self, parameter: str) -> Mapping[str, SmoothSimultaneousBand]:
+        """Return all jointly calibrated bands for one parameter."""
+        return self.bands[parameter]
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return all jointly calibrated bands in long format."""
+        frames = []
+        for parameter, term in self.term_order:
+            frame = self.bands[parameter][term].to_dataframe()
+            frame.insert(0, "term", term)
+            frame.insert(0, "parameter", parameter)
+            frames.append(frame)
+        return pd.concat(frames, ignore_index=True)
+
+
+@dataclass(frozen=True)
+class SmoothJointInferenceResult:
+    """Fixed-lambda analytic covariance for all fitted smooth terms."""
+
+    curves: Mapping[str, Mapping[str, SmoothInferenceResult]]
+    term_order: tuple[tuple[str, str], ...]
+    coefficient_names: tuple[str, ...]
+    linear_coefficient_slices: Mapping[str, slice]
+    smooth_coefficient_slices: Mapping[tuple[str, str], slice]
+    coefficient_estimates: Tensor
+    _coefficient_covariance_root: Tensor = field(repr=False)
+    confidence_level: float
+
+    def __getitem__(self, parameter: str) -> Mapping[str, SmoothInferenceResult]:
+        """Return all analytic smooth results for one parameter."""
+        return self.curves[parameter]
+
+    @property
+    def coefficient_covariance_matrix(self) -> Tensor:
+        """Return covariance for linear and constrained spline coefficients."""
+        root = self._coefficient_covariance_root
+        return root @ root.mT
+
+    @property
+    def coefficient_standard_errors(self) -> Tensor:
+        """Return coefficient standard errors in ``coefficient_names`` order."""
+        return self._coefficient_covariance_root.square().sum(dim=1).sqrt()
+
+    @property
+    def coefficient_correlation_matrix(self) -> Tensor:
+        """Return correlations among linear and spline coefficients."""
+        covariance = self.coefficient_covariance_matrix
+        standard_errors = self.coefficient_standard_errors
+        scale = standard_errors.unsqueeze(1) * standard_errors.unsqueeze(0)
+        safe_scale = scale.clamp_min(torch.finfo(scale.dtype).tiny)
+        correlation = (covariance / safe_scale).clamp(-1.0, 1.0)
+        diagonal = torch.arange(standard_errors.numel(), device=covariance.device)
+        correlation[diagonal, diagonal] = (standard_errors > 0).to(covariance.dtype)
+        return correlation
+
+    @property
+    def term_slices(self) -> dict[tuple[str, str], slice]:
+        """Return slices locating each curve in stacked point-wise results."""
+        result = {}
+        start = 0
+        for key in self.term_order:
+            curve = self._curve(key)
+            stop = start + curve.estimates.numel()
+            result[key] = slice(start, stop)
+            start = stop
+        return result
+
+    @property
+    def point_labels(self) -> tuple[tuple[str, str, int], ...]:
+        """Return parameter, term, and point-index labels for stacked results."""
+        return tuple(
+            (parameter, term, index)
+            for parameter, term in self.term_order
+            for index in range(self.curves[parameter][term].estimates.numel())
+        )
+
+    @property
+    def estimates(self) -> Tensor:
+        """Return fitted curves concatenated in ``term_order``."""
+        return torch.cat([self._curve(key).estimates for key in self.term_order])
+
+    @property
+    def _covariance_root(self) -> Tensor:
+        return torch.cat(
+            [self._curve(key)._covariance_root for key in self.term_order],
+            dim=0,
+        )
+
+    @property
+    def covariance_matrix(self) -> Tensor:
+        """Return analytic covariance over every stacked curve point."""
+        root = self._covariance_root
+        return root @ root.mT
+
+    @property
+    def standard_errors(self) -> Tensor:
+        """Return stacked curve standard errors."""
+        return self._covariance_root.square().sum(dim=1).sqrt()
+
+    @property
+    def correlation_matrix(self) -> Tensor:
+        """Return correlations over every stacked curve point."""
+        covariance = self.covariance_matrix
+        standard_errors = self.standard_errors
+        scale = standard_errors.unsqueeze(1) * standard_errors.unsqueeze(0)
+        safe_scale = scale.clamp_min(torch.finfo(scale.dtype).tiny)
+        correlation = (covariance / safe_scale).clamp(-1.0, 1.0)
+        diagonal = torch.arange(standard_errors.numel(), device=covariance.device)
+        correlation[diagonal, diagonal] = (standard_errors > 0).to(covariance.dtype)
+        return correlation
+
+    def covariance_block(
+        self,
+        first: tuple[str, str],
+        second: tuple[str, str],
+    ) -> Tensor:
+        """Return analytic cross-covariance between two fitted curves."""
+        first_root = self._curve(first)._covariance_root
+        second_root = self._curve(second)._covariance_root
+        return first_root @ second_root.mT
+
+    def simultaneous_confidence_bands(
+        self,
+        terms: Sequence[tuple[str, str]] | None = None,
+        *,
+        simulations: int = 10_000,
+        generator: torch.Generator | None = None,
+    ) -> SmoothJointInferenceBand:
+        """Return Gaussian max-|t| bands calibrated over selected smooths."""
+        if (
+            isinstance(simulations, bool)
+            or not isinstance(simulations, int)
+            or simulations < 100
+        ):
+            raise ValueError("simulations must be an integer of at least 100")
+        selected_terms = self._selected_terms(terms)
+        selected_roots = torch.cat(
+            [self._curve(key)._covariance_root for key in selected_terms],
+            dim=0,
+        )
+        selected_standard_errors = selected_roots.square().sum(dim=1).sqrt()
+        positive = selected_standard_errors > 0
+        if selected_roots.shape[1] == 0 or not positive.any():
+            raise RuntimeError(
+                "selected analytic curves have no positive variance; "
+                "joint simultaneous bands are unavailable"
+            )
+        standardized_root = (
+            selected_roots[positive]
+            / selected_standard_errors[positive].unsqueeze(1)
+        )
+        maximum_statistics = torch.empty(
+            simulations,
+            dtype=selected_roots.dtype,
+            device=selected_roots.device,
+        )
+        batch_size = 1_024
+        for start in range(0, simulations, batch_size):
+            stop = min(start + batch_size, simulations)
+            normal_draws = torch.randn(
+                (stop - start, selected_roots.shape[1]),
+                dtype=selected_roots.dtype,
+                device=selected_roots.device,
+                generator=generator,
+            )
+            maximum_statistics[start:stop] = (
+                normal_draws @ standardized_root.mT
+            ).abs().amax(dim=1)
+        critical_value = float(
+            torch.quantile(maximum_statistics, self.confidence_level)
+        )
+
+        bands: dict[str, dict[str, SmoothSimultaneousBand]] = {}
+        for parameter, term in selected_terms:
+            curve = self.curves[parameter][term]
+            confidence_intervals = torch.column_stack(
+                (
+                    curve.estimates - critical_value * curve.standard_errors,
+                    curve.estimates + critical_value * curve.standard_errors,
+                )
+            )
+            bands.setdefault(parameter, {})[term] = SmoothSimultaneousBand(
+                parameter=parameter,
+                term=term,
+                covariate=curve.covariate,
+                estimates=curve.estimates,
+                confidence_intervals=confidence_intervals,
+                critical_value=critical_value,
+                confidence_level=self.confidence_level,
+                simulations=simulations,
+                method="analytic_joint_gaussian_max_t",
+            )
+        return SmoothJointInferenceBand(
+            bands=bands,
+            term_order=selected_terms,
+            critical_value=critical_value,
+            confidence_level=self.confidence_level,
+            simulations=simulations,
+        )
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Return all pointwise analytic curve summaries in long format."""
+        frames = []
+        for parameter, term in self.term_order:
+            frame = self.curves[parameter][term].to_dataframe()
+            frame.insert(0, "term", term)
+            frame.insert(0, "parameter", parameter)
+            frames.append(frame)
+        return pd.concat(frames, ignore_index=True)
+
+    def _curve(self, key: tuple[str, str]) -> SmoothInferenceResult:
+        try:
+            parameter, term = key
+            return self.curves[parameter][term]
+        except (KeyError, TypeError, ValueError) as error:
+            raise KeyError(f"unknown smooth term {key!r}") from error
+
+    def _selected_terms(
+        self,
+        terms: Sequence[tuple[str, str]] | None,
+    ) -> tuple[tuple[str, str], ...]:
+        if terms is None:
+            return self.term_order
+        if not terms:
+            raise ValueError("terms must contain at least one smooth term")
+        if len(set(terms)) != len(terms):
+            raise ValueError("terms must not contain duplicates")
+        selected_terms = tuple(terms)
+        for key in selected_terms:
+            self._curve(key)
+        return selected_terms
+
+
+@dataclass(frozen=True)
 class SmoothJointBootstrapResult:
     """Aligned parametric-bootstrap inference for several fitted smooths."""
 
@@ -1042,6 +1286,321 @@ def smooth_term_inference(
     return results
 
 
+def smooth_joint_inference(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    evaluation_smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    confidence_level: float = 0.95,
+) -> SmoothJointInferenceResult:
+    """Infer all smooth curves from one fixed-lambda penalized information matrix.
+
+    The expected information contains every distribution parameter, linear
+    coefficient, and spline coefficient. Each spline is constrained to be
+    orthogonal to its unpenalized null-function space under the parameter's
+    working weights. This removes the same linear component subtracted by
+    ``gamlss.pb()`` while retaining cross-term and cross-parameter covariance.
+    """
+    if not math.isfinite(confidence_level) or not 0.0 < confidence_level < 1.0:
+        raise ValueError("confidence_level must be finite and between zero and one")
+    if not any(
+        model.smooth_terms[parameter] for parameter in model.family.parameter_names
+    ):
+        raise ValueError("joint smooth inference requires at least one smooth term")
+
+    model_parameter = next(model.parameters())
+    if (
+        response.ndim != 1
+        or response.numel() < 1
+        or response.dtype != model_parameter.dtype
+        or response.device != model_parameter.device
+        or not torch.isfinite(response).all()
+    ):
+        raise ValueError(
+            "inference response must be a non-empty finite vector matching "
+            "the model dtype and device"
+        )
+
+    contributions = model.term_contributions(
+        design_matrices,
+        offsets,
+        smooth_covariates=smooth_covariates,
+    )
+    if any(
+        contribution.offset.numel() != response.numel()
+        for contribution in contributions.values()
+    ):
+        raise ValueError("design matrices must have one row per response")
+    case_weights = model._validated_weights(response, weights)
+    predictors = {
+        parameter: contribution.total.detach()
+        for parameter, contribution in contributions.items()
+    }
+    parameters = model.family.parameters_from_predictors(predictors)
+    second_derivatives = model.family.expected_second_derivatives(response, parameters)
+    link_derivatives = {
+        parameter: model.family.links[parameter]
+        .inverse_derivative(predictors[parameter])
+        .reciprocal()
+        for parameter in model.family.parameter_names
+    }
+    diagonal_information = {
+        parameter: -second_derivatives[(parameter, parameter)]
+        / link_derivatives[parameter].square()
+        for parameter in model.family.parameter_names
+    }
+    if any(
+        not information.isfinite().all() or (information <= 0).any()
+        for information in diagonal_information.values()
+    ):
+        raise RuntimeError(
+            "joint smooth diagonal working information must be finite and positive"
+        )
+
+    evaluation_covariates = (
+        smooth_covariates
+        if evaluation_smooth_covariates is None
+        else evaluation_smooth_covariates
+    )
+    _validate_smooth_evaluation_mapping(model, evaluation_covariates)
+
+    full_transform_blocks: list[Tensor] = []
+    parameter_designs: dict[str, Tensor] = {}
+    parameter_reduced_slices: dict[str, slice] = {}
+    linear_full_slices: dict[str, slice] = {}
+    smooth_full_slices: dict[tuple[str, str], slice] = {}
+    smooth_reduced_slices: dict[tuple[str, str], slice] = {}
+    smooth_transforms: dict[tuple[str, str], Tensor] = {}
+    full_estimates: list[Tensor] = []
+    coefficient_names: list[str] = []
+    full_start = 0
+    reduced_start = 0
+
+    for parameter in model.family.parameter_names:
+        design = design_matrices[parameter]
+        parameter_parts = [design]
+        linear_count = design.shape[1]
+        linear_full_slices[parameter] = slice(
+            full_start,
+            full_start + linear_count,
+        )
+        full_start += linear_count
+        full_transform_blocks.append(
+            torch.eye(
+                linear_count,
+                dtype=response.dtype,
+                device=response.device,
+            )
+        )
+        full_estimates.append(model.coefficients[parameter].detach())
+        coefficient_names.extend(_linear_coefficient_names(model, parameter))
+        parameter_reduced_start = reduced_start
+        reduced_start += linear_count
+
+        combined_weights = (
+            diagonal_information[parameter] * case_weights
+        ).detach()
+        for term_name, term in model.smooth_terms[parameter].items():
+            key = (parameter, term_name)
+            training_covariate = smooth_covariates[parameter][term_name].detach()
+            basis = term.basis(training_covariate)
+            penalty = term.penalty_matrix()
+            nullity = term.penalty_nullity
+            coefficient_count = term.coefficients.numel()
+            if (
+                penalty.ndim != 2
+                or penalty.shape[1] != coefficient_count
+                or nullity < 0
+            ):
+                raise RuntimeError(
+                    f"invalid penalty structure for {parameter!r}.{term_name}"
+                )
+            penalty_null_space = _right_null_space(
+                penalty,
+                expected_nullity=nullity,
+                context=f"penalty for {parameter!r}.{term_name}",
+            )
+            if nullity:
+                null_functions = basis @ penalty_null_space
+                constraints = null_functions.mT @ (
+                    combined_weights.unsqueeze(-1) * basis
+                )
+                transform = _right_null_space(
+                    constraints,
+                    expected_nullity=coefficient_count - nullity,
+                    context=f"identifiability constraints for "
+                    f"{parameter!r}.{term_name}",
+                )
+            else:
+                transform = torch.eye(
+                    coefficient_count,
+                    dtype=response.dtype,
+                    device=response.device,
+                )
+
+            reduced_count = transform.shape[1]
+            full_transform_blocks.append(transform)
+            parameter_parts.append(basis @ transform)
+            smooth_transforms[key] = transform
+            smooth_full_slices[key] = slice(
+                full_start,
+                full_start + coefficient_count,
+            )
+            smooth_reduced_slices[key] = slice(
+                reduced_start,
+                reduced_start + reduced_count,
+            )
+            full_start += coefficient_count
+            reduced_start += reduced_count
+            full_estimates.append(term.coefficients.detach())
+            coefficient_names.extend(
+                f"{parameter}.{term_name}[{index}]"
+                for index in range(coefficient_count)
+            )
+
+        parameter_designs[parameter] = torch.cat(parameter_parts, dim=1)
+        parameter_reduced_slices[parameter] = slice(
+            parameter_reduced_start,
+            reduced_start,
+        )
+
+    coefficient_transform = torch.block_diag(*full_transform_blocks)
+    reduced_count = coefficient_transform.shape[1]
+    information = torch.zeros(
+        (reduced_count, reduced_count),
+        dtype=response.dtype,
+        device=response.device,
+    )
+    parameter_names = model.family.parameter_names
+    for left_index, left in enumerate(parameter_names):
+        left_design = parameter_designs[left]
+        left_slice = parameter_reduced_slices[left]
+        for right in parameter_names[left_index:]:
+            right_design = parameter_designs[right]
+            right_slice = parameter_reduced_slices[right]
+            if left == right:
+                pair_information = diagonal_information[left]
+            else:
+                cross_second = _expected_cross_derivative(
+                    second_derivatives,
+                    left,
+                    right,
+                )
+                pair_information = -cross_second / (
+                    link_derivatives[left] * link_derivatives[right]
+                )
+            combined_information = pair_information * case_weights
+            if not combined_information.isfinite().all():
+                raise RuntimeError(
+                    f"joint smooth information for {left!r}, {right!r} "
+                    "must be finite"
+                )
+            block = left_design.mT @ (
+                combined_information.unsqueeze(-1) * right_design
+            )
+            information[left_slice, right_slice] = block
+            if left != right:
+                information[right_slice, left_slice] = block.mT
+
+    for key, reduced_slice in smooth_reduced_slices.items():
+        parameter, term_name = key
+        term = model.smooth_terms[parameter][term_name]
+        transform = smooth_transforms[key]
+        penalty = term.penalty_matrix()
+        information[reduced_slice, reduced_slice] += (
+            term.smoothing_parameter
+            * transform.mT
+            @ penalty.mT
+            @ penalty
+            @ transform
+        )
+
+    information = (information + information.mT) / 2.0
+    if not torch.isfinite(information).all():
+        raise RuntimeError("joint penalized information matrix is not finite")
+    factor, info = torch.linalg.cholesky_ex(information)
+    if int(info) != 0:
+        raise RuntimeError(
+            "joint penalized information matrix is not positive definite; "
+            "covariance is unavailable"
+        )
+    identity = torch.eye(
+        reduced_count,
+        dtype=response.dtype,
+        device=response.device,
+    )
+    reduced_covariance_root = torch.linalg.solve_triangular(
+        factor.mT,
+        identity,
+        upper=True,
+    )
+    coefficient_covariance_root = (
+        coefficient_transform @ reduced_covariance_root
+    )
+
+    critical_value = float(norm.ppf(0.5 + confidence_level / 2.0))
+    curves: dict[str, dict[str, SmoothInferenceResult]] = {
+        parameter: {} for parameter in parameter_names
+    }
+    term_order: list[tuple[str, str]] = []
+    for parameter in parameter_names:
+        combined_weights = (
+            diagonal_information[parameter] * case_weights
+        ).detach()
+        for term_name, term in model.smooth_terms[parameter].items():
+            key = (parameter, term_name)
+            term_order.append(key)
+            evaluation_covariate = evaluation_covariates[parameter][
+                term_name
+            ].detach()
+            evaluation_basis = term.basis(evaluation_covariate)
+            curve_root = (
+                evaluation_basis
+                @ coefficient_covariance_root[smooth_full_slices[key]]
+            )
+            standard_errors = curve_root.square().sum(dim=1).sqrt()
+            estimates = term(evaluation_covariate).detach()
+            confidence_intervals = torch.column_stack(
+                (
+                    estimates - critical_value * standard_errors,
+                    estimates + critical_value * standard_errors,
+                )
+            )
+            effective_degrees_of_freedom = float(
+                term.effective_degrees_of_freedom(
+                    smooth_covariates[parameter][term_name],
+                    combined_weights,
+                )
+            )
+            curves[parameter][term_name] = SmoothInferenceResult(
+                parameter=parameter,
+                term=term_name,
+                covariate=evaluation_covariate.clone(),
+                estimates=estimates,
+                _covariance_root=curve_root.detach(),
+                standard_errors=standard_errors.detach(),
+                confidence_intervals=confidence_intervals.detach(),
+                smoothing_parameter=term.smoothing_parameter,
+                effective_degrees_of_freedom=effective_degrees_of_freedom,
+                confidence_level=confidence_level,
+            )
+
+    return SmoothJointInferenceResult(
+        curves=curves,
+        term_order=tuple(term_order),
+        coefficient_names=tuple(coefficient_names),
+        linear_coefficient_slices=linear_full_slices,
+        smooth_coefficient_slices=smooth_full_slices,
+        coefficient_estimates=torch.cat(full_estimates).clone(),
+        _coefficient_covariance_root=coefficient_covariance_root.detach(),
+        confidence_level=confidence_level,
+    )
+
+
 def smooth_term_bootstrap(
     model: GAMLSS,
     response: Tensor,
@@ -1283,6 +1842,65 @@ def smooth_term_bootstrap(
             )
 
     return results
+
+
+def _right_null_space(
+    matrix: Tensor,
+    *,
+    expected_nullity: int,
+    context: str,
+) -> Tensor:
+    if matrix.ndim != 2:
+        raise RuntimeError(f"{context} must be a matrix")
+    _, singular_values, right_vectors = torch.linalg.svd(
+        matrix,
+        full_matrices=True,
+    )
+    if singular_values.numel():
+        tolerance = (
+            max(matrix.shape)
+            * torch.finfo(matrix.dtype).eps
+            * singular_values.max()
+        )
+        rank = int((singular_values > tolerance).sum())
+    else:
+        rank = 0
+    nullity = matrix.shape[1] - rank
+    if nullity != expected_nullity:
+        raise RuntimeError(
+            f"{context} has nullity {nullity}, expected {expected_nullity}"
+        )
+    return right_vectors.mT[:, rank:]
+
+
+def _expected_cross_derivative(
+    derivatives: Mapping[tuple[str, str], Tensor],
+    left: str,
+    right: str,
+) -> Tensor:
+    if (left, right) in derivatives:
+        return derivatives[(left, right)]
+    if (right, left) in derivatives:
+        return derivatives[(right, left)]
+    raise NotImplementedError(
+        f"family does not provide expected cross information for "
+        f"{left!r}, {right!r}"
+    )
+
+
+def _linear_coefficient_names(
+    model: GAMLSS,
+    parameter: str,
+) -> tuple[str, ...]:
+    if model._formula_encoder is None:
+        return tuple(
+            f"{parameter}[{index}]"
+            for index in range(model.coefficients[parameter].numel())
+        )
+    return tuple(
+        f"{parameter}.{column}"
+        for column in model.formula_column_names[parameter]
+    )
 
 
 def _parameter_slices(model: GAMLSS) -> dict[str, slice]:

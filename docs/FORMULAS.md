@@ -110,6 +110,26 @@ band = mu_x.simultaneous_confidence_band(
 default intervals in `mu_x_table` are pointwise; `band.confidence_intervals`
 contains a simulation-based simultaneous band at the same confidence level.
 
+Several stored formula smooths can share one analytic fixed-lambda covariance:
+
+```python
+joint_analytic = model.smooth_joint_inference_data(
+    data,
+    weights="weight",
+    new_data=new_data,
+)
+mu_sigma_covariance = joint_analytic.covariance_block(
+    ("mu", "x"),
+    ("sigma", "z"),
+)
+joint_analytic_bands = joint_analytic.simultaneous_confidence_bands(
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+This includes cross-term and cross-parameter covariance. It conditions on the
+fitted smoothing parameters.
+
 To include smoothing-selection variability, use a seeded parametric bootstrap.
 Each replicate reuses the stored formulas and refits the complete model:
 
@@ -125,9 +145,9 @@ bootstrap = model.smooth_bootstrap_data(
 mu_x_bootstrap = bootstrap["mu"]["x"]
 ```
 
-For several formula smooths, call `smooth_joint_bootstrap_data()` instead to
-obtain cross-term covariance and max-|t| bands calibrated over all selected
-curves.
+For empirical covariance that also propagates smoothing selection, call
+`smooth_joint_bootstrap_data()` to preserve alignment across refits and
+calibrate max-|t| bands over all selected curves.
 
 Response-scale centiles reuse every stored parameter formula:
 
