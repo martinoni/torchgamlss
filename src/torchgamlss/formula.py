@@ -223,6 +223,23 @@ class FormulaEncoder:
                 device=device,
                 context=context,
             )
+        if (
+            isinstance(value, (list, tuple))
+            and value
+            and all(isinstance(column, str) for column in value)
+        ):
+            frame = _as_frame(data)
+            missing = set(value).difference(frame.columns)
+            if missing:
+                raise ValueError(
+                    f"{context} columns are missing: {sorted(missing)}"
+                )
+            return _frame_tensor(
+                frame.loc[:, list(value)],
+                dtype=dtype,
+                device=device,
+                context=context,
+            )
         if isinstance(value, Tensor):
             return value.to(dtype=dtype, device=device)
         try:

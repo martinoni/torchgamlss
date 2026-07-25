@@ -154,15 +154,23 @@ One local CPU measurement on 2026-07-25 used Torch 2.13.0, float32,
 deterministic algorithms, 100,000 rows, eight covariates, batch size 2,048,
 and 20 epochs. It completed in 1.247 seconds, corresponding to approximately
 1.60 million training rows per second over 980 Adam updates. This is a
-reproducibility record for that machine, not a performance guarantee. CUDA was
-not available in that environment; the benchmark reports CUDA device name and
-peak allocated memory when run on a GPU.
+reproducibility record for that machine, not a performance guarantee.
+
+The first environment contained a CPU-only Torch wheel even though the machine
+has an RTX 4090. After installing Torch 2.11.0+cu128, the same benchmark path
+was verified on CUDA with one million rows, eight covariates, batch size 8,192,
+and 20 epochs. It completed in 7.594 seconds, corresponding to approximately
+2.63 million training rows per second over 2,460 Adam updates, with 107 MB of
+peak allocated CUDA memory. The benchmark reports its Torch build, device name,
+and peak allocated memory so a CPU-only installation cannot be mistaken for
+missing hardware.
 
 ## Scope
 
-The current implementation bounds model intermediates, but the input tensors
-still reside in memory. Streaming `Dataset`/`DataLoader` input is separate
-future work. RS, CG, and L-BFGS remain the reference paths for strict
-translation parity. Inference routines may also construct full-data
+The current implementation bounds model intermediates, including neural
+activations, but the input tensors still reside in memory. Streaming
+`Dataset`/`DataLoader` input is separate future work. RS and CG remain the
+reference paths for strict translation parity; L-BFGS and mini-batch Adam
+support neural predictors. Inference routines may also construct full-data
 information or design objects and should be assessed separately for very
 large samples.

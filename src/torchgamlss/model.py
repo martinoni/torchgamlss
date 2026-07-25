@@ -70,6 +70,7 @@ class TermContributions:
     linear: Tensor
     smooth: Mapping[str, Tensor]
     offset: Tensor
+    neural: Tensor | None = None
 
     @property
     def total(self) -> Tensor:
@@ -77,6 +78,8 @@ class TermContributions:
         total = self.linear.sum(dim=-1)
         for contribution in self.smooth.values():
             total = total + contribution
+        if self.neural is not None:
+            total = total + self.neural
         return total + self.offset
 
 
@@ -84,7 +87,7 @@ class GAMLSS(nn.Module):
     """A minimal multi-parameter distributional regression model.
 
     The caller supplies one design matrix per distribution parameter and may
-    attach named smooth terms. Formula handling remains outside the core model.
+    attach named smooth terms and Torch neural predictors.
     """
 
     def __init__(
@@ -93,6 +96,7 @@ class GAMLSS(nn.Module):
         design_sizes: Mapping[str, int],
         *,
         smooth_terms: Mapping[str, Mapping[str, SmoothTerm]] | None = None,
+        neural_predictors: Mapping[str, nn.Module] | None = None,
         dtype: torch.dtype = torch.float64,
         device: torch.device | str | None = None,
     ) -> None:
@@ -138,6 +142,23 @@ class GAMLSS(nn.Module):
             ):
                 raise ValueError("Smooth terms must match the model dtype and device")
             self.smooth_terms[parameter] = nn.ModuleDict(dict(parameter_terms))
+        if neural_predictors is None:
+            neural_predictors = {}
+        elif not isinstance(neural_predictors, Mapping):
+            raise ValueError("neural predictors must be supplied as a mapping")
+        extra_neural_parameters = set(neural_predictors).difference(expected)
+        if extra_neural_parameters:
+            raise ValueError(
+                "Neural predictors contain unknown parameters: "
+                f"{sorted(extra_neural_parameters)}"
+            )
+        if any(
+            not isinstance(module, nn.Module)
+            for module in neural_predictors.values()
+        ):
+            raise ValueError("Every neural predictor must be a torch.nn.Module")
+        self.neural_predictors = nn.ModuleDict(dict(neural_predictors))
+        self.neural_predictors.to(dtype=dtype, device=model_device)
         self._formula_encoder: FormulaEncoder | None = None
 
     @classmethod
@@ -147,6 +168,7 @@ class GAMLSS(nn.Module):
         formulas: Mapping[str, str],
         data: Any,
         *,
+        neural_predictors: Mapping[str, nn.Module] | None = None,
         dtype: torch.dtype = torch.float64,
         device: torch.device | str | None = None,
     ) -> GAMLSS:
@@ -175,6 +197,7 @@ class GAMLSS(nn.Module):
                 for parameter, design in prepared.design_matrices.items()
             },
             smooth_terms=smooth_terms,
+            neural_predictors=neural_predictors,
             dtype=dtype,
             device=device,
         )
@@ -257,6 +280,7 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         weights: Any = None,
+        neural_inputs: Mapping[str, Any] | None = None,
         max_iter: int = 100,
         tolerance_grad: float = 1e-9,
         tolerance_change: float = 1e-12,
@@ -265,12 +289,14 @@ class GAMLSS(nn.Module):
         prepared = self.prepare_formula_data(data, include_response=True)
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
+        parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         return self.fit(
             prepared.response,
             prepared.design_matrices,
             weights=case_weights,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
             max_iter=max_iter,
             tolerance_grad=tolerance_grad,
             tolerance_change=tolerance_change,
@@ -281,6 +307,7 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         weights: Any = None,
+        neural_inputs: Mapping[str, Any] | None = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -288,12 +315,14 @@ class GAMLSS(nn.Module):
         prepared = self.prepare_formula_data(data, include_response=True)
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
+        parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         return self.fit_minibatch(
             prepared.response,
             prepared.design_matrices,
             weights=case_weights,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
             control=control,
             generator=generator,
         )
@@ -302,14 +331,17 @@ class GAMLSS(nn.Module):
         self,
         data: Any,
         *,
+        neural_inputs: Mapping[str, Any] | None = None,
         type: Literal["link", "response", "terms"] = "response",
     ) -> dict[str, Tensor] | dict[str, TermContributions]:
         """Predict from tabular data using the fitted formula encodings."""
         prepared = self.prepare_formula_data(data)
+        parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         return self.predict(
             prepared.design_matrices,
             prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
             type=type,
         )
 
@@ -318,14 +350,17 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         probabilities: Any,
+        neural_inputs: Mapping[str, Any] | None = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles from formula data."""
         prepared = self.prepare_formula_data(data)
+        parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         return self.predict_quantiles(
             prepared.design_matrices,
             probabilities=probabilities,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
         )
 
     def predict_centiles_data(
@@ -333,6 +368,7 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         centiles: Any,
+        neural_inputs: Mapping[str, Any] | None = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles from centile percentages."""
         probabilities = centiles_to_probabilities(
@@ -342,6 +378,7 @@ class GAMLSS(nn.Module):
         return self.predict_quantiles_data(
             data,
             probabilities=probabilities,
+            neural_inputs=neural_inputs,
         )
 
     def quantile_bootstrap_data(
@@ -562,18 +599,21 @@ class GAMLSS(nn.Module):
         data: Any,
         *,
         weights: Any = None,
+        neural_inputs: Mapping[str, Any] | None = None,
         degrees_of_freedom: float | None = None,
     ) -> ModelDiagnostics:
         """Evaluate model-selection diagnostics from formula data."""
         prepared = self.prepare_formula_data(data, include_response=True)
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
+        parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         return self.diagnostics(
             prepared.response,
             prepared.design_matrices,
             weights=case_weights,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
             degrees_of_freedom=degrees_of_freedom,
         )
 
@@ -581,6 +621,7 @@ class GAMLSS(nn.Module):
         self,
         data: Any,
         *,
+        neural_inputs: Mapping[str, Any] | None = None,
         uniforms: Any = None,
         generator: torch.Generator | None = None,
     ) -> Tensor:
@@ -592,11 +633,13 @@ class GAMLSS(nn.Module):
             uniforms,
             context="uniforms",
         )
+        parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         return self.quantile_residuals(
             prepared.response,
             prepared.design_matrices,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
             uniforms=uniform_tensor,
             generator=generator,
         )
@@ -607,6 +650,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
     ) -> dict[str, Tensor]:
         """Calculate one linear predictor for each distribution parameter."""
         return {
@@ -615,6 +659,7 @@ class GAMLSS(nn.Module):
                 design_matrices,
                 offsets,
                 smooth_covariates=smooth_covariates,
+                neural_inputs=neural_inputs,
             ).items()
         }
 
@@ -624,6 +669,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
     ) -> dict[str, TermContributions]:
         """Decompose parameter predictors into linear, smooth, and offset terms."""
         expected = set(self.family.parameter_names)
@@ -645,6 +691,10 @@ class GAMLSS(nn.Module):
         contributions = {}
         observation_count: int | None = None
         model_parameter = next(self.parameters())
+        validated_neural_inputs = self._validated_neural_inputs(
+            neural_inputs,
+            model_parameter,
+        )
         for parameter in self.family.parameter_names:
             design_matrix = design_matrices[parameter]
             if (
@@ -677,6 +727,41 @@ class GAMLSS(nn.Module):
                 parameter, linear_total, smooth_covariates
             ).items():
                 smooth[term_name] = self.smooth_terms[parameter][term_name](covariate)
+            if parameter in self.neural_predictors:
+                neural_input = validated_neural_inputs[parameter]
+                if (
+                    neural_input.ndim < 1
+                    or neural_input.shape[0] != linear_total.numel()
+                ):
+                    raise ValueError(
+                        f"neural input for {parameter!r} must have one row "
+                        "per observation"
+                    )
+                neural = self.neural_predictors[parameter](
+                    neural_input
+                )
+                if not isinstance(neural, Tensor):
+                    raise ValueError(
+                        f"neural predictor for {parameter!r} must return a tensor"
+                    )
+                if neural.shape == (linear_total.numel(), 1):
+                    neural = neural.squeeze(-1)
+                if neural.shape != linear_total.shape:
+                    raise ValueError(
+                        f"neural predictor for {parameter!r} must return one "
+                        "value per observation"
+                    )
+                if (
+                    neural.dtype != model_parameter.dtype
+                    or neural.device != model_parameter.device
+                    or not torch.isfinite(neural).all()
+                ):
+                    raise ValueError(
+                        f"neural predictor for {parameter!r} must return finite "
+                        "values matching the model dtype and device"
+                    )
+            else:
+                neural = torch.zeros_like(linear_total)
             if parameter in offsets:
                 raw_offset = offsets[parameter]
                 if (
@@ -700,6 +785,7 @@ class GAMLSS(nn.Module):
                 linear=linear,
                 smooth=smooth,
                 offset=offset,
+                neural=neural,
             )
         return contributions
 
@@ -709,6 +795,7 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
         type: Literal["link", "response", "terms"] = "response",
     ) -> dict[str, Tensor] | dict[str, TermContributions]:
         """Predict family parameters, link predictors, or additive terms."""
@@ -719,11 +806,13 @@ class GAMLSS(nn.Module):
                 design_matrices,
                 offsets,
                 smooth_covariates=smooth_covariates,
+                neural_inputs=neural_inputs,
             )
         predictors = self.linear_predictors(
             design_matrices,
             offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
         )
         if type == "link":
             return predictors
@@ -738,12 +827,14 @@ class GAMLSS(nn.Module):
         probabilities: Any,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles."""
         parameters = self.predict(
             design_matrices,
             offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
             type="response",
         )
         assert isinstance(parameters, dict)
@@ -770,6 +861,7 @@ class GAMLSS(nn.Module):
         centiles: Any,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
     ) -> QuantilePrediction:
         """Predict conditional response quantiles from percentages."""
         probabilities = centiles_to_probabilities(
@@ -781,6 +873,7 @@ class GAMLSS(nn.Module):
             probabilities=probabilities,
             offsets=offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
         )
 
     def distribution(
@@ -789,10 +882,14 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
     ) -> Distribution:
         """Build the fitted conditional response distribution."""
         predictors = self.linear_predictors(
-            design_matrices, offsets, smooth_covariates=smooth_covariates
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
         )
         parameters = self.family.parameters_from_predictors(predictors)
         return self.family.distribution(parameters)
@@ -803,9 +900,13 @@ class GAMLSS(nn.Module):
         offsets: Mapping[str, Tensor] | None = None,
         *,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
     ) -> Distribution:
         return self.distribution(
-            design_matrices, offsets, smooth_covariates=smooth_covariates
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
         )
 
     def negative_log_likelihood(
@@ -816,6 +917,7 @@ class GAMLSS(nn.Module):
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
         reduction: str = "sum",
     ) -> Tensor:
         """Return the negative log-likelihood with sum, mean, or no reduction."""
@@ -823,6 +925,7 @@ class GAMLSS(nn.Module):
             design_matrices,
             offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
         ).log_prob(response)
         observation_weights = self._validated_weights(losses, weights)
         losses = losses * observation_weights
@@ -842,6 +945,7 @@ class GAMLSS(nn.Module):
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
         max_iter: int = 100,
         tolerance_grad: float = 1e-9,
         tolerance_change: float = 1e-12,
@@ -879,6 +983,7 @@ class GAMLSS(nn.Module):
                 weights=weights,
                 offsets=offsets,
                 smooth_covariates=smooth_covariates,
+                neural_inputs=neural_inputs,
             )
             loss = loss + 0.5 * self.smooth_penalty()
             if not torch.isfinite(loss):
@@ -894,6 +999,7 @@ class GAMLSS(nn.Module):
             weights=weights,
             offsets=offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
         ).detach()
         gradient_max = max(
             float(parameter.grad.detach().abs().max())
@@ -920,6 +1026,7 @@ class GAMLSS(nn.Module):
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -931,6 +1038,7 @@ class GAMLSS(nn.Module):
             weights=weights,
             offsets=offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
             control=control,
             generator=generator,
         )
@@ -947,6 +1055,7 @@ class GAMLSS(nn.Module):
         control: RSControl | None = None,
     ) -> RSFitResult:
         """Fit linear or additive predictors with Rigby-Stasinopoulos cycles."""
+        self._require_no_neural_predictors("fit_rs()")
         return fit_rs(
             self,
             response,
@@ -970,6 +1079,7 @@ class GAMLSS(nn.Module):
         control: CGControl | None = None,
     ) -> CGFitResult:
         """Fit linear or additive predictors with Cole-Green joint cycles."""
+        self._require_no_neural_predictors("fit_cg()")
         return fit_cg(
             self,
             response,
@@ -994,6 +1104,7 @@ class GAMLSS(nn.Module):
         degrees_of_freedom: float | None = None,
     ) -> InferenceResult:
         """Return full-Hessian covariance and t-based Wald inference."""
+        self._require_no_neural_predictors("analytic coefficient inference")
         return coefficient_inference(
             self,
             response,
@@ -1020,6 +1131,7 @@ class GAMLSS(nn.Module):
         confidence_level: float = 0.95,
     ) -> dict[str, dict[str, SmoothInferenceResult]]:
         """Infer smooth curves conditional on fitted smoothing parameters."""
+        self._require_no_neural_predictors("analytic smooth inference")
         return smooth_term_inference(
             self,
             response,
@@ -1045,6 +1157,7 @@ class GAMLSS(nn.Module):
         confidence_level: float = 0.95,
     ) -> SmoothJointInferenceResult:
         """Infer every smooth from one joint penalized information matrix."""
+        self._require_no_neural_predictors("analytic joint smooth inference")
         return smooth_joint_inference(
             self,
             response,
@@ -1075,6 +1188,7 @@ class GAMLSS(nn.Module):
         generator: torch.Generator | None = None,
     ) -> dict[str, dict[str, SmoothBootstrapResult]]:
         """Bootstrap smooth curves while repeating classical fitting."""
+        self._require_no_neural_predictors("classical smooth bootstrap")
         return smooth_term_bootstrap(
             self,
             response,
@@ -1148,6 +1262,7 @@ class GAMLSS(nn.Module):
         generator: torch.Generator | None = None,
     ) -> QuantileBootstrapResult:
         """Bootstrap conditional response quantiles with complete refits."""
+        self._require_no_neural_predictors("classical quantile bootstrap")
         return run_quantile_bootstrap(
             self,
             response,
@@ -1175,6 +1290,7 @@ class GAMLSS(nn.Module):
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
         degrees_of_freedom: float | None = None,
     ) -> ModelDiagnostics:
         """Return deviance and information criteria for the current model."""
@@ -1185,6 +1301,7 @@ class GAMLSS(nn.Module):
             weights=weights,
             offsets=offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
             degrees_of_freedom=degrees_of_freedom,
         )
 
@@ -1195,6 +1312,7 @@ class GAMLSS(nn.Module):
         *,
         offsets: Mapping[str, Tensor] | None = None,
         smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
         uniforms: Tensor | None = None,
         generator: torch.Generator | None = None,
     ) -> Tensor:
@@ -1205,6 +1323,7 @@ class GAMLSS(nn.Module):
             design_matrices,
             offsets=offsets,
             smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
             uniforms=uniforms,
             generator=generator,
         )
@@ -1256,6 +1375,41 @@ class GAMLSS(nn.Module):
                 )
         return supplied
 
+    def _validated_neural_inputs(
+        self,
+        neural_inputs: Mapping[str, Tensor] | None,
+        model_parameter: Tensor,
+    ) -> dict[str, Tensor]:
+        if neural_inputs is None:
+            neural_inputs = {}
+        elif not isinstance(neural_inputs, Mapping):
+            raise ValueError("neural inputs must be supplied as a mapping")
+        expected = set(self.neural_predictors)
+        supplied = set(neural_inputs)
+        if expected != supplied:
+            raise ValueError(
+                "Neural inputs do not match configured predictors: "
+                f"missing={sorted(expected - supplied)}, "
+                f"extra={sorted(supplied - expected)}"
+            )
+        validated = {}
+        for parameter, inputs in neural_inputs.items():
+            if not isinstance(inputs, Tensor):
+                raise ValueError(
+                    f"neural input for {parameter!r} must be a tensor"
+                )
+            if (
+                inputs.dtype != model_parameter.dtype
+                or inputs.device != model_parameter.device
+                or not torch.isfinite(inputs).all()
+            ):
+                raise ValueError(
+                    f"neural input for {parameter!r} must be finite and match "
+                    "the model dtype and device"
+                )
+            validated[parameter] = inputs
+        return validated
+
     def _require_formula_encoder(self) -> FormulaEncoder:
         if self._formula_encoder is None:
             raise RuntimeError(
@@ -1279,6 +1433,35 @@ class GAMLSS(nn.Module):
             context=context,
         )
 
+    def _formula_neural_inputs(
+        self,
+        data: Any,
+        values: Mapping[str, Any] | None,
+    ) -> dict[str, Tensor]:
+        values = values or {}
+        if not isinstance(values, Mapping):
+            raise ValueError("neural inputs must be supplied as a mapping")
+        expected = set(self.neural_predictors)
+        supplied = set(values)
+        if expected != supplied:
+            raise ValueError(
+                "Neural inputs do not match configured predictors: "
+                f"missing={sorted(expected - supplied)}, "
+                f"extra={sorted(supplied - expected)}"
+            )
+        result = {}
+        for parameter, value in values.items():
+            tensor = self._formula_tensor(
+                data,
+                value,
+                context=f"neural input for {parameter!r}",
+            )
+            assert tensor is not None
+            result[parameter] = (
+                tensor.unsqueeze(-1) if tensor.ndim == 1 else tensor
+            )
+        return result
+
     def _formula_initial_parameters(
         self,
         data: Any,
@@ -1301,6 +1484,13 @@ class GAMLSS(nn.Module):
             )
             for parameter, value in values.items()
         }
+
+    def _require_no_neural_predictors(self, operation: str) -> None:
+        if self.neural_predictors:
+            raise ValueError(
+                f"{operation} does not support neural predictors; "
+                "use fit() or fit_minibatch() for neural models"
+            )
 
     @staticmethod
     def _validated_weights(losses: Tensor, weights: Tensor | None) -> Tensor:

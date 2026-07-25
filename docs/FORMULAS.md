@@ -216,6 +216,25 @@ model.formula_response_name
 `prepare_formula_data()` exposes the generated tensors as `FormulaData` for
 advanced workflows that need to mix formula and low-level APIs.
 
+Formula models may also attach neural predictors. Neural features stay
+explicit instead of being silently mixed into the conventional design:
+
+```python
+model = GAMLSS.from_formula(
+    Normal(),
+    {"mu": "y ~ age", "sigma": "~ 1"},
+    data,
+    neural_predictors={"mu": MLPPredictor(2, (32, 32))},
+)
+result = model.fit_minibatch_data(
+    data,
+    neural_inputs={"mu": ["sensor_1", "sensor_2"]},
+)
+```
+
+The same mapping is supplied to `predict_data()` for new data. See
+[`NEURAL.md`](NEURAL.md).
+
 ## P-splines
 
 `pb()` contributes its covariate to the linear design and attaches a named

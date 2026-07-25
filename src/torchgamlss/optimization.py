@@ -115,6 +115,7 @@ def fit_minibatch(
     weights: Tensor | None = None,
     offsets: Mapping[str, Tensor] | None = None,
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    neural_inputs: Mapping[str, Tensor] | None = None,
     control: MiniBatchControl | None = None,
     generator: torch.Generator | None = None,
 ) -> MiniBatchFitResult:
@@ -143,6 +144,7 @@ def fit_minibatch(
         case_weights,
         normalized_offsets,
         normalized_smooth_covariates,
+        normalized_neural_inputs,
     ) = _validate_inputs(
         model,
         response,
@@ -150,6 +152,7 @@ def fit_minibatch(
         weights,
         offsets,
         smooth_covariates,
+        neural_inputs,
     )
     observation_count = response.numel()
     batch_size = min(control.batch_size, observation_count)
@@ -173,6 +176,7 @@ def fit_minibatch(
         case_weights,
         normalized_offsets,
         normalized_smooth_covariates,
+        normalized_neural_inputs,
         batch_size,
         total_weight,
     )
@@ -197,6 +201,7 @@ def fit_minibatch(
                 case_weights,
                 normalized_offsets,
                 normalized_smooth_covariates,
+                normalized_neural_inputs,
                 batch_indices,
             )
             (
@@ -205,6 +210,7 @@ def fit_minibatch(
                 batch_weights,
                 batch_offsets,
                 batch_smooth,
+                batch_neural,
             ) = batch
             optimizer.zero_grad(set_to_none=True)
             batch_nll = _weighted_nll_sum(
@@ -214,6 +220,7 @@ def fit_minibatch(
                 batch_weights,
                 batch_offsets,
                 batch_smooth,
+                batch_neural,
             )
             likelihood_scale = (
                 observation_count / batch_response.numel()
@@ -251,6 +258,7 @@ def fit_minibatch(
             case_weights,
             normalized_offsets,
             normalized_smooth_covariates,
+            normalized_neural_inputs,
             batch_size,
             total_weight,
         )
@@ -276,6 +284,7 @@ def fit_minibatch(
         case_weights,
         normalized_offsets,
         normalized_smooth_covariates,
+        normalized_neural_inputs,
         batch_size,
         total_weight,
     )
@@ -289,6 +298,7 @@ def fit_minibatch(
         case_weights,
         normalized_offsets,
         normalized_smooth_covariates,
+        normalized_neural_inputs,
         batch_size,
         total_weight,
     )
@@ -318,10 +328,12 @@ def _validate_inputs(
     weights: Tensor | None,
     offsets: Mapping[str, Tensor] | None,
     smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None,
+    neural_inputs: Mapping[str, Tensor] | None,
 ) -> tuple[
     Tensor,
     dict[str, Tensor],
     dict[str, dict[str, Tensor]],
+    dict[str, Tensor],
 ]:
     model_parameter = next(model.parameters())
     if (
@@ -419,7 +431,41 @@ def _validate_inputs(
                     "dtype and device"
                 )
             normalized_smooth_covariates[parameter][term_name] = covariate
-    return case_weights, normalized_offsets, normalized_smooth_covariates
+
+    if neural_inputs is None:
+        neural_inputs = {}
+    elif not isinstance(neural_inputs, Mapping):
+        raise ValueError("neural inputs must be supplied as a mapping")
+    expected_neural_parameters = set(model.neural_predictors)
+    supplied_neural_parameters = set(neural_inputs)
+    if expected_neural_parameters != supplied_neural_parameters:
+        raise ValueError(
+            "Neural inputs do not match configured predictors: "
+            "missing="
+            f"{sorted(expected_neural_parameters - supplied_neural_parameters)}, "
+            f"extra={sorted(supplied_neural_parameters - expected_neural_parameters)}"
+        )
+    normalized_neural_inputs = {}
+    for parameter, inputs in neural_inputs.items():
+        if (
+            not isinstance(inputs, Tensor)
+            or inputs.ndim < 1
+            or inputs.shape[0] != response.numel()
+            or inputs.dtype != response.dtype
+            or inputs.device != response.device
+            or not torch.isfinite(inputs).all()
+        ):
+            raise ValueError(
+                f"neural input for {parameter!r} must be finite with one row "
+                "per response and matching dtype and device"
+            )
+        normalized_neural_inputs[parameter] = inputs
+    return (
+        case_weights,
+        normalized_offsets,
+        normalized_smooth_covariates,
+        normalized_neural_inputs,
+    )
 
 
 def _batch_indices(
@@ -448,6 +494,7 @@ def _slice_inputs(
     weights: Tensor,
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    neural_inputs: Mapping[str, Tensor],
     indices: Tensor,
 ) -> tuple[
     Tensor,
@@ -455,6 +502,7 @@ def _slice_inputs(
     Tensor,
     dict[str, Tensor],
     dict[str, dict[str, Tensor]],
+    dict[str, Tensor],
 ]:
     return (
         response[indices],
@@ -474,6 +522,10 @@ def _slice_inputs(
             }
             for parameter, parameter_covariates in smooth_covariates.items()
         },
+        {
+            parameter: inputs[indices]
+            for parameter, inputs in neural_inputs.items()
+        },
     )
 
 
@@ -484,12 +536,14 @@ def _weighted_nll_sum(
     weights: Tensor,
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    neural_inputs: Mapping[str, Tensor],
 ) -> Tensor:
     losses = model.negative_log_likelihood(
         response,
         design_matrices,
         offsets=offsets,
         smooth_covariates=smooth_covariates,
+        neural_inputs=neural_inputs,
         reduction="none",
     )
     return (losses * weights).sum()
@@ -512,6 +566,7 @@ def _objective_values(
     weights: Tensor,
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    neural_inputs: Mapping[str, Tensor],
     batch_size: int,
     total_weight: Tensor,
 ) -> tuple[float, float]:
@@ -532,6 +587,7 @@ def _objective_values(
                 weights,
                 offsets,
                 smooth_covariates,
+                neural_inputs,
                 indices,
             )
             negative_log_likelihood += _weighted_nll_sum(model, *batch)
@@ -550,6 +606,7 @@ def _full_gradient_max(
     weights: Tensor,
     offsets: Mapping[str, Tensor],
     smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    neural_inputs: Mapping[str, Tensor],
     batch_size: int,
     total_weight: Tensor,
 ) -> float:
@@ -566,6 +623,7 @@ def _full_gradient_max(
             weights,
             offsets,
             smooth_covariates,
+            neural_inputs,
             indices,
         )
         (_weighted_nll_sum(model, *batch) / total_weight).backward()

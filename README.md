@@ -17,10 +17,13 @@ execution.
 Every parameter of a response distribution has its own predictor and link:
 
 ```text
-eta_k = X_k beta_k
+eta_k = X_k beta_k + sum_j f_jk(x_j) + g_k(z_k; phi_k) + offset_k
 theta_k = inverse_link_k(eta_k)
 Y | X ~ D(theta_1, ..., theta_K)
 ```
+
+The smooth and neural terms are optional. A neural module can be attached to
+only the parameters where it is scientifically useful.
 
 The current implementation contains:
 
@@ -33,6 +36,9 @@ The current implementation contains:
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
   objective evaluation, and CPU/CUDA benchmarking;
+- optional Torch modules and a standard MLP predictor for selected
+  distribution parameters, composable with linear terms, P-splines, and
+  offsets;
 - likelihood weights and offsets for every distribution parameter;
 - R-compatible family defaults and user-supplied parameter-scale starting
   values for RS and CG fitting;
@@ -112,7 +118,8 @@ documented in
 Likelihood criteria, model comparison, and quantile residuals are documented
 in [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md). Mini-batch optimization,
 CPU/CUDA benchmarks, and reproducibility guidance are in
-[`docs/MINIBATCH.md`](docs/MINIBATCH.md).
+[`docs/MINIBATCH.md`](docs/MINIBATCH.md). Hybrid neural distributional
+predictors are described in [`docs/NEURAL.md`](docs/NEURAL.md).
 
 ## Attribution and license
 

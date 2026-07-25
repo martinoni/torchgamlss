@@ -54,6 +54,6 @@ as supported.
 ## Phase 4 — Torch-native extensions
 
 - [x] Mini-batch optimization for large data
-- [ ] Neural predictors for selected distribution parameters
+- [x] Neural predictors for selected distribution parameters
 - [ ] Shared representations across distribution parameters
 - [x] CPU/GPU benchmarks and reproducibility guidance
