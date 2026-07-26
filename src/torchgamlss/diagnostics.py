@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -88,6 +89,34 @@ class ResidualDiagnosticPlot:
     fitted_values: Tensor
     x_values: Tensor
     summary: QuantileResidualSummary
+
+
+@dataclass(frozen=True)
+class WormPlotPanel:
+    """Numerical values underlying one worm-plot panel."""
+
+    axis: Any
+    residuals: Tensor
+    theoretical_quantiles: Tensor
+    deviations: Tensor
+    confidence_grid: Tensor
+    confidence_lower: Tensor
+    confidence_upper: Tensor
+    coefficients: Tensor | None
+    interval: tuple[float, float] | None
+
+
+@dataclass(frozen=True)
+class WormPlotResult:
+    """Matplotlib objects and detrended normal Q-Q values for ``wp()``."""
+
+    figure: Any
+    axes: tuple[Any, ...]
+    residuals: Tensor
+    x_values: Tensor | None
+    intervals: Tensor | None
+    panels: tuple[WormPlotPanel, ...]
+    coefficients: Tensor | None
 
 
 def model_diagnostics(
@@ -405,6 +434,248 @@ def plot_residual_diagnostics(
     )
 
 
+def worm_plot_diagnostics(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    neural_inputs: Mapping[str, Tensor] | None = None,
+    shared_input: Tensor | None = None,
+    x_variable: Tensor | None = None,
+    x_label: str | None = None,
+    uniforms: Tensor | None = None,
+    generator: torch.Generator | None = None,
+    n_intervals: int = 4,
+    cut_points: Sequence[float] | Tensor | None = None,
+    overlap: float = 0.0,
+    x_limit: float | None = None,
+    y_limit: float | None = None,
+    show_intervals: bool = True,
+    show_polynomial: bool = True,
+    axes: Sequence[Any] | Any | None = None,
+    figsize: tuple[float, float] | None = None,
+) -> WormPlotResult:
+    """Calculate model quantile residuals and draw an R-style worm plot."""
+    indices = _diagnostic_observation_indices(model, response, weights)
+    (
+        expanded_response,
+        expanded_designs,
+        expanded_offsets,
+        expanded_smooth,
+        expanded_neural,
+        expanded_shared,
+    ) = _expanded_diagnostic_inputs(
+        response,
+        design_matrices,
+        offsets,
+        smooth_covariates,
+        neural_inputs,
+        shared_input,
+        indices,
+    )
+    expanded_uniforms = _expanded_uniforms(uniforms, response, indices)
+    training_mode = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            residuals = quantile_residuals(
+                model,
+                expanded_response,
+                expanded_designs,
+                offsets=expanded_offsets,
+                smooth_covariates=expanded_smooth,
+                neural_inputs=expanded_neural,
+                shared_input=expanded_shared,
+                uniforms=expanded_uniforms,
+                generator=generator,
+            ).detach().cpu()
+    finally:
+        model.train(training_mode)
+
+    expanded_x = None
+    if x_variable is not None:
+        if (
+            not isinstance(x_variable, Tensor)
+            or x_variable.ndim != 1
+            or x_variable.shape != response.shape
+            or not torch.isfinite(x_variable).all()
+        ):
+            raise ValueError(
+                "x_variable must be a finite vector with one value per response"
+            )
+        expanded_x = x_variable.to(device=indices.device)[indices].detach().cpu()
+    return worm_plot(
+        residuals,
+        x_variable=expanded_x,
+        x_label=x_label,
+        n_intervals=n_intervals,
+        cut_points=cut_points,
+        overlap=overlap,
+        x_limit=x_limit,
+        y_limit=y_limit,
+        show_intervals=show_intervals,
+        show_polynomial=show_polynomial,
+        axes=axes,
+        figsize=figsize,
+    )
+
+
+def worm_plot(
+    residuals: Tensor | Sequence[float] | np.ndarray,
+    *,
+    x_variable: Tensor | Sequence[float] | np.ndarray | None = None,
+    x_label: str | None = None,
+    n_intervals: int = 4,
+    cut_points: Sequence[float] | Tensor | None = None,
+    overlap: float = 0.0,
+    x_limit: float | None = None,
+    y_limit: float | None = None,
+    show_intervals: bool = True,
+    show_polynomial: bool = True,
+    axes: Sequence[Any] | Any | None = None,
+    figsize: tuple[float, float] | None = None,
+) -> WormPlotResult:
+    """Draw a global or covariate-conditioned detrended normal Q-Q plot."""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as error:
+        raise ImportError(
+            "wp() requires matplotlib; install TorchGAMLSS with its "
+            "declared plotting dependency"
+        ) from error
+
+    residual_tensor = _finite_cpu_vector(residuals, context="residuals")
+    if residual_tensor.numel() < 2:
+        raise ValueError("worm plots require at least two residuals")
+    if x_label is not None and (not isinstance(x_label, str) or not x_label):
+        raise ValueError("x_label must be a non-empty string when supplied")
+    if not isinstance(n_intervals, int) or isinstance(n_intervals, bool):
+        raise ValueError("n_intervals must be an integer")
+    if n_intervals < 1:
+        raise ValueError("n_intervals must be positive")
+    if (
+        not isinstance(overlap, (int, float))
+        or isinstance(overlap, bool)
+        or not math.isfinite(float(overlap))
+        or not 0.0 <= float(overlap) < 1.0
+    ):
+        raise ValueError("overlap must lie in [0, 1)")
+    if not isinstance(show_intervals, bool):
+        raise ValueError("show_intervals must be boolean")
+    if not isinstance(show_polynomial, bool):
+        raise ValueError("show_polynomial must be boolean")
+    if x_limit is not None and (
+        not isinstance(x_limit, (int, float))
+        or isinstance(x_limit, bool)
+        or not math.isfinite(float(x_limit))
+        or float(x_limit) <= 0.0
+    ):
+        raise ValueError("x_limit must be finite and positive")
+    if y_limit is not None and (
+        not isinstance(y_limit, (int, float))
+        or isinstance(y_limit, bool)
+        or not math.isfinite(float(y_limit))
+        or float(y_limit) <= 0.0
+    ):
+        raise ValueError("y_limit must be finite and positive")
+
+    residual_values = residual_tensor.numpy().astype(np.float64, copy=False)
+    x_tensor = None
+    intervals = None
+    panel_masks: list[np.ndarray]
+    if x_variable is None:
+        if cut_points is not None:
+            raise ValueError("cut_points requires x_variable")
+        panel_masks = [np.ones(residual_values.size, dtype=bool)]
+    else:
+        x_tensor = _finite_cpu_vector(x_variable, context="x_variable")
+        if x_tensor.shape != residual_tensor.shape:
+            raise ValueError(
+                "x_variable must contain one value per residual"
+            )
+        x_values = x_tensor.numpy().astype(np.float64, copy=False)
+        if cut_points is None:
+            interval_values = _co_intervals(
+                x_values,
+                number=n_intervals,
+                overlap=float(overlap),
+            )
+        else:
+            interval_values = _cut_point_intervals(x_values, cut_points)
+        panel_masks = [
+            (x_values >= lower) & (x_values <= upper)
+            for lower, upper in interval_values
+        ]
+        if any(not np.any(mask) for mask in panel_masks):
+            raise ValueError("each worm-plot interval must contain observations")
+        intervals = torch.from_numpy(interval_values.copy())
+
+    panel_count = len(panel_masks)
+    plot_axes, figure = _worm_axes(
+        plt,
+        axes,
+        panel_count=panel_count,
+        figsize=figsize,
+    )
+    selected_x_limit = float(
+        x_limit if x_limit is not None else (4.0 if x_tensor is None else 3.5)
+    )
+    selected_y_limit = float(
+        y_limit
+        if y_limit is not None
+        else (
+            12.0 / math.sqrt(residual_values.size)
+            if x_tensor is None
+            else 12.0 * math.sqrt(n_intervals / residual_values.size)
+        )
+    )
+
+    panels = []
+    coefficient_rows = []
+    for panel_index, (axis, mask) in enumerate(zip(plot_axes, panel_masks)):
+        interval = (
+            None
+            if intervals is None
+            else (
+                float(intervals[panel_index, 0]),
+                float(intervals[panel_index, 1]),
+            )
+        )
+        panel = _worm_panel(
+            axis,
+            residual_values[mask],
+            x_limit=selected_x_limit,
+            y_limit=selected_y_limit,
+            show_polynomial=show_polynomial,
+            interval=interval,
+            x_label=x_label,
+            show_interval=show_intervals,
+        )
+        panels.append(panel)
+        if panel.coefficients is not None:
+            coefficient_rows.append(panel.coefficients)
+    figure.tight_layout()
+    coefficients = (
+        torch.stack(coefficient_rows)
+        if show_polynomial
+        else None
+    )
+    if coefficients is not None and x_tensor is None:
+        coefficients = coefficients[0]
+    return WormPlotResult(
+        figure=figure,
+        axes=plot_axes,
+        residuals=residual_tensor,
+        x_values=x_tensor,
+        intervals=intervals,
+        panels=tuple(panels),
+        coefficients=coefficients,
+    )
+
+
 def compare_models(
     diagnostics: Mapping[str, ModelDiagnostics],
     *,
@@ -596,6 +867,298 @@ def _residual_summary(
         theoretical,
         ordered,
     )
+
+
+def _finite_cpu_vector(
+    values: Tensor | Sequence[float] | np.ndarray,
+    *,
+    context: str,
+) -> Tensor:
+    if isinstance(values, Tensor):
+        tensor = values.detach().cpu()
+    else:
+        try:
+            tensor = torch.as_tensor(values)
+        except (TypeError, ValueError, RuntimeError) as error:
+            raise ValueError(f"{context} must be a numeric vector") from error
+    if tensor.ndim != 1 or tensor.numel() < 1:
+        raise ValueError(f"{context} must be a non-empty vector")
+    if not tensor.is_floating_point():
+        tensor = tensor.to(dtype=torch.float64)
+    if not torch.isfinite(tensor).all():
+        raise ValueError(f"{context} must contain only finite values")
+    return tensor
+
+
+def _co_intervals(
+    values: np.ndarray,
+    *,
+    number: int,
+    overlap: float,
+) -> np.ndarray:
+    """Reproduce the interval calculation in R graphics::co.intervals()."""
+    observation_count = values.size
+    if number > observation_count:
+        raise ValueError(
+            "n_intervals cannot exceed the number of observations"
+        )
+    ordered = np.sort(values)
+    panel_size = observation_count / (
+        number * (1.0 - overlap) + overlap
+    )
+    offsets = (
+        np.arange(number, dtype=np.float64)
+        * (1.0 - overlap)
+        * panel_size
+    )
+    lower_indices = np.rint(1.0 + offsets).astype(np.int64) - 1
+    upper_indices = np.rint(panel_size + offsets).astype(np.int64) - 1
+    lower_indices = np.clip(lower_indices, 0, observation_count - 1)
+    upper_indices = np.clip(upper_indices, 0, observation_count - 1)
+    lower_values = ordered[lower_indices]
+    upper_values = ordered[upper_indices]
+    keep = np.concatenate(
+        (
+            np.array([True]),
+            (np.diff(lower_values) > 0.0) | (np.diff(upper_values) > 0.0),
+        )
+    )
+    positive_jumps = np.diff(ordered)
+    positive_jumps = positive_jumps[positive_jumps > 0.0]
+    epsilon = (
+        0.5 * float(np.min(positive_jumps))
+        if positive_jumps.size
+        else 0.0
+    )
+    intervals = np.column_stack(
+        (
+            lower_values[keep] - epsilon,
+            upper_values[keep] + epsilon,
+        )
+    )
+    if overlap == 0.0 and intervals.shape[0] > 1:
+        for index in range(intervals.shape[0] - 1):
+            if abs(intervals[index, 1] - intervals[index + 1, 0]) >= 1e-4:
+                intervals[index + 1, 0] = intervals[index, 1]
+    return intervals
+
+
+def _cut_point_intervals(
+    values: np.ndarray,
+    cut_points: Sequence[float] | Tensor,
+) -> np.ndarray:
+    if isinstance(cut_points, Tensor):
+        points = cut_points.detach().cpu().numpy()
+    else:
+        try:
+            points = np.asarray(cut_points, dtype=np.float64)
+        except (TypeError, ValueError) as error:
+            raise ValueError("cut_points must be a numeric vector") from error
+    if points.ndim != 1 or points.size < 1 or not np.isfinite(points).all():
+        raise ValueError("cut_points must be a non-empty finite vector")
+    minimum = float(np.min(values))
+    maximum = float(np.max(values))
+    if np.any(points < minimum) or np.any(points > maximum):
+        raise ValueError(
+            f"cut_points must lie within the x range [{minimum}, {maximum}]"
+        )
+    if np.any(np.diff(points) <= 0.0):
+        raise ValueError("cut_points must be strictly increasing")
+    extra = (maximum - minimum) / 100000.0
+    boundaries = np.concatenate(
+        (
+            np.array([minimum]),
+            points.astype(np.float64, copy=False),
+            np.array([maximum + 2.0 * extra]),
+        )
+    )
+    intervals = np.column_stack(
+        (
+            boundaries[:-1],
+            boundaries[1:] - extra,
+        )
+    )
+    if np.any(intervals[:, 0] > intervals[:, 1]):
+        raise ValueError("cut_points do not define increasing intervals")
+    return intervals
+
+
+def _worm_axes(
+    pyplot: Any,
+    axes: Sequence[Any] | Any | None,
+    *,
+    panel_count: int,
+    figsize: tuple[float, float] | None,
+) -> tuple[tuple[Any, ...], Any]:
+    if axes is None:
+        columns = 1 if panel_count == 1 else min(2, panel_count)
+        rows = math.ceil(panel_count / columns)
+        selected_figsize = figsize or (6.0 * columns, 4.0 * rows)
+        figure, raw_axes = pyplot.subplots(
+            rows,
+            columns,
+            figsize=selected_figsize,
+            squeeze=False,
+        )
+        flattened = tuple(raw_axes.reshape(-1))
+        for unused_axis in flattened[panel_count:]:
+            unused_axis.set_visible(False)
+        return flattened[:panel_count], figure
+    flattened = tuple(np.asarray(axes, dtype=object).reshape(-1))
+    if len(flattened) != panel_count:
+        raise ValueError(
+            f"axes must contain exactly {panel_count} Matplotlib axes"
+        )
+    figures = {id(axis.figure): axis.figure for axis in flattened}
+    if len(figures) != 1:
+        raise ValueError("all worm-plot axes must belong to the same figure")
+    return flattened, next(iter(figures.values()))
+
+
+def _worm_panel(
+    axis: Any,
+    residuals: np.ndarray,
+    *,
+    x_limit: float,
+    y_limit: float,
+    show_polynomial: bool,
+    interval: tuple[float, float] | None,
+    x_label: str | None,
+    show_interval: bool,
+) -> WormPlotPanel:
+    ordered = np.sort(residuals.astype(np.float64, copy=False))
+    theoretical = norm.ppf(_plotting_positions(ordered.size))
+    deviations = ordered - theoretical
+    confidence_grid = np.arange(
+        -x_limit,
+        x_limit + np.finfo(np.float64).eps * max(1.0, x_limit),
+        0.25,
+        dtype=np.float64,
+    )
+    probabilities = norm.cdf(confidence_grid)
+    standard_errors = (
+        np.sqrt(
+            probabilities
+            * (1.0 - probabilities)
+            / ordered.size
+        )
+        / norm.pdf(confidence_grid)
+    )
+    confidence_lower = norm.ppf(0.025) * standard_errors
+    confidence_upper = -confidence_lower
+
+    if np.any(np.abs(deviations) > y_limit):
+        warnings.warn(
+            "some worm-plot deviations fall outside y_limit",
+            stacklevel=3,
+        )
+    if np.any(np.abs(theoretical) > x_limit):
+        warnings.warn(
+            "some theoretical quantiles fall outside x_limit",
+            stacklevel=3,
+        )
+
+    axis.scatter(
+        theoretical,
+        deviations,
+        s=24,
+        facecolors="wheat",
+        edgecolors="0.25",
+        linewidths=0.7,
+        alpha=0.9,
+    )
+    axis.axhline(
+        0.0,
+        color="red",
+        linestyle="--",
+        linewidth=0.9,
+    )
+    axis.axvline(
+        0.0,
+        color="red",
+        linestyle="--",
+        linewidth=0.9,
+    )
+    axis.plot(
+        confidence_grid,
+        confidence_lower,
+        color="0.25",
+        linestyle="--",
+        linewidth=0.8,
+    )
+    axis.plot(
+        confidence_grid,
+        confidence_upper,
+        color="0.25",
+        linestyle="--",
+        linewidth=0.8,
+    )
+    coefficient_values = None
+    coefficient_tensor = None
+    if show_polynomial:
+        coefficient_values = _worm_coefficients(theoretical, deviations)
+        polynomial_limit = x_limit if interval is None else min(x_limit, 2.5)
+        polynomial_grid = np.linspace(
+            -polynomial_limit,
+            polynomial_limit,
+            300,
+        )
+        fitted_deviation = sum(
+            coefficient_values[power] * polynomial_grid**power
+            for power in range(4)
+            if math.isfinite(coefficient_values[power])
+        )
+        axis.plot(
+            polynomial_grid,
+            fitted_deviation,
+            color="red",
+            linewidth=1.1,
+        )
+        coefficient_tensor = torch.from_numpy(coefficient_values.copy())
+
+    axis.set_xlim(-x_limit, x_limit)
+    axis.set_ylim(-y_limit, y_limit)
+    axis.set_xlabel("Unit normal quantile")
+    axis.set_ylabel("Deviation")
+    if interval is None:
+        axis.set_title("Worm plot")
+    elif show_interval:
+        label = x_label or "x"
+        lower = 0.0 if abs(interval[0]) < 5e-12 else interval[0]
+        upper = 0.0 if abs(interval[1]) < 5e-12 else interval[1]
+        axis.set_title(
+            f"{label}: [{lower:.4g}, {upper:.4g}]"
+        )
+    axis.grid(alpha=0.2)
+    return WormPlotPanel(
+        axis=axis,
+        residuals=torch.from_numpy(ordered.copy()),
+        theoretical_quantiles=torch.from_numpy(theoretical.copy()),
+        deviations=torch.from_numpy(deviations.copy()),
+        confidence_grid=torch.from_numpy(confidence_grid.copy()),
+        confidence_lower=torch.from_numpy(confidence_lower.copy()),
+        confidence_upper=torch.from_numpy(confidence_upper.copy()),
+        coefficients=coefficient_tensor,
+        interval=interval,
+    )
+
+
+def _worm_coefficients(
+    theoretical_quantiles: np.ndarray,
+    deviations: np.ndarray,
+) -> np.ndarray:
+    design = np.column_stack(
+        tuple(theoretical_quantiles**power for power in range(4))
+    )
+    estimable_columns = min(theoretical_quantiles.size, 4)
+    estimated, *_ = np.linalg.lstsq(
+        design[:, :estimable_columns],
+        deviations,
+        rcond=None,
+    )
+    coefficients = np.full(4, np.nan, dtype=np.float64)
+    coefficients[:estimable_columns] = estimated
+    return coefficients
 
 
 def _scatter_residual_panel(

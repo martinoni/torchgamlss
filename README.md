@@ -77,6 +77,8 @@ The current implementation contains:
 - continuous and randomized discrete normal quantile residuals;
 - four-panel quantile-residual diagnostics through `plot()` and `plot_data()`,
   including the time-series ACF/PACF variant;
+- global and covariate-conditioned worm plots through `wp()`, `wp_data()`,
+  and `worm_plot()`;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
   variables, `offset()`, and `pb()`;
 - independent design matrices for each distribution parameter;
@@ -84,8 +86,8 @@ The current implementation contains:
   links, derivatives, starting values, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Worm and bucket plots remain planned work. The L-BFGS path remains a
-Torch-native numerical baseline and requires fixed smoothing parameters.
+Bucket plots remain planned work. The L-BFGS path remains a Torch-native
+numerical baseline and requires fixed smoothing parameters.
 Analytic fixed-lambda inference now provides joint covariance across linear
 coefficients, penalized spline coefficients, smooth terms, and distribution
 parameters. Aligned parametric-bootstrap refits additionally propagate

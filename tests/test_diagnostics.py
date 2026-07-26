@@ -21,7 +21,9 @@ from torchgamlss import (
     QuantileResidualSummary,
     ResidualDiagnosticPlot,
     RSControl,
+    WormPlotResult,
     compare_models,
+    worm_plot,
 )
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
@@ -584,3 +586,183 @@ def test_time_series_plot_and_axes_validation():
         )
     with pytest.raises(ValueError, match="requires time_series"):
         model.plot(response, design, max_lag=2)
+
+
+def test_standalone_worm_plot_matches_r_coefficients_and_bands():
+    observation_count = 40
+    probabilities = (
+        torch.arange(1, observation_count + 1, dtype=torch.float64) - 0.5
+    ) / observation_count
+    quantiles = torch.special.ndtri(probabilities)
+    residuals = (
+        quantiles
+        + 0.12
+        + 0.08 * quantiles.square()
+        - 0.03 * quantiles.pow(3)
+    )
+
+    result = worm_plot(residuals)
+
+    assert isinstance(result, WormPlotResult)
+    assert result.axes == (result.figure.axes[0],)
+    assert result.intervals is None
+    assert result.x_values is None
+    assert len(result.panels) == 1
+    assert result.coefficients is not None
+    reference = next(
+        row
+        for row in _rows("worm_plot_reference.csv")
+        if row["scope"] == "global"
+    )
+    expected = torch.tensor(
+        [
+            float(reference["intercept"]),
+            float(reference["linear"]),
+            float(reference["quadratic"]),
+            float(reference["cubic"]),
+        ],
+        dtype=torch.float64,
+    )
+    torch.testing.assert_close(
+        result.coefficients,
+        expected,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    panel = result.panels[0]
+    torch.testing.assert_close(
+        panel.deviations,
+        panel.residuals - panel.theoretical_quantiles,
+    )
+    torch.testing.assert_close(
+        panel.confidence_upper,
+        -panel.confidence_lower,
+    )
+    assert panel.confidence_grid[1] - panel.confidence_grid[0] == (
+        pytest.approx(0.25)
+    )
+    plt.close(result.figure)
+
+
+def test_conditioned_worm_plot_matches_r_intervals_and_coefficients():
+    observation_count = 40
+    probabilities = (
+        torch.arange(1, observation_count + 1, dtype=torch.float64) - 0.5
+    ) / observation_count
+    quantiles = torch.special.ndtri(probabilities)
+    residuals = (
+        quantiles
+        + 0.12
+        + 0.08 * quantiles.square()
+        - 0.03 * quantiles.pow(3)
+    )
+    x_variable = torch.linspace(
+        -2.0,
+        2.0,
+        observation_count,
+        dtype=torch.float64,
+    )
+
+    result = worm_plot(
+        residuals,
+        x_variable=x_variable,
+        x_label="Age",
+        n_intervals=4,
+        overlap=0.0,
+    )
+
+    conditioned = [
+        row
+        for row in _rows("worm_plot_reference.csv")
+        if row["scope"] == "conditioned"
+    ]
+    expected_intervals = torch.tensor(
+        [
+            [float(row["lower"]), float(row["upper"])]
+            for row in conditioned
+        ],
+        dtype=torch.float64,
+    )
+    expected_coefficients = torch.tensor(
+        [
+            [
+                float(row["intercept"]),
+                float(row["linear"]),
+                float(row["quadratic"]),
+                float(row["cubic"]),
+            ]
+            for row in conditioned
+        ],
+        dtype=torch.float64,
+    )
+    assert result.intervals is not None
+    assert result.coefficients is not None
+    torch.testing.assert_close(
+        result.intervals,
+        expected_intervals,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    torch.testing.assert_close(
+        result.coefficients,
+        expected_coefficients,
+        rtol=1e-11,
+        atol=1e-12,
+    )
+    assert len(result.panels) == 4
+    assert len(result.axes) == 4
+    assert all(axis.get_title().startswith("Age:") for axis in result.axes)
+    assert [panel.residuals.numel() for panel in result.panels] == [10] * 4
+    plt.close(result.figure)
+
+
+def test_formula_wp_and_worm_plot_validation():
+    data = pd.read_csv(REFERENCE_DIR / "no_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ x", "sigma": "~ 1"},
+        data,
+    )
+    model.fit_rs_data(data)
+
+    result = model.wp_data(data, x_variable="x", n_intervals=2)
+    expected_residuals = model.quantile_residuals_data(data).cpu()
+
+    torch.testing.assert_close(result.residuals, expected_residuals)
+    assert result.x_values is not None
+    assert result.intervals is not None
+    assert result.intervals.shape == (2, 2)
+    assert result.coefficients is not None
+    assert result.coefficients.shape == (2, 4)
+    assert torch.isnan(result.coefficients[:, 3]).all()
+    plt.close(result.figure)
+
+    no_line = worm_plot(
+        [-1.0, -0.2, 0.3, 1.1],
+        show_polynomial=False,
+    )
+    assert no_line.coefficients is None
+    assert no_line.panels[0].coefficients is None
+    plt.close(no_line.figure)
+
+    with pytest.raises(ValueError, match="at least two"):
+        worm_plot([0.0])
+    with pytest.raises(ValueError, match="cut_points requires"):
+        worm_plot([-1.0, 0.0, 1.0], cut_points=[0.0])
+    with pytest.raises(ValueError, match="one value per residual"):
+        worm_plot([-1.0, 0.0, 1.0], x_variable=[1.0, 2.0])
+    with pytest.raises(ValueError, match="overlap"):
+        worm_plot(
+            [-1.0, 0.0, 1.0],
+            x_variable=[1.0, 2.0, 3.0],
+            overlap=1.0,
+        )
+    figure, axes = plt.subplots(1, 3)
+    with pytest.raises(ValueError, match="exactly 2"):
+        worm_plot(
+            [-1.0, -0.2, 0.3, 1.1],
+            x_variable=[1.0, 2.0, 3.0, 4.0],
+            n_intervals=2,
+            axes=axes,
+        )
+    plt.close(figure)

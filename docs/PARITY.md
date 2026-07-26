@@ -247,6 +247,12 @@ sample variance, skewness, kurtosis, and Filliben correlation produced by R
 `plot.gamlss()` for the Normal reference fit. Plotting positions follow R
 `qqnorm()`.
 
+The worm-plot fixture compares a global plot and four non-overlapping
+covariate-conditioned panels against R `wp()`. It checks every interval
+boundary and all four coefficients from the cubic detrended-Q-Q regressions.
+The theoretical quantiles, 95% pointwise bands, default limits, and interval
+construction follow `R/wp.R` and `graphics::co.intervals()`.
+
 ## Reproducing the fixtures
 
 From the repository root:
@@ -291,4 +297,4 @@ the selected smoothing parameter and final fit agree.
 Likelihood criteria follow `GAIC.gamlss()` and `logLik.gamlss()`. Quantile
 residuals follow the family `rqres` definitions and the shared `rqres()`
 helper in `gamlss.dist`. The four-panel layout and summary statistics follow
-`plot.gamlss()`.
+`plot.gamlss()`. Worm plots follow `wp()` in `R/wp.R`.

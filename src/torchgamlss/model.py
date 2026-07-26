@@ -15,9 +15,11 @@ from torch.utils.data import DataLoader
 from torchgamlss.diagnostics import (
     ModelDiagnostics,
     ResidualDiagnosticPlot,
+    WormPlotResult,
     model_diagnostics,
     plot_residual_diagnostics,
     quantile_residuals,
+    worm_plot_diagnostics,
 )
 from torchgamlss.families import Family
 from torchgamlss.fitting import (
@@ -837,6 +839,74 @@ class GAMLSS(nn.Module):
             figsize=figsize,
         )
 
+    def wp_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
+        x_variable: Any = None,
+        x_label: str | None = None,
+        uniforms: Any = None,
+        generator: torch.Generator | None = None,
+        n_intervals: int = 4,
+        cut_points: Sequence[float] | Tensor | None = None,
+        overlap: float = 0.0,
+        x_limit: float | None = None,
+        y_limit: float | None = None,
+        show_intervals: bool = True,
+        show_polynomial: bool = True,
+        axes: Sequence[Any] | Any | None = None,
+        figsize: tuple[float, float] | None = None,
+    ) -> WormPlotResult:
+        """Plot global or covariate-conditioned worm plots from formula data."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        x_tensor = self._formula_tensor(
+            data,
+            x_variable,
+            context="worm-plot x-variable",
+        )
+        uniform_tensor = self._formula_tensor(
+            data,
+            uniforms,
+            context="uniforms",
+        )
+        parameter_neural_inputs = self._formula_neural_inputs(
+            data,
+            neural_inputs,
+        )
+        model_shared_input = self._formula_shared_input(data, shared_input)
+        inferred_x_label = (
+            x_variable
+            if x_label is None and isinstance(x_variable, str)
+            else x_label
+        )
+        return self.wp(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
+            x_variable=x_tensor,
+            x_label=inferred_x_label,
+            uniforms=uniform_tensor,
+            generator=generator,
+            n_intervals=n_intervals,
+            cut_points=cut_points,
+            overlap=overlap,
+            x_limit=x_limit,
+            y_limit=y_limit,
+            show_intervals=show_intervals,
+            show_polynomial=show_polynomial,
+            axes=axes,
+            figsize=figsize,
+        )
+
     def linear_predictors(
         self,
         design_matrices: Mapping[str, Tensor],
@@ -1633,6 +1703,55 @@ class GAMLSS(nn.Module):
             generator=generator,
             time_series=time_series,
             max_lag=max_lag,
+            axes=axes,
+            figsize=figsize,
+        )
+
+    def wp(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
+        x_variable: Tensor | None = None,
+        x_label: str | None = None,
+        uniforms: Tensor | None = None,
+        generator: torch.Generator | None = None,
+        n_intervals: int = 4,
+        cut_points: Sequence[float] | Tensor | None = None,
+        overlap: float = 0.0,
+        x_limit: float | None = None,
+        y_limit: float | None = None,
+        show_intervals: bool = True,
+        show_polynomial: bool = True,
+        axes: Sequence[Any] | Any | None = None,
+        figsize: tuple[float, float] | None = None,
+    ) -> WormPlotResult:
+        """Plot detrended normal Q-Q diagnostics for quantile residuals."""
+        return worm_plot_diagnostics(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
+            shared_input=shared_input,
+            x_variable=x_variable,
+            x_label=x_label,
+            uniforms=uniforms,
+            generator=generator,
+            n_intervals=n_intervals,
+            cut_points=cut_points,
+            overlap=overlap,
+            x_limit=x_limit,
+            y_limit=y_limit,
+            show_intervals=show_intervals,
+            show_polynomial=show_polynomial,
             axes=axes,
             figsize=figsize,
         )

@@ -187,3 +187,73 @@ plot = model.plot_data(
     max_lag=24,
 )
 ```
+
+## Worm plots
+
+A worm plot is a detrended normal Q-Q plot: its vertical coordinate is the
+ordered quantile residual minus the corresponding unit-normal quantile.
+`wp_data()` calculates the residuals and produces a global plot:
+
+```python
+worm = model.wp_data(data)
+worm.figure.show()
+```
+
+Condition on one numeric explanatory variable to look for local
+misspecification:
+
+```python
+worm = model.wp_data(
+    data,
+    x_variable="age",
+    n_intervals=4,
+    overlap=0,
+)
+```
+
+The default intervals reproduce `graphics::co.intervals()` and the
+non-overlapping boundary adjustment used by R `gamlss::wp()`. Explicit cut
+points and overlapping intervals are also supported:
+
+```python
+worm = model.wp_data(
+    data,
+    x_variable="age",
+    cut_points=[5, 10, 15],
+)
+
+overlapping = model.wp_data(
+    data,
+    x_variable="age",
+    n_intervals=4,
+    overlap=0.5,
+)
+```
+
+The returned `WormPlotResult` exposes the figure, active axes, residuals,
+conditioning values, interval matrix, and one `WormPlotPanel` per interval.
+Each panel contains the theoretical quantiles, deviations, 95% pointwise
+reference bands, and cubic coefficients. For a conditioned plot:
+
+```python
+worm.intervals
+worm.coefficients  # rows are intervals; columns are 1, z, z**2, z**3
+```
+
+The coefficients quantify the worm's displacement and shape, following R's
+`lm(deviation ~ z + z**2 + z**3)` calculation. Set
+`show_polynomial=False` to omit the fitted curve and coefficient calculation.
+Pass existing Matplotlib axes through `axes=` for full layout control.
+
+The low-level model method is `model.wp(response, design_matrices, ...)`.
+Residuals from any other model can be inspected without a TorchGAMLSS object:
+
+```python
+from torchgamlss import worm_plot
+
+worm = worm_plot(standardized_residuals, x_variable=age)
+```
+
+Integer frequency weights, randomized residual controls for discrete
+families, model device handling, and training-mode restoration follow
+`plot()`.

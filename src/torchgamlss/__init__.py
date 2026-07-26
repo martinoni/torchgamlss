@@ -4,7 +4,10 @@ from torchgamlss.diagnostics import (
     ModelDiagnostics,
     QuantileResidualSummary,
     ResidualDiagnosticPlot,
+    WormPlotPanel,
+    WormPlotResult,
     compare_models,
+    worm_plot,
 )
 from torchgamlss.families import (
     BCCG,
@@ -104,7 +107,10 @@ __all__ = [
     "SmoothTerm",
     "SharedMLPPredictor",
     "TermContributions",
+    "WormPlotPanel",
+    "WormPlotResult",
     "compare_models",
+    "worm_plot",
 ]
 
 __version__ = "0.0.0"

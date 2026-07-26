@@ -422,6 +422,27 @@ Use `time_series=True` to replace the first two panels with residual ACF and
 PACF. Summary statistics are returned in `diagnostic_plot.summary` rather than
 printed.
 
+The worm-plot workflow maps to `wp_data()`:
+
+```r
+wp(fit)
+wp(fit, xvar = age, n.inter = 4, overlap = 0)
+```
+
+```python
+global_worm = model.wp_data(data)
+age_worms = model.wp_data(
+    data,
+    x_variable="age",
+    n_intervals=4,
+    overlap=0,
+)
+```
+
+The R return values `classes` and `coef` are available as
+`age_worms.intervals` and `age_worms.coefficients`. The standalone
+`worm_plot(residuals, ...)` corresponds to `wp(resid=residuals, ...)`.
+
 Joint observed-Hessian Wald inference is available for models without smooth
 terms:
 

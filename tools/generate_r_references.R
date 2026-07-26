@@ -134,6 +134,9 @@ model_diagnostics_path <- file.path(
 residual_plot_summary_path <- file.path(
   reference_dir, "residual_plot_summary_reference.csv"
 )
+worm_plot_path <- file.path(
+  reference_dir, "worm_plot_reference.csv"
+)
 quantile_residual_path <- file.path(
   reference_dir, "quantile_residual_reference.csv"
 )
@@ -730,6 +733,54 @@ residual_plot_summary_reference <- data.frame(
   filliben_correlation = cor(fit_qq$y, fit_qq$x),
   gamlss_version = as.character(packageVersion("gamlss")),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+worm_count <- 40
+worm_quantiles <- qnorm((seq_len(worm_count) - 0.5) / worm_count)
+worm_residuals <- (
+  worm_quantiles
+  + 0.12
+  + 0.08 * worm_quantiles^2
+  - 0.03 * worm_quantiles^3
+)
+worm_x <- seq(-2, 2, length.out = worm_count)
+pdf(file = NULL)
+worm_global <- wp(resid = worm_residuals, line = TRUE)
+invisible(capture.output(
+  worm_conditioned <- wp(
+    resid = worm_residuals,
+    xvar = worm_x,
+    n.inter = 4,
+    overlap = 0,
+    line = TRUE
+  )
+))
+dev.off()
+worm_plot_reference <- rbind(
+  data.frame(
+    scope = "global",
+    panel = 1,
+    lower = NA_real_,
+    upper = NA_real_,
+    intercept = unname(worm_global[[1]]),
+    linear = unname(worm_global[[2]]),
+    quadratic = unname(worm_global[[3]]),
+    cubic = unname(worm_global[[4]])
+  ),
+  data.frame(
+    scope = "conditioned",
+    panel = seq_len(nrow(worm_conditioned$classes)),
+    lower = worm_conditioned$classes[, 1],
+    upper = worm_conditioned$classes[, 2],
+    intercept = worm_conditioned$coef[, 1],
+    linear = worm_conditioned$coef[, 2],
+    quadratic = worm_conditioned$coef[, 3],
+    cubic = worm_conditioned$coef[, 4]
+  )
+)
+worm_plot_reference$gamlss_version <- as.character(packageVersion("gamlss"))
+worm_plot_reference$gamlss_dist_version <- as.character(
+  packageVersion("gamlss.dist")
 )
 
 ga_n <- 60
@@ -2369,6 +2420,7 @@ if (check_only) {
     residual_plot_summary_path,
     tolerance = 1e-12
   )
+  assert_close(worm_plot_reference, worm_plot_path, tolerance = 1e-12)
   assert_close(
     quantile_residual_reference,
     quantile_residual_path,
@@ -2533,6 +2585,7 @@ if (check_only) {
     residual_plot_summary_reference,
     residual_plot_summary_path
   )
+  write_csv_lf(worm_plot_reference, worm_plot_path)
   write_csv_lf(quantile_residual_reference, quantile_residual_path)
   write_csv_lf(quantile_prediction_reference, quantile_prediction_path)
   message("Wrote R reference fixtures to ", reference_dir)
