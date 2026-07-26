@@ -232,6 +232,7 @@ def fit_minibatch(
     neural_inputs: Mapping[str, Tensor] | None = None,
     shared_input: Tensor | None = None,
     validation: MiniBatchValidationData | None = None,
+    initial_parameters: Mapping[str, Any] | None = None,
     control: MiniBatchControl | None = None,
     generator: torch.Generator | None = None,
 ) -> MiniBatchFitResult:
@@ -306,6 +307,20 @@ def fit_minibatch(
     observation_count = response.numel()
     batch_size = min(control.batch_size, observation_count)
     total_weight = case_weights.sum().detach()
+    if initial_parameters is not None:
+        _initialize_tensor_intercepts(
+            model,
+            response,
+            design_matrices,
+            case_weights,
+            normalized_offsets,
+            normalized_smooth_covariates,
+            normalized_neural_inputs,
+            normalized_shared_input,
+            initial_parameters,
+            batch_size=batch_size,
+            total_weight=total_weight,
+        )
     original_training_mode = model.training
     model.train()
     parameters = list(model.parameters())
@@ -591,6 +606,7 @@ def fit_minibatch_loader(
     loader: DataLoader[Any],
     *,
     validation_loader: DataLoader[Any] | None = None,
+    initial_parameters: Mapping[str, Any] | None = None,
     control: MiniBatchControl | None = None,
     non_blocking: bool = False,
     checkpoint_path: str | os.PathLike[str] | None = None,
@@ -620,6 +636,10 @@ def fit_minibatch_loader(
         raise ValueError("checkpoint_frequency must be an integer of at least 1")
     if resume_from is not None and checkpoint_path is None:
         checkpoint_path = resume_from
+    if resume_from is not None and initial_parameters is not None:
+        raise ValueError(
+            "initial_parameters cannot be supplied when resuming a checkpoint"
+        )
     _validate_loader_configuration(loader, context="training loader")
     if validation_loader is not None:
         _validate_loader_configuration(
@@ -635,29 +655,54 @@ def fit_minibatch_loader(
             "automatic smoothing-parameter estimation requires fit_rs() or fit_cg()"
         )
 
-    _, initial_objective, training_metadata = (
-        _loader_objective_values(
+    initial_objective: float | None = None
+    initial_validation_loss: float | None = None
+    if resume_from is None:
+        if initial_parameters is not None:
+            _initialize_loader_intercepts(
+                model,
+                loader,
+                initial_parameters,
+                non_blocking=non_blocking,
+            )
+        _, initial_objective, training_metadata = (
+            _loader_objective_values(
+                model,
+                loader,
+                non_blocking=non_blocking,
+            )
+        )
+        validation_metadata: _LoaderMetadata | None = None
+        if validation_loader is not None:
+            initial_validation_nll, validation_metadata = (
+                _loader_likelihood_values(
+                    model,
+                    validation_loader,
+                    non_blocking=non_blocking,
+                    context="validation loader",
+                )
+            )
+            initial_validation_loss = (
+                initial_validation_nll
+                / float(validation_metadata.total_weight)
+            )
+    else:
+        training_metadata = _loader_metadata_values(
             model,
             loader,
             non_blocking=non_blocking,
+            context="training loader",
         )
-    )
-    validation_metadata: _LoaderMetadata | None = None
-    if validation_loader is not None:
-        initial_validation_nll, validation_metadata = (
-            _loader_likelihood_values(
+        validation_metadata = (
+            _loader_metadata_values(
                 model,
                 validation_loader,
                 non_blocking=non_blocking,
                 context="validation loader",
             )
+            if validation_loader is not None
+            else None
         )
-        initial_validation_loss = (
-            initial_validation_nll
-            / float(validation_metadata.total_weight)
-        )
-    else:
-        initial_validation_loss = None
 
     parameters = list(model.parameters())
     optimizer = torch.optim.Adam(
@@ -678,6 +723,7 @@ def fit_minibatch_loader(
     original_training_mode = model.training
     model.train()
     if resume_from is None:
+        assert initial_objective is not None
         objective_history = [initial_objective]
         evaluation_epochs = [0]
         validation_history = (
@@ -1159,6 +1205,185 @@ def _preserve_loader_rng(loader: DataLoader[Any]) -> Iterator[None]:
         torch.random.set_rng_state(global_state)
         for generator, state in generators:
             generator.set_state(state)
+
+
+def _initialize_loader_intercepts(
+    model: GAMLSS,
+    loader: DataLoader[Any],
+    initial_parameters: Mapping[str, Any],
+    *,
+    non_blocking: bool,
+) -> None:
+    starts = _validated_loader_initial_parameters(
+        model,
+        initial_parameters,
+    )
+    model_parameter = next(model.parameters())
+    weighted_residual_sums = {
+        parameter: model_parameter.new_zeros(())
+        for parameter in model.family.parameter_names
+    }
+    target_predictors: dict[str, Tensor] | None = None
+    observation_count = 0
+    total_weight = model_parameter.new_zeros(())
+    maximum_batch_size = 0
+    batches = 0
+    training_mode = model.training
+    model.eval()
+    try:
+        with _preserve_loader_rng(loader), torch.no_grad():
+            for batch in _loader_batches(
+                model,
+                loader,
+                non_blocking=non_blocking,
+                context="training loader initialization",
+            ):
+                (
+                    batch_response,
+                    batch_designs,
+                    batch_weights,
+                    batch_offsets,
+                    batch_smooth,
+                    batch_neural,
+                    batch_shared,
+                ) = batch
+                if target_predictors is None:
+                    expanded = model.family.initial_parameters(
+                        batch_response,
+                        starts,
+                    )
+                    target_predictors = {
+                        parameter: model.family.links[parameter](
+                            expanded[parameter]
+                        )[0]
+                        for parameter in model.family.parameter_names
+                    }
+                contributions = model.term_contributions(
+                    batch_designs,
+                    batch_offsets,
+                    smooth_covariates=batch_smooth,
+                    neural_inputs=batch_neural,
+                    shared_input=batch_shared,
+                )
+                for parameter in model.family.parameter_names:
+                    design = batch_designs[parameter]
+                    _validate_initialization_intercept(design, parameter)
+                    current_intercept = (
+                        model.coefficients[parameter][0].detach()
+                    )
+                    non_intercept_predictor = (
+                        contributions[parameter].total
+                        - design[:, 0] * current_intercept
+                    )
+                    weighted_residual_sums[parameter] += (
+                        batch_weights
+                        * (
+                            target_predictors[parameter]
+                            - non_intercept_predictor
+                        )
+                    ).sum()
+                batch_observations = batch_response.numel()
+                observation_count += batch_observations
+                total_weight += batch_weights.sum()
+                maximum_batch_size = max(
+                    maximum_batch_size,
+                    batch_observations,
+                )
+                batches += 1
+    finally:
+        model.train(training_mode)
+    metadata = _LoaderMetadata(
+        observation_count=observation_count,
+        total_weight=total_weight.detach(),
+        maximum_batch_size=maximum_batch_size,
+        batches=batches,
+    )
+    _validate_loader_metadata(
+        metadata,
+        None,
+        context="training loader initialization",
+    )
+    with torch.no_grad():
+        for parameter in model.family.parameter_names:
+            model.coefficients[parameter][0].copy_(
+                weighted_residual_sums[parameter] / metadata.total_weight
+            )
+
+
+def _validated_loader_initial_parameters(
+    model: GAMLSS,
+    values: Mapping[str, Any],
+) -> dict[str, Tensor]:
+    if not isinstance(values, Mapping):
+        raise ValueError("initial parameters must be supplied as a mapping")
+    expected = set(model.family.parameter_names)
+    received = set(values)
+    if received != expected:
+        raise ValueError(
+            "DataLoader initial parameters must provide one scalar for every "
+            "family parameter: "
+            f"missing={sorted(expected - received)}, "
+            f"extra={sorted(received - expected)}"
+        )
+    model_parameter = next(model.parameters())
+    starts = {}
+    for parameter in model.family.parameter_names:
+        try:
+            value = torch.as_tensor(
+                values[parameter],
+                dtype=model_parameter.dtype,
+                device=model_parameter.device,
+            )
+        except (TypeError, ValueError, RuntimeError) as error:
+            raise ValueError(
+                f"initial parameter {parameter!r} cannot be converted to a tensor"
+            ) from error
+        if value.ndim != 0:
+            raise ValueError(
+                "DataLoader initial parameters must be scalars; "
+                f"{parameter!r} is not scalar"
+            )
+        starts[parameter] = value
+    return starts
+
+
+def _loader_metadata_values(
+    model: GAMLSS,
+    loader: DataLoader[Any],
+    *,
+    non_blocking: bool,
+    context: str,
+) -> _LoaderMetadata:
+    model_parameter = next(model.parameters())
+    observation_count = 0
+    total_weight = model_parameter.new_zeros(())
+    maximum_batch_size = 0
+    batches = 0
+    with _preserve_loader_rng(loader), torch.no_grad():
+        for batch in _loader_batches(
+            model,
+            loader,
+            non_blocking=non_blocking,
+            context=context,
+        ):
+            batch_response = batch[0]
+            batch_weights = batch[2]
+            batch_observations = batch_response.numel()
+            observation_count += batch_observations
+            total_weight += batch_weights.sum()
+            maximum_batch_size = max(
+                maximum_batch_size,
+                batch_observations,
+            )
+            batches += 1
+    metadata = _LoaderMetadata(
+        observation_count=observation_count,
+        total_weight=total_weight.detach(),
+        maximum_batch_size=maximum_batch_size,
+        batches=batches,
+    )
+    _validate_loader_metadata(metadata, None, context=context)
+    return metadata
 
 
 def _save_loader_checkpoint(
@@ -2274,6 +2499,107 @@ def _slice_inputs(
         },
         shared_input[indices] if shared_input is not None else None,
     )
+
+
+def _initialize_tensor_intercepts(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    weights: Tensor,
+    offsets: Mapping[str, Tensor],
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    neural_inputs: Mapping[str, Tensor],
+    shared_input: Tensor | None,
+    initial_parameters: Mapping[str, Any],
+    *,
+    batch_size: int,
+    total_weight: Tensor,
+) -> None:
+    starts = model.family.initial_parameters(
+        response,
+        initial_parameters,
+    )
+    target_predictors = {
+        parameter: model.family.links[parameter](starts[parameter])
+        for parameter in model.family.parameter_names
+    }
+    weighted_residual_sums = {
+        parameter: torch.zeros_like(total_weight)
+        for parameter in model.family.parameter_names
+    }
+    training_mode = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            for indices in _sequential_indices(
+                response.numel(),
+                batch_size,
+                response.device,
+            ):
+                batch = _slice_inputs(
+                    response,
+                    design_matrices,
+                    weights,
+                    offsets,
+                    smooth_covariates,
+                    neural_inputs,
+                    shared_input,
+                    indices,
+                )
+                (
+                    _,
+                    batch_designs,
+                    batch_weights,
+                    batch_offsets,
+                    batch_smooth,
+                    batch_neural,
+                    batch_shared,
+                ) = batch
+                contributions = model.term_contributions(
+                    batch_designs,
+                    batch_offsets,
+                    smooth_covariates=batch_smooth,
+                    neural_inputs=batch_neural,
+                    shared_input=batch_shared,
+                )
+                for parameter in model.family.parameter_names:
+                    design = batch_designs[parameter]
+                    _validate_initialization_intercept(design, parameter)
+                    current_intercept = (
+                        model.coefficients[parameter][0].detach()
+                    )
+                    non_intercept_predictor = (
+                        contributions[parameter].total
+                        - design[:, 0] * current_intercept
+                    )
+                    weighted_residual_sums[parameter] += (
+                        batch_weights
+                        * (
+                            target_predictors[parameter][indices]
+                            - non_intercept_predictor
+                        )
+                    ).sum()
+    finally:
+        model.train(training_mode)
+    with torch.no_grad():
+        for parameter in model.family.parameter_names:
+            model.coefficients[parameter][0].copy_(
+                weighted_residual_sums[parameter] / total_weight
+            )
+
+
+def _validate_initialization_intercept(
+    design: Tensor,
+    parameter: str,
+) -> None:
+    if design.shape[1] < 1 or not torch.equal(
+        design[:, 0],
+        torch.ones_like(design[:, 0]),
+    ):
+        raise ValueError(
+            "initial_parameters requires the first design column for "
+            f"{parameter!r} to be an intercept containing only ones"
+        )
 
 
 def _weighted_nll_sum(

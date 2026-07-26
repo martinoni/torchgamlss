@@ -14,6 +14,7 @@ result = model.fit_minibatch(
     weights=weights,
     offsets=offsets,
     smooth_covariates=smooth_covariates,
+    initial_parameters={"mu": 2.0, "sigma": 0.5},
     control=MiniBatchControl(
         batch_size=2048,
         epochs=100,
@@ -31,6 +32,7 @@ Formula models expose the same optimizer:
 result = model.fit_minibatch_data(
     data,
     weights="weight",
+    initial_parameters={"mu": "mu_start", "sigma": 0.5},
     control=MiniBatchControl(batch_size=2048, epochs=100),
     generator=torch.Generator().manual_seed(2026),
 )
@@ -44,6 +46,52 @@ supplied, it also reports the holdout history, best epoch, best validation
 loss, final holdout negative log-likelihood, and whether the best parameters
 were restored. `updates` counts attempted batches and `skipped_updates`
 reports the subset skipped by FP16 dynamic loss scaling.
+
+## Starting values
+
+`fit_minibatch()` accepts `initial_parameters` on the distribution-parameter
+scale, consistently with RS and CG. Values may be scalars or vectors with one
+value per training observation, and omitted parameters use the family
+defaults. The formula method additionally accepts training-data column names.
+
+The starts are transformed through the family links and projected onto the
+first coefficient of each predictor. That first design column must therefore
+be an explicit intercept containing only ones. The projection centers the
+complete initial predictor, after accounting for existing non-intercept
+coefficients, offsets, smooths, parameter-specific neural predictors, and
+shared predictors. A varying start is matched in weighted mean on the link
+scale; it is not necessarily reproduced row by row by an intercept-only
+predictor.
+
+This is especially important for positive-support families whose zero
+coefficient model is invalid. For example:
+
+```python
+result = bccg_model.fit_minibatch(
+    response,
+    design_matrices,
+    initial_parameters={"mu": 20.0, "sigma": 0.1, "nu": 0.5},
+    control=control,
+)
+```
+
+The streaming method cannot calculate response-wide family defaults or accept
+one start per observation without retaining the population. Its
+`initial_parameters` mapping must therefore provide one scalar for every
+family parameter:
+
+```python
+result = bccg_model.fit_minibatch_loader(
+    training_loader,
+    initial_parameters={"mu": 20.0, "sigma": 0.1, "nu": 0.5},
+    control=control,
+)
+```
+
+Initialization makes one bounded-memory training-loader pass and preserves
+the loader's exposed RNG state. Do not pass `initial_parameters` together with
+`resume_from`: the checkpoint already contains the initialized fitted state
+and is loaded before any likelihood evaluation.
 
 ## Objective scaling
 
@@ -234,11 +282,14 @@ shuffle generator. Consequently, `MiniBatchControl.batch_size`,
 this path. `MiniBatchFitResult.batch_size` reports the largest observed
 batch.
 
-The implementation makes an initial complete pass to infer the exact
-observation count and total case weight. Every later training, objective, and
-gradient pass must emit the same count and total weight; changes raise an
-error. `drop_last=True` is rejected. A batch may contain only zero-weight
-observations, but the complete loader must have positive total weight.
+The implementation makes an initial complete objective pass to infer the exact
+observation count and total case weight. Explicit initialization adds one
+preceding centering pass; checkpoint resume instead uses a likelihood-free
+metadata pass so positive-support models can load their saved state first.
+Every later training, objective, and gradient pass must emit the same count
+and total weight; changes raise an error. `drop_last=True` is rejected. A
+batch may contain only zero-weight observations, but the complete loader must
+have positive total weight.
 
 This preserves the weighted objective without requiring duplicated metadata:
 

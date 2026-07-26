@@ -28,7 +28,8 @@ model = GAMLSS.from_formula(
 result = model.fit_rs_data(data, weights="weight")
 ```
 
-RS starting values may be scalars, vectors, or names of columns in `data`:
+RS and mini-batch starting values may be scalars, vectors, or names of columns
+in `data`:
 
 ```python
 result = model.fit_rs_data(
@@ -40,6 +41,10 @@ result = model.fit_rs_data(
 
 See [`INITIALIZATION.md`](INITIALIZATION.md) for validation and default
 behavior.
+
+For the mini-batch optimizer, use the same mapping with
+`fit_minibatch_data()`. Every parameter formula must retain an intercept when
+initial values are supplied.
 
 Formula models can instead use the joint Cole-Green cycles:
 

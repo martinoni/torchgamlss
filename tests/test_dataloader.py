@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 
 from torchgamlss import (
+    BCCG,
     GAMLSS,
     MiniBatchControl,
     MLPPredictor,
@@ -459,6 +460,124 @@ def test_checkpoint_resume_exactly_matches_uninterrupted_dropout_fit(tmp_path):
             value,
             rtol=0.0,
             atol=0.0,
+        )
+
+
+def test_dataloader_box_cox_initialization_and_zero_model_resume(tmp_path):
+    response = torch.tensor(
+        [1.5, 2.0, 2.5, 3.5, 5.0, 6.0],
+        dtype=torch.float64,
+    )
+    family = BCCG()
+    designs = {
+        parameter: torch.ones((response.numel(), 1), dtype=response.dtype)
+        for parameter in family.parameter_names
+    }
+    dataset = _RowDataset(response, designs)
+    starts = {"mu": 3.0, "sigma": 0.2, "nu": 0.5}
+
+    def loader():
+        return DataLoader(dataset, batch_size=2, shuffle=False)
+
+    def model():
+        return GAMLSS(
+            BCCG(),
+            {parameter: 1 for parameter in family.parameter_names},
+            dtype=response.dtype,
+        )
+
+    def control(epochs):
+        return MiniBatchControl(
+            epochs=epochs,
+            learning_rate=1e-3,
+            shuffle=False,
+            minimum_epochs=1,
+            patience=10,
+            tolerance_change=0.0,
+            tolerance_gradient=0.0,
+        )
+
+    continuous_model = model()
+    continuous_result = continuous_model.fit_minibatch_loader(
+        loader(),
+        initial_parameters=starts,
+        control=control(2),
+    )
+    checkpoint_path = tmp_path / "bccg.pt"
+    partial_model = model()
+    partial_model.fit_minibatch_loader(
+        loader(),
+        initial_parameters=starts,
+        control=control(1),
+        checkpoint_path=checkpoint_path,
+    )
+    resumed_model = model()
+    resumed_result = resumed_model.fit_minibatch_loader(
+        loader(),
+        control=control(2),
+        resume_from=checkpoint_path,
+    )
+
+    assert resumed_result == continuous_result
+    for name, value in continuous_model.state_dict().items():
+        torch.testing.assert_close(
+            resumed_model.state_dict()[name],
+            value,
+            rtol=0.0,
+            atol=0.0,
+        )
+
+
+def test_dataloader_initial_parameters_must_be_complete_scalars():
+    _, response, designs = _linear_data(6, seed=701)
+    loader = DataLoader(
+        _RowDataset(response, designs),
+        batch_size=3,
+        shuffle=False,
+    )
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        dtype=torch.float64,
+    )
+    control = MiniBatchControl(epochs=1, minimum_epochs=1)
+
+    with pytest.raises(ValueError, match="one scalar for every"):
+        model.fit_minibatch_loader(
+            loader,
+            initial_parameters={"mu": 0.0},
+            control=control,
+        )
+    with pytest.raises(ValueError, match="must be scalars"):
+        model.fit_minibatch_loader(
+            loader,
+            initial_parameters={
+                "mu": torch.tensor([0.0], dtype=torch.float64),
+                "sigma": 1.0,
+            },
+            control=control,
+        )
+
+
+def test_dataloader_rejects_initial_parameters_when_resuming(tmp_path):
+    _, response, designs = _linear_data(6, seed=702)
+    loader = DataLoader(
+        _RowDataset(response, designs),
+        batch_size=3,
+        shuffle=False,
+    )
+    model = GAMLSS(
+        Normal(),
+        {"mu": 2, "sigma": 1},
+        dtype=torch.float64,
+    )
+
+    with pytest.raises(ValueError, match="when resuming"):
+        model.fit_minibatch_loader(
+            loader,
+            initial_parameters={"mu": 0.0, "sigma": 1.0},
+            control=MiniBatchControl(epochs=1, minimum_epochs=1),
+            resume_from=tmp_path / "unused.pt",
         )
 
 

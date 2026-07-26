@@ -390,6 +390,7 @@ class GAMLSS(nn.Module):
         neural_inputs: Mapping[str, Any] | None = None,
         shared_input: Any = None,
         validation_data: Any = None,
+        initial_parameters: Mapping[str, Any] | None = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -399,6 +400,10 @@ class GAMLSS(nn.Module):
         case_weights = self._formula_tensor(data, weights, context="weights")
         parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
         model_shared_input = self._formula_shared_input(data, shared_input)
+        parameter_starts = self._formula_initial_parameters(
+            data,
+            initial_parameters,
+        )
         validation = None
         if validation_data is not None:
             prepared_validation = self.prepare_formula_data(
@@ -434,6 +439,7 @@ class GAMLSS(nn.Module):
             neural_inputs=parameter_neural_inputs,
             shared_input=model_shared_input,
             validation=validation,
+            initial_parameters=parameter_starts,
             control=control,
             generator=generator,
         )
@@ -1194,6 +1200,7 @@ class GAMLSS(nn.Module):
         neural_inputs: Mapping[str, Tensor] | None = None,
         shared_input: Tensor | None = None,
         validation: MiniBatchValidationData | None = None,
+        initial_parameters: Mapping[str, Any] | None = None,
         control: MiniBatchControl | None = None,
         generator: torch.Generator | None = None,
     ) -> MiniBatchFitResult:
@@ -1208,6 +1215,7 @@ class GAMLSS(nn.Module):
             neural_inputs=neural_inputs,
             shared_input=shared_input,
             validation=validation,
+            initial_parameters=initial_parameters,
             control=control,
             generator=generator,
         )
@@ -1217,6 +1225,7 @@ class GAMLSS(nn.Module):
         loader: DataLoader[Any],
         *,
         validation_loader: DataLoader[Any] | None = None,
+        initial_parameters: Mapping[str, Any] | None = None,
         control: MiniBatchControl | None = None,
         non_blocking: bool = False,
         checkpoint_path: str | os.PathLike[str] | None = None,
@@ -1228,6 +1237,7 @@ class GAMLSS(nn.Module):
             self,
             loader,
             validation_loader=validation_loader,
+            initial_parameters=initial_parameters,
             control=control,
             non_blocking=non_blocking,
             checkpoint_path=checkpoint_path,

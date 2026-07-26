@@ -1,8 +1,8 @@
-# Classical fitting starting values
+# Fitting starting values
 
 Every family defines R-compatible default starting values on the distribution
-parameter scale. `fit_rs()` and `fit_cg()` validate and expand them before the
-first classical fitting cycle.
+parameter scale. `fit_rs()`, `fit_cg()`, and `fit_minibatch()` validate and
+expand them before optimization.
 
 Any subset can be overridden with scalars or one-dimensional tensors:
 
@@ -39,6 +39,17 @@ An override replaces only that parameter's default. For example, a constant
 Normal response has no default sample standard deviation, but supplying a
 positive `sigma` still retains the automatic `mu`.
 
-The same overrides are accepted by `fit_cg()` and `fit_cg_data()`. Torch
-L-BFGS currently starts from the model's coefficient tensors, which advanced
-callers can set directly before `fit()` or `fit_data()`.
+The same overrides are accepted by `fit_cg()`, `fit_cg_data()`,
+`fit_minibatch()`, and `fit_minibatch_data()`. Mini-batch initialization
+requires the first column of every design to be an intercept of ones. It
+centers the full predictor on the linked starts while respecting existing
+offset, smooth, neural, shared, and non-intercept contributions.
+
+`fit_minibatch_loader()` accepts a complete mapping of scalar starts, one for
+every family parameter. Streaming inputs cannot use response-wide defaults or
+observation-level start vectors without retaining the population. A resumed
+loader fit takes its state from the checkpoint and does not accept a second
+set of initial values.
+
+Torch L-BFGS currently starts from the model's coefficient tensors, which
+advanced callers can set directly before `fit()` or `fit_data()`.

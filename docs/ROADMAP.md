@@ -62,3 +62,11 @@ as supported.
 - [x] Atomic checkpoints and exact epoch-boundary resumption
 - [x] CUDA automatic mixed precision for neural mini-batch fitting
 - [x] FP16/BF16 tail-stability matrix for non-normal response families
+- [x] Family-aware starting values for tensor, formula, and streaming
+  mini-batch fits
+
+## Phase 5 — graphical diagnostics
+
+- [ ] `plot()` model diagnostic panels compatible with the R workflow
+- [ ] `wp()` worm plots
+- [ ] `bp()` bucket plots

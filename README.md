@@ -47,7 +47,7 @@ The current implementation contains:
   representations across location, scale, and shape predictors;
 - likelihood weights and offsets for every distribution parameter;
 - R-compatible family defaults and user-supplied parameter-scale starting
-  values for RS and CG fitting;
+  values for RS, CG, and tensor, formula, or streaming mini-batch fitting;
 - Rigby-Stasinopoulos fitting cycles for linear and additive predictors;
 - Cole-Green joint fitting with cross-parameter working weights for
   linear and additive predictors;
