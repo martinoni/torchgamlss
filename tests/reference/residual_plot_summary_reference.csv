@@ -1,0 +1,2 @@
+observation_count,mean,variance,skewness,kurtosis,filliben_correlation,gamlss_version,gamlss_dist_version
+6,1.1563919083633052e-16,1.1999999999999997,0.17680592183156593,1.3497023809523816,0.99279757058135354,5.5.0,6.1.1

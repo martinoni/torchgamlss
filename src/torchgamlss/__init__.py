@@ -1,6 +1,11 @@
 """Generalized Additive Models for Location, Scale and Shape in PyTorch."""
 
-from torchgamlss.diagnostics import ModelDiagnostics, compare_models
+from torchgamlss.diagnostics import (
+    ModelDiagnostics,
+    QuantileResidualSummary,
+    ResidualDiagnosticPlot,
+    compare_models,
+)
 from torchgamlss.families import (
     BCCG,
     BCPE,
@@ -81,8 +86,10 @@ __all__ = [
     "QuantileBandResult",
     "QuantileBootstrapResult",
     "QuantilePrediction",
+    "QuantileResidualSummary",
     "RSControl",
     "RSFitResult",
+    "ResidualDiagnosticPlot",
     "SmoothBootstrapResult",
     "SmoothCrossingBootstrapResult",
     "SmoothDerivedBandResult",

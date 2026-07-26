@@ -411,6 +411,17 @@ residuals = model.quantile_residuals_data(data)
 For discrete families, pass a seeded `torch.Generator` or explicit uniforms
 when reproducibility across languages matters.
 
+The four-panel `plot.gamlss()` diagnostic has a direct formula-data method:
+
+```python
+diagnostic_plot = model.plot_data(data, x_variable="age")
+diagnostic_plot.figure.show()
+```
+
+Use `time_series=True` to replace the first two panels with residual ACF and
+PACF. Summary statistics are returned in `diagnostic_plot.summary` rather than
+printed.
+
 Joint observed-Hessian Wald inference is available for models without smooth
 terms:
 
@@ -628,7 +639,7 @@ Important exclusions include:
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;
-- the complete R plotting and diagnostic ecosystem;
+- graphical diagnostics beyond the current four-panel residual plot;
 - exact P-spline extrapolation parity outside the training range.
 
 When translating an existing analysis, first reproduce the family,

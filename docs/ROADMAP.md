@@ -67,6 +67,6 @@ as supported.
 
 ## Phase 5 — graphical diagnostics
 
-- [ ] `plot()` model diagnostic panels compatible with the R workflow
+- [x] `plot()` model diagnostic panels compatible with the R workflow
 - [ ] `wp()` worm plots
 - [ ] `bp()` bucket plots

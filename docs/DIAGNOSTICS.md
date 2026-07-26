@@ -123,3 +123,67 @@ Torch-native normal CDF, BCT uses a differentiable Torch Student t CDF, and
 BCPE uses a differentiable Torch power-exponential CDF. Quantile residuals are
 a post-fit diagnostic API; callers should not rely on differentiation through
 them.
+
+## Four-panel residual plot
+
+`plot_data()` provides the four plots used by the R `plot.gamlss()` workflow:
+
+- quantile residuals against fitted values for `mu` or another selected
+  distribution parameter;
+- quantile residuals against observation order or a numeric explanatory
+  variable;
+- a kernel density estimate with the standard-normal density as reference;
+- a normal Q-Q plot.
+
+```python
+plot = model.plot_data(
+    data,
+    weights="weight",
+    x_variable="age",
+)
+plot.figure.show()
+```
+
+The result keeps the Matplotlib figure and its four axes, plus CPU tensors for
+the residuals, fitted values, and plotted x-variable. It also contains the
+summary statistics printed by R GAMLSS:
+
+```python
+plot.summary.mean
+plot.summary.variance
+plot.summary.skewness
+plot.summary.kurtosis
+plot.summary.filliben_correlation
+```
+
+The low-level equivalent is:
+
+```python
+plot = model.plot(
+    response,
+    design_matrices,
+    weights=weights,
+    offsets=offsets,
+    smooth_covariates=smooth_covariates,
+    x_variable=age,
+    x_label="Age",
+)
+```
+
+Pass four existing Matplotlib axes through `axes=` to control layout or style
+each returned axis after plotting. No implicit `show()` call is made.
+
+Integer frequency weights reproduce observations and zero-weight rows are
+omitted, following the R residual workflow. For non-integer case weights, each
+positive-weight row appears once. Discrete families accept the same
+`generator=` or `uniforms=` controls as `quantile_residuals()`.
+
+For ordered observations, replace the first two panels by ACF and PACF:
+
+```python
+plot = model.plot_data(
+    data,
+    time_series=True,
+    max_lag=24,
+)
+```

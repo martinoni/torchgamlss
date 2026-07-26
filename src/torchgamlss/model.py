@@ -14,7 +14,9 @@ from torch.utils.data import DataLoader
 
 from torchgamlss.diagnostics import (
     ModelDiagnostics,
+    ResidualDiagnosticPlot,
     model_diagnostics,
+    plot_residual_diagnostics,
     quantile_residuals,
 )
 from torchgamlss.families import Family
@@ -775,6 +777,66 @@ class GAMLSS(nn.Module):
             generator=generator,
         )
 
+    def plot_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
+        x_variable: Any = None,
+        x_label: str | None = None,
+        fitted_parameter: str | None = None,
+        uniforms: Any = None,
+        generator: torch.Generator | None = None,
+        time_series: bool = False,
+        max_lag: int | None = None,
+        axes: Sequence[Any] | None = None,
+        figsize: tuple[float, float] = (10.0, 8.0),
+    ) -> ResidualDiagnosticPlot:
+        """Plot quantile-residual diagnostics using stored formula encodings."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        x_tensor = self._formula_tensor(
+            data,
+            x_variable,
+            context="plot x-variable",
+        )
+        uniform_tensor = self._formula_tensor(
+            data,
+            uniforms,
+            context="uniforms",
+        )
+        parameter_neural_inputs = self._formula_neural_inputs(
+            data,
+            neural_inputs,
+        )
+        model_shared_input = self._formula_shared_input(data, shared_input)
+        inferred_x_label = (
+            x_variable
+            if x_label is None and isinstance(x_variable, str)
+            else x_label
+        )
+        return self.plot(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
+            x_variable=x_tensor,
+            x_label=inferred_x_label,
+            fitted_parameter=fitted_parameter,
+            uniforms=uniform_tensor,
+            generator=generator,
+            time_series=time_series,
+            max_lag=max_lag,
+            axes=axes,
+            figsize=figsize,
+        )
+
     def linear_predictors(
         self,
         design_matrices: Mapping[str, Tensor],
@@ -1532,6 +1594,47 @@ class GAMLSS(nn.Module):
             shared_input=shared_input,
             uniforms=uniforms,
             generator=generator,
+        )
+
+    def plot(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
+        x_variable: Tensor | None = None,
+        x_label: str | None = None,
+        fitted_parameter: str | None = None,
+        uniforms: Tensor | None = None,
+        generator: torch.Generator | None = None,
+        time_series: bool = False,
+        max_lag: int | None = None,
+        axes: Sequence[Any] | None = None,
+        figsize: tuple[float, float] = (10.0, 8.0),
+    ) -> ResidualDiagnosticPlot:
+        """Plot four normal-quantile-residual diagnostic panels."""
+        return plot_residual_diagnostics(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
+            shared_input=shared_input,
+            x_variable=x_variable,
+            x_label=x_label,
+            fitted_parameter=fitted_parameter,
+            uniforms=uniforms,
+            generator=generator,
+            time_series=time_series,
+            max_lag=max_lag,
+            axes=axes,
+            figsize=figsize,
         )
 
     def smooth_penalty(self) -> Tensor:

@@ -131,6 +131,9 @@ joint_smooth_curve_covariance_path <- file.path(
 model_diagnostics_path <- file.path(
   reference_dir, "model_diagnostics_reference.csv"
 )
+residual_plot_summary_path <- file.path(
+  reference_dir, "residual_plot_summary_reference.csv"
+)
 quantile_residual_path <- file.path(
   reference_dir, "quantile_residual_reference.csv"
 )
@@ -708,6 +711,23 @@ fit_reference <- data.frame(
   mu_x = unname(coef(fit, what = "mu")[[2]]),
   sigma_intercept = unname(coef(fit, what = "sigma")[[1]]),
   negative_log_likelihood = -as.numeric(logLik(fit)),
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+fit_residuals <- resid(fit)
+fit_qq <- qqnorm(fit_residuals, plot.it = FALSE)
+fit_residual_variance <- var(fit_residuals)
+fit_centered_residuals <- fit_residuals - mean(fit_residuals)
+residual_plot_summary_reference <- data.frame(
+  observation_count = length(fit_residuals),
+  mean = mean(fit_residuals),
+  variance = fit_residual_variance,
+  skewness = mean(fit_centered_residuals^3) /
+    fit_residual_variance^(3 / 2),
+  kurtosis = mean(fit_centered_residuals^4) /
+    fit_residual_variance^2,
+  filliben_correlation = cor(fit_qq$y, fit_qq$x),
   gamlss_version = as.character(packageVersion("gamlss")),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
@@ -2345,6 +2365,11 @@ if (check_only) {
     tolerance = 1e-6
   )
   assert_close(
+    residual_plot_summary_reference,
+    residual_plot_summary_path,
+    tolerance = 1e-12
+  )
+  assert_close(
     quantile_residual_reference,
     quantile_residual_path,
     tolerance = 1e-12
@@ -2504,6 +2529,10 @@ if (check_only) {
     joint_smooth_curve_covariance_path
   )
   write_csv_lf(model_diagnostics_reference, model_diagnostics_path)
+  write_csv_lf(
+    residual_plot_summary_reference,
+    residual_plot_summary_path
+  )
   write_csv_lf(quantile_residual_reference, quantile_residual_path)
   write_csv_lf(quantile_prediction_reference, quantile_prediction_path)
   message("Wrote R reference fixtures to ", reference_dir)

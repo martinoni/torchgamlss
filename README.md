@@ -75,6 +75,8 @@ The current implementation contains:
   curves, including repeated smoothing selection;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
 - continuous and randomized discrete normal quantile residuals;
+- four-panel quantile-residual diagnostics through `plot()` and `plot_data()`,
+  including the time-series ACF/PACF variant;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
   variables, `offset()`, and `pb()`;
 - independent design matrices for each distribution parameter;
@@ -82,7 +84,7 @@ The current implementation contains:
   links, derivatives, starting values, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Broader graphical diagnostics are planned work. The L-BFGS path remains a
+Worm and bucket plots remain planned work. The L-BFGS path remains a
 Torch-native numerical baseline and requires fixed smoothing parameters.
 Analytic fixed-lambda inference now provides joint covariance across linear
 coefficients, penalized spline coefficients, smooth terms, and distribution

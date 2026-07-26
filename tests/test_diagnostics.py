@@ -1,6 +1,7 @@
 import csv
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 import torch
@@ -17,6 +18,8 @@ from torchgamlss import (
     Normal,
     Poisson,
     PSpline,
+    QuantileResidualSummary,
+    ResidualDiagnosticPlot,
     RSControl,
     compare_models,
 )
@@ -415,3 +418,169 @@ def test_diagnostics_and_model_comparison_reject_invalid_inputs():
         compare_models({"a": result, "b": incomparable})
     with pytest.raises(ValueError, match="finite"):
         compare_models({"a": result}, criterion="aicc")
+
+
+def test_formula_plot_returns_r_style_four_panel_diagnostics():
+    data = pd.read_csv(REFERENCE_DIR / "no_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ x", "sigma": "~ 1"},
+        data,
+    )
+    model.fit_rs_data(data)
+
+    result = model.plot_data(data, x_variable="x")
+
+    assert isinstance(result, ResidualDiagnosticPlot)
+    assert isinstance(result.summary, QuantileResidualSummary)
+    assert result.axes == tuple(result.figure.axes)
+    assert result.residuals.shape == (len(data),)
+    assert result.fitted_values.shape == (len(data),)
+    torch.testing.assert_close(
+        result.x_values,
+        torch.tensor(data["x"].to_numpy(), dtype=torch.float64),
+    )
+    assert [axis.get_title() for axis in result.axes] == [
+        "Residuals vs fitted mu",
+        "Residuals vs x",
+        "Residual density",
+        "Normal Q-Q plot",
+    ]
+    assert result.summary.observation_count == len(data)
+    reference = _rows("residual_plot_summary_reference.csv")[0]
+    assert result.summary.observation_count == int(
+        reference["observation_count"]
+    )
+    for statistic in (
+        "mean",
+        "variance",
+        "skewness",
+        "kurtosis",
+        "filliben_correlation",
+    ):
+        assert getattr(result.summary, statistic) == pytest.approx(
+            float(reference[statistic]),
+            rel=1e-12,
+            abs=1e-12,
+        )
+    plt.close(result.figure)
+
+
+def test_plot_expands_integer_frequency_weights_and_drops_zero_weights():
+    response = torch.tensor([0.0, 1.0, 2.0, 3.0], dtype=torch.float64)
+    weights = torch.tensor([2.0, 0.0, 1.0, 3.0], dtype=torch.float64)
+    x = torch.tensor([10.0, 20.0, 30.0, 40.0], dtype=torch.float64)
+    design = {
+        "mu": torch.ones((4, 1), dtype=torch.float64),
+        "sigma": torch.ones((4, 1), dtype=torch.float64),
+    }
+    model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        dtype=torch.float64,
+    )
+
+    result = model.plot(
+        response,
+        design,
+        weights=weights,
+        x_variable=x,
+        x_label="Exposure",
+    )
+
+    torch.testing.assert_close(
+        result.x_values,
+        torch.tensor(
+            [10.0, 10.0, 30.0, 40.0, 40.0, 40.0],
+            dtype=torch.float64,
+        ),
+    )
+    assert result.summary.observation_count == int(weights.sum())
+    assert result.axes[1].get_xlabel() == "Exposure"
+    plt.close(result.figure)
+
+
+def test_discrete_plot_randomization_is_reproducible():
+    response = torch.tensor(
+        [0.0, 1.0, 1.0, 2.0, 3.0, 5.0],
+        dtype=torch.float64,
+    )
+    design = {"mu": torch.ones((response.numel(), 1), dtype=torch.float64)}
+    model = GAMLSS(Poisson(), {"mu": 1}, dtype=torch.float64)
+
+    first = model.plot(
+        response,
+        design,
+        generator=torch.Generator().manual_seed(2026),
+    )
+    second = model.plot(
+        response,
+        design,
+        generator=torch.Generator().manual_seed(2026),
+    )
+
+    torch.testing.assert_close(first.residuals, second.residuals)
+    assert first.summary == second.summary
+    plt.close(first.figure)
+    plt.close(second.figure)
+
+
+def test_time_series_plot_and_axes_validation():
+    response = torch.tensor(
+        [
+            -0.7,
+            -0.1,
+            0.4,
+            1.1,
+            0.5,
+            -0.2,
+            -1.0,
+            -0.4,
+            0.3,
+            0.9,
+        ],
+        dtype=torch.float64,
+    )
+    design = {
+        "mu": torch.ones((response.numel(), 1), dtype=torch.float64),
+        "sigma": torch.ones((response.numel(), 1), dtype=torch.float64),
+    }
+    model = GAMLSS(
+        Normal(),
+        {"mu": 1, "sigma": 1},
+        dtype=torch.float64,
+    )
+
+    result = model.plot(
+        response,
+        design,
+        time_series=True,
+        max_lag=4,
+    )
+
+    assert result.axes[0].get_title() == "Residual autocorrelation"
+    assert result.axes[1].get_title() == (
+        "Residual partial autocorrelation"
+    )
+    plt.close(result.figure)
+
+    figure, axes = plt.subplots(1, 3)
+    with pytest.raises(ValueError, match="exactly four"):
+        model.plot(response, design, axes=axes)
+    plt.close(figure)
+    with pytest.raises(ValueError, match="cannot be supplied"):
+        model.plot(
+            response,
+            design,
+            time_series=True,
+            x_variable=response,
+        )
+    with pytest.raises(ValueError, match="max_lag"):
+        model.plot(
+            response,
+            design,
+            time_series=True,
+            max_lag=6,
+        )
+    with pytest.raises(ValueError, match="requires time_series"):
+        model.plot(response, design, max_lag=2)

@@ -242,6 +242,11 @@ discrete PO and NBI fixtures use committed uniform values inside
 `[F(y-1), F(y)]`, making the randomized Dunn-Smyth calculation exactly
 reproducible.
 
+The four-panel `plot()` fixture additionally compares the residual mean,
+sample variance, skewness, kurtosis, and Filliben correlation produced by R
+`plot.gamlss()` for the Normal reference fit. Plotting positions follow R
+`qqnorm()`.
+
 ## Reproducing the fixtures
 
 From the repository root:
@@ -285,4 +290,5 @@ the selected smoothing parameter and final fit agree.
 
 Likelihood criteria follow `GAIC.gamlss()` and `logLik.gamlss()`. Quantile
 residuals follow the family `rqres` definitions and the shared `rqres()`
-helper in `gamlss.dist`.
+helper in `gamlss.dist`. The four-panel layout and summary statistics follow
+`plot.gamlss()`.
