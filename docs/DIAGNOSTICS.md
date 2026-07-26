@@ -257,3 +257,80 @@ worm = worm_plot(standardized_residuals, x_variable=age)
 Integer frequency weights, randomized residual controls for discrete
 families, model device handling, and training-mode restoration follow
 `plot()`.
+
+## Bucket plots
+
+Bucket plots display transformed skewness against transformed kurtosis. They
+can reveal residual shape departures and, for the moment version, provide a
+graphical Jarque-Bera check:
+
+```python
+bucket = model.bp_data(
+    data,
+    weights="weight",
+    bootstrap_replicates=99,
+    bootstrap_generator=torch.Generator().manual_seed(2026),
+)
+bucket.figure.show()
+```
+
+Three R-compatible statistic variants are available:
+
+```python
+moment = model.bp_data(data, kind="moment")
+central = model.bp_data(data, kind="centile.central")
+tail = model.bp_data(data, kind="centile.tail")
+```
+
+The moment coordinates are
+
+```text
+x = skewness / (1 + abs(skewness))
+y = excess kurtosis / (1 + abs(excess kurtosis))
+```
+
+and the returned statistics also include the untransformed skewness,
+kurtosis, excess kurtosis, effective weighted observation count, and
+Jarque-Bera statistic. The centile variants reproduce `centileSK()` using the
+1st, 25th, 50th, 75th, and 99th weighted percentiles.
+
+Conditioning, explicit cut points, and overlapping intervals use the same API
+as worm plots:
+
+```python
+bucket = model.bp_data(
+    data,
+    x_variable="age",
+    n_intervals=4,
+    overlap=0,
+    kind="moment",
+)
+```
+
+`BucketPlotResult.panels` contains one `BucketPlotPanel` per interval. Each
+panel exposes its `BucketStatistics` and the complete bootstrap cloud:
+
+```python
+statistics = bucket.panels[0].statistics
+statistics.point
+statistics.jarque_bera
+bootstrap_coordinates = bucket.panels[0].bootstrap_points
+```
+
+The standalone equivalent of R's `bp(obj=residuals, ...)` is:
+
+```python
+from torchgamlss import bucket_plot
+
+bucket = bucket_plot(
+    standardized_residuals,
+    weights=weights,
+    kind="centile.tail",
+)
+```
+
+The Matplotlib moment background includes the Pearson admissible-moment
+boundary and 95% Jarque-Bera region. The additional named distribution-family
+curves in R are loaded from package-specific serialized `.RData` assets and
+are not bundled in TorchGAMLSS. Their absence does not change the observed
+statistics, bootstrap coordinates, or Jarque-Bera calculation.

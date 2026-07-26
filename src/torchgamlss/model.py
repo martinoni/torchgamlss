@@ -13,9 +13,11 @@ from torch.distributions import Distribution
 from torch.utils.data import DataLoader
 
 from torchgamlss.diagnostics import (
+    BucketPlotResult,
     ModelDiagnostics,
     ResidualDiagnosticPlot,
     WormPlotResult,
+    bucket_plot_diagnostics,
     model_diagnostics,
     plot_residual_diagnostics,
     quantile_residuals,
@@ -907,6 +909,84 @@ class GAMLSS(nn.Module):
             figsize=figsize,
         )
 
+    def bp_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
+        x_variable: Any = None,
+        x_label: str | None = None,
+        uniforms: Any = None,
+        generator: torch.Generator | None = None,
+        kind: Literal[
+            "moment",
+            "centile.central",
+            "centile.tail",
+        ] = "moment",
+        bootstrap: bool = True,
+        bootstrap_replicates: int = 99,
+        bootstrap_generator: torch.Generator | None = None,
+        n_intervals: int = 4,
+        cut_points: Sequence[float] | Tensor | None = None,
+        overlap: float = 0.0,
+        label: str | None = None,
+        show_intervals: bool = True,
+        show_legend: bool = False,
+        axes: Sequence[Any] | Any | None = None,
+        figsize: tuple[float, float] | None = None,
+    ) -> BucketPlotResult:
+        """Plot bucket diagnostics for formula-data quantile residuals."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        x_tensor = self._formula_tensor(
+            data,
+            x_variable,
+            context="bucket-plot x-variable",
+        )
+        uniform_tensor = self._formula_tensor(
+            data,
+            uniforms,
+            context="uniforms",
+        )
+        parameter_neural_inputs = self._formula_neural_inputs(
+            data,
+            neural_inputs,
+        )
+        model_shared_input = self._formula_shared_input(data, shared_input)
+        inferred_x_label = (
+            x_variable
+            if x_label is None and isinstance(x_variable, str)
+            else x_label
+        )
+        return self.bp(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
+            x_variable=x_tensor,
+            x_label=inferred_x_label,
+            uniforms=uniform_tensor,
+            generator=generator,
+            kind=kind,
+            bootstrap=bootstrap,
+            bootstrap_replicates=bootstrap_replicates,
+            bootstrap_generator=bootstrap_generator,
+            n_intervals=n_intervals,
+            cut_points=cut_points,
+            overlap=overlap,
+            label=label,
+            show_intervals=show_intervals,
+            show_legend=show_legend,
+            axes=axes,
+            figsize=figsize,
+        )
+
     def linear_predictors(
         self,
         design_matrices: Mapping[str, Tensor],
@@ -1752,6 +1832,65 @@ class GAMLSS(nn.Module):
             y_limit=y_limit,
             show_intervals=show_intervals,
             show_polynomial=show_polynomial,
+            axes=axes,
+            figsize=figsize,
+        )
+
+    def bp(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
+        x_variable: Tensor | None = None,
+        x_label: str | None = None,
+        uniforms: Tensor | None = None,
+        generator: torch.Generator | None = None,
+        kind: Literal[
+            "moment",
+            "centile.central",
+            "centile.tail",
+        ] = "moment",
+        bootstrap: bool = True,
+        bootstrap_replicates: int = 99,
+        bootstrap_generator: torch.Generator | None = None,
+        n_intervals: int = 4,
+        cut_points: Sequence[float] | Tensor | None = None,
+        overlap: float = 0.0,
+        label: str | None = None,
+        show_intervals: bool = True,
+        show_legend: bool = False,
+        axes: Sequence[Any] | Any | None = None,
+        figsize: tuple[float, float] | None = None,
+    ) -> BucketPlotResult:
+        """Plot transformed skewness-kurtosis quantile-residual diagnostics."""
+        return bucket_plot_diagnostics(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
+            shared_input=shared_input,
+            x_variable=x_variable,
+            x_label=x_label,
+            uniforms=uniforms,
+            residual_generator=generator,
+            kind=kind,
+            bootstrap=bootstrap,
+            bootstrap_replicates=bootstrap_replicates,
+            bootstrap_generator=bootstrap_generator,
+            n_intervals=n_intervals,
+            cut_points=cut_points,
+            overlap=overlap,
+            label=label,
+            show_intervals=show_intervals,
+            show_legend=show_legend,
             axes=axes,
             figsize=figsize,
         )

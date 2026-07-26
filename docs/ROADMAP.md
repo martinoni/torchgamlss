@@ -69,4 +69,5 @@ as supported.
 
 - [x] `plot()` model diagnostic panels compatible with the R workflow
 - [x] `wp()` global and numeric covariate-conditioned worm plots
-- [ ] `bp()` bucket plots
+- [x] `bp()` weighted moment and centile bucket plots with bootstrap
+- [ ] Optional R family-locus overlays for `bp()` backgrounds

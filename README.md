@@ -79,6 +79,8 @@ The current implementation contains:
   including the time-series ACF/PACF variant;
 - global and covariate-conditioned worm plots through `wp()`, `wp_data()`,
   and `worm_plot()`;
+- moment and centile bucket plots through `bp()`, `bp_data()`, and
+  `bucket_plot()`, with weighted statistics and nonparametric bootstrap;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
   variables, `offset()`, and `pb()`;
 - independent design matrices for each distribution parameter;
@@ -86,8 +88,8 @@ The current implementation contains:
   links, derivatives, starting values, and fitted models;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
-Bucket plots remain planned work. The L-BFGS path remains a Torch-native
-numerical baseline and requires fixed smoothing parameters.
+The L-BFGS path remains a Torch-native numerical baseline and requires fixed
+smoothing parameters.
 Analytic fixed-lambda inference now provides joint covariance across linear
 coefficients, penalized spline coefficients, smooth terms, and distribution
 parameters. Aligned parametric-bootstrap refits additionally propagate

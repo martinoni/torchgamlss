@@ -253,6 +253,14 @@ boundary and all four coefficients from the cubic detrended-Q-Q regressions.
 The theoretical quantiles, 95% pointwise bands, default limits, and interval
 construction follow `R/wp.R` and `graphics::co.intervals()`.
 
+Bucket-plot fixtures compare weighted moment, central-centile, and
+tail-centile statistics against `momentSK()` and `centileSK()`. A four-panel
+conditioned fixture additionally checks interval boundaries, transformed
+coordinates, effective weighted counts, and Jarque-Bera values. Bootstrap
+resampling follows R's paired resampling of residuals and prior weights;
+cross-language parity is asserted for the statistics rather than random
+sample indices.
+
 ## Reproducing the fixtures
 
 From the repository root:
@@ -297,4 +305,5 @@ the selected smoothing parameter and final fit agree.
 Likelihood criteria follow `GAIC.gamlss()` and `logLik.gamlss()`. Quantile
 residuals follow the family `rqres` definitions and the shared `rqres()`
 helper in `gamlss.dist`. The four-panel layout and summary statistics follow
-`plot.gamlss()`. Worm plots follow `wp()` in `R/wp.R`.
+`plot.gamlss()`. Worm plots follow `wp()` in `R/wp.R`. Bucket statistics and
+conditioning follow `bp()` in `R/bp.R`, `momentSK()`, and `centileSK()`.

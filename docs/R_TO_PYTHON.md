@@ -443,6 +443,31 @@ The R return values `classes` and `coef` are available as
 `age_worms.intervals` and `age_worms.coefficients`. The standalone
 `worm_plot(residuals, ...)` corresponds to `wp(resid=residuals, ...)`.
 
+Bucket plots map to `bp_data()`:
+
+```r
+bp(fit, type = "moment", no.bootstrap = 99)
+bp(fit, type = "centile.tail", xvar = age, n.inter = 4)
+```
+
+```python
+moment_bucket = model.bp_data(
+    data,
+    kind="moment",
+    bootstrap_replicates=99,
+)
+tail_buckets = model.bp_data(
+    data,
+    kind="centile.tail",
+    x_variable="age",
+    n_intervals=4,
+)
+```
+
+The standalone `bucket_plot(residuals, ...)` accepts arbitrary residuals and
+optional prior weights. Numerical statistics are available in each returned
+panel instead of being hidden behind the plotting side effect.
+
 Joint observed-Hessian Wald inference is available for models without smooth
 terms:
 

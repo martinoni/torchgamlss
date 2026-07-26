@@ -1,11 +1,15 @@
 """Generalized Additive Models for Location, Scale and Shape in PyTorch."""
 
 from torchgamlss.diagnostics import (
+    BucketPlotPanel,
+    BucketPlotResult,
+    BucketStatistics,
     ModelDiagnostics,
     QuantileResidualSummary,
     ResidualDiagnosticPlot,
     WormPlotPanel,
     WormPlotResult,
+    bucket_plot,
     compare_models,
     worm_plot,
 )
@@ -64,6 +68,9 @@ __all__ = [
     "BoxCoxColeGreen",
     "BoxCoxPowerExponential",
     "BoxCoxT",
+    "BucketPlotPanel",
+    "BucketPlotResult",
+    "BucketStatistics",
     "CGControl",
     "CGFitResult",
     "Family",
@@ -109,6 +116,7 @@ __all__ = [
     "TermContributions",
     "WormPlotPanel",
     "WormPlotResult",
+    "bucket_plot",
     "compare_models",
     "worm_plot",
 ]

@@ -137,6 +137,9 @@ residual_plot_summary_path <- file.path(
 worm_plot_path <- file.path(
   reference_dir, "worm_plot_reference.csv"
 )
+bucket_plot_path <- file.path(
+  reference_dir, "bucket_plot_reference.csv"
+)
 quantile_residual_path <- file.path(
   reference_dir, "quantile_residual_reference.csv"
 )
@@ -780,6 +783,111 @@ worm_plot_reference <- rbind(
 )
 worm_plot_reference$gamlss_version <- as.character(packageVersion("gamlss"))
 worm_plot_reference$gamlss_dist_version <- as.character(
+  packageVersion("gamlss.dist")
+)
+
+bucket_count <- 80
+bucket_probabilities <- (seq_len(bucket_count) - 0.5) / bucket_count
+bucket_quantiles <- qnorm(bucket_probabilities)
+bucket_residuals <- (
+  bucket_quantiles
+  + 0.14 * bucket_quantiles^2
+  - 0.025 * bucket_quantiles^3
+  + 0.04 * sin(seq(0, 4 * pi, length.out = bucket_count))
+)
+bucket_weights <- rep(c(1, 2, 0.5, 1.5), length.out = bucket_count)
+bucket_x <- seq(-2, 2, length.out = bucket_count)
+
+bucket_row <- function(
+  kind,
+  panel,
+  lower,
+  upper,
+  residuals,
+  weights
+) {
+  if (grepl("^moment", kind)) {
+    statistics <- momentSK(residuals, weights = weights)
+    skewness <- statistics$mom.skew
+    transformed_skewness <- statistics$trans.mom.skew
+    kurtosis <- statistics$mom.kurt
+    excess_kurtosis <- statistics$excess.mom.kurt
+    transformed_kurtosis <- statistics$trans.mom.kurt
+    jarque_bera <- statistics$jarque.bera.test
+  } else {
+    statistics <- centileSK(residuals, weights = weights)
+    skewness <- if (kind == "centile.central") {
+      statistics$S0.25
+    } else {
+      statistics$S0.01
+    }
+    transformed_skewness <- skewness
+    kurtosis <- statistics$K0.01
+    excess_kurtosis <- statistics$exc.K0.01
+    transformed_kurtosis <- statistics$trans.K0.01
+    jarque_bera <- NA_real_
+  }
+  data.frame(
+    kind = kind,
+    panel = panel,
+    lower = lower,
+    upper = upper,
+    observation_count = length(residuals),
+    effective_observation_count = sum(weights),
+    skewness = unname(skewness),
+    transformed_skewness = unname(transformed_skewness),
+    kurtosis = unname(kurtosis),
+    excess_kurtosis = unname(excess_kurtosis),
+    transformed_kurtosis = unname(transformed_kurtosis),
+    jarque_bera = unname(jarque_bera)
+  )
+}
+
+bucket_classes <- co.intervals(bucket_x, number = 4, overlap = 0)
+for (index in seq_len(nrow(bucket_classes) - 1)) {
+  if (
+    abs(bucket_classes[index, 2] - bucket_classes[index + 1, 1]) >=
+      1e-4
+  ) {
+    bucket_classes[index + 1, 1] <- bucket_classes[index, 2]
+  }
+}
+bucket_plot_reference <- do.call(
+  rbind,
+  c(
+    lapply(
+      c("moment", "centile.central", "centile.tail"),
+      function(kind) {
+        bucket_row(
+          kind,
+          1,
+          NA_real_,
+          NA_real_,
+          bucket_residuals,
+          bucket_weights
+        )
+      }
+    ),
+    lapply(seq_len(nrow(bucket_classes)), function(panel) {
+      in_panel <- (
+        bucket_x >= bucket_classes[panel, 1]
+        & bucket_x <= bucket_classes[panel, 2]
+      )
+      bucket_row(
+        "moment.conditioned",
+        panel,
+        bucket_classes[panel, 1],
+        bucket_classes[panel, 2],
+        bucket_residuals[in_panel],
+        bucket_weights[in_panel]
+      )
+    })
+  )
+)
+bucket_plot_reference$gamlss_version <- as.character(
+  packageVersion("gamlss")
+)
+bucket_plot_reference$gamlss_dist_version <- as.character(
   packageVersion("gamlss.dist")
 )
 
@@ -2421,6 +2529,7 @@ if (check_only) {
     tolerance = 1e-12
   )
   assert_close(worm_plot_reference, worm_plot_path, tolerance = 1e-12)
+  assert_close(bucket_plot_reference, bucket_plot_path, tolerance = 1e-12)
   assert_close(
     quantile_residual_reference,
     quantile_residual_path,
@@ -2586,6 +2695,7 @@ if (check_only) {
     residual_plot_summary_path
   )
   write_csv_lf(worm_plot_reference, worm_plot_path)
+  write_csv_lf(bucket_plot_reference, bucket_plot_path)
   write_csv_lf(quantile_residual_reference, quantile_residual_path)
   write_csv_lf(quantile_prediction_reference, quantile_prediction_path)
   message("Wrote R reference fixtures to ", reference_dir)

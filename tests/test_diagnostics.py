@@ -12,6 +12,8 @@ from torchgamlss import (
     BCT,
     GAMLSS,
     Beta,
+    BucketPlotResult,
+    BucketStatistics,
     Gamma,
     ModelDiagnostics,
     NegativeBinomial,
@@ -22,6 +24,7 @@ from torchgamlss import (
     ResidualDiagnosticPlot,
     RSControl,
     WormPlotResult,
+    bucket_plot,
     compare_models,
     worm_plot,
 )
@@ -763,6 +766,218 @@ def test_formula_wp_and_worm_plot_validation():
             [-1.0, -0.2, 0.3, 1.1],
             x_variable=[1.0, 2.0, 3.0, 4.0],
             n_intervals=2,
+            axes=axes,
+        )
+    plt.close(figure)
+
+
+def _bucket_reference_inputs():
+    observation_count = 80
+    probabilities = (
+        torch.arange(1, observation_count + 1, dtype=torch.float64) - 0.5
+    ) / observation_count
+    quantiles = torch.special.ndtri(probabilities)
+    residuals = (
+        quantiles
+        + 0.14 * quantiles.square()
+        - 0.025 * quantiles.pow(3)
+        + 0.04
+        * torch.sin(
+            torch.linspace(
+                0.0,
+                4.0 * torch.pi,
+                observation_count,
+                dtype=torch.float64,
+            )
+        )
+    )
+    weights = torch.tensor(
+        [1.0, 2.0, 0.5, 1.5] * (observation_count // 4),
+        dtype=torch.float64,
+    )
+    x_variable = torch.linspace(
+        -2.0,
+        2.0,
+        observation_count,
+        dtype=torch.float64,
+    )
+    return residuals, weights, x_variable
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["moment", "centile.central", "centile.tail"],
+)
+def test_bucket_plot_statistics_match_r(kind):
+    residuals, weights, _ = _bucket_reference_inputs()
+
+    result = bucket_plot(
+        residuals,
+        weights=weights,
+        kind=kind,
+        bootstrap=False,
+    )
+
+    assert isinstance(result, BucketPlotResult)
+    assert result.kind == kind
+    assert len(result.panels) == 1
+    statistics = result.panels[0].statistics
+    assert isinstance(statistics, BucketStatistics)
+    reference = next(
+        row
+        for row in _rows("bucket_plot_reference.csv")
+        if row["kind"] == kind
+    )
+    assert statistics.observation_count == int(
+        reference["observation_count"]
+    )
+    assert statistics.effective_observation_count == pytest.approx(
+        float(reference["effective_observation_count"]),
+        rel=1e-12,
+        abs=1e-12,
+    )
+    for field in (
+        "skewness",
+        "transformed_skewness",
+        "kurtosis",
+        "excess_kurtosis",
+        "transformed_kurtosis",
+    ):
+        assert getattr(statistics, field) == pytest.approx(
+            float(reference[field]),
+            rel=1e-11,
+            abs=1e-12,
+        )
+    if kind == "moment":
+        assert statistics.jarque_bera == pytest.approx(
+            float(reference["jarque_bera"]),
+            rel=1e-11,
+            abs=1e-12,
+        )
+    else:
+        assert statistics.jarque_bera is None
+    assert result.panels[0].bootstrap_points.shape == (0, 2)
+    plt.close(result.figure)
+
+
+def test_conditioned_bucket_plot_matches_r_and_bootstrap_is_reproducible():
+    residuals, weights, x_variable = _bucket_reference_inputs()
+
+    first = bucket_plot(
+        residuals,
+        weights=weights,
+        x_variable=x_variable,
+        x_label="Age",
+        bootstrap_replicates=12,
+        generator=torch.Generator().manual_seed(2026),
+    )
+    second = bucket_plot(
+        residuals,
+        weights=weights,
+        x_variable=x_variable,
+        x_label="Age",
+        bootstrap_replicates=12,
+        generator=torch.Generator().manual_seed(2026),
+    )
+
+    conditioned = [
+        row
+        for row in _rows("bucket_plot_reference.csv")
+        if row["kind"] == "moment.conditioned"
+    ]
+    assert first.intervals is not None
+    expected_intervals = torch.tensor(
+        [
+            [float(row["lower"]), float(row["upper"])]
+            for row in conditioned
+        ],
+        dtype=torch.float64,
+    )
+    torch.testing.assert_close(
+        first.intervals,
+        expected_intervals,
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    assert len(first.panels) == 4
+    for panel, repeated_panel, reference in zip(
+        first.panels,
+        second.panels,
+        conditioned,
+    ):
+        torch.testing.assert_close(
+            panel.bootstrap_points,
+            repeated_panel.bootstrap_points,
+        )
+        for field in (
+            "skewness",
+            "transformed_skewness",
+            "kurtosis",
+            "excess_kurtosis",
+            "transformed_kurtosis",
+            "jarque_bera",
+        ):
+            assert getattr(panel.statistics, field) == pytest.approx(
+                float(reference[field]),
+                rel=1e-11,
+                abs=1e-12,
+            )
+        assert panel.bootstrap_points.shape == (12, 2)
+        assert panel.axis.get_title().startswith("Age:")
+    plt.close(first.figure)
+    plt.close(second.figure)
+
+
+def test_formula_bp_and_bucket_plot_validation():
+    data = pd.read_csv(REFERENCE_DIR / "no_fit_data.csv")
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ x", "sigma": "~ 1"},
+        data,
+    )
+    model.fit_rs_data(data)
+
+    result = model.bp_data(
+        data,
+        bootstrap=False,
+        label="Normal fit",
+    )
+
+    torch.testing.assert_close(
+        result.residuals,
+        model.quantile_residuals_data(data).cpu(),
+    )
+    assert result.panels[0].statistics.observation_count == len(data)
+    assert result.panels[0].axis.get_title() == "Moment bucket plot"
+    plt.close(result.figure)
+
+    with pytest.raises(ValueError, match="at least four"):
+        bucket_plot([-1.0, 0.0, 1.0], bootstrap=False)
+    with pytest.raises(ValueError, match="kind"):
+        bucket_plot(
+            [-1.0, -0.2, 0.3, 1.1],
+            kind="invalid",
+            bootstrap=False,
+        )
+    with pytest.raises(ValueError, match="one value per residual"):
+        bucket_plot(
+            [-1.0, -0.2, 0.3, 1.1],
+            weights=[1.0, 1.0],
+            bootstrap=False,
+        )
+    with pytest.raises(ValueError, match="positive"):
+        bucket_plot(
+            [-1.0, -0.2, 0.3, 1.1],
+            bootstrap=True,
+            bootstrap_replicates=0,
+        )
+    figure, axes = plt.subplots(1, 3)
+    with pytest.raises(ValueError, match="exactly 2"):
+        bucket_plot(
+            [-1.0, -0.2, 0.3, 1.1],
+            x_variable=[1.0, 2.0, 3.0, 4.0],
+            n_intervals=2,
+            bootstrap=False,
             axes=axes,
         )
     plt.close(figure)

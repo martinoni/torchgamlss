@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 from scipy.linalg import toeplitz
-from scipy.stats import gaussian_kde, norm
+from scipy.stats import chi2, gaussian_kde, norm
 from torch import Tensor
 
 if TYPE_CHECKING:
@@ -117,6 +117,49 @@ class WormPlotResult:
     intervals: Tensor | None
     panels: tuple[WormPlotPanel, ...]
     coefficients: Tensor | None
+
+
+@dataclass(frozen=True)
+class BucketStatistics:
+    """Skewness and kurtosis coordinates underlying a bucket plot."""
+
+    observation_count: int
+    effective_observation_count: float
+    skewness: float
+    transformed_skewness: float
+    kurtosis: float
+    excess_kurtosis: float
+    transformed_kurtosis: float
+    jarque_bera: float | None
+
+    @property
+    def point(self) -> tuple[float, float]:
+        """Return the displayed skewness-kurtosis coordinate."""
+        return self.transformed_skewness, self.transformed_kurtosis
+
+
+@dataclass(frozen=True)
+class BucketPlotPanel:
+    """Numerical values and Matplotlib axis for one bucket-plot panel."""
+
+    axis: Any
+    statistics: BucketStatistics
+    bootstrap_points: Tensor
+    interval: tuple[float, float] | None
+
+
+@dataclass(frozen=True)
+class BucketPlotResult:
+    """Matplotlib objects and statistics returned by ``bp()``."""
+
+    figure: Any
+    axes: tuple[Any, ...]
+    residuals: Tensor
+    weights: Tensor
+    x_values: Tensor | None
+    intervals: Tensor | None
+    panels: tuple[BucketPlotPanel, ...]
+    kind: Literal["moment", "centile.central", "centile.tail"]
 
 
 def model_diagnostics(
@@ -676,6 +719,266 @@ def worm_plot(
     )
 
 
+def bucket_plot_diagnostics(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+    neural_inputs: Mapping[str, Tensor] | None = None,
+    shared_input: Tensor | None = None,
+    x_variable: Tensor | None = None,
+    x_label: str | None = None,
+    uniforms: Tensor | None = None,
+    residual_generator: torch.Generator | None = None,
+    kind: Literal["moment", "centile.central", "centile.tail"] = "moment",
+    bootstrap: bool = True,
+    bootstrap_replicates: int = 99,
+    bootstrap_generator: torch.Generator | None = None,
+    n_intervals: int = 4,
+    cut_points: Sequence[float] | Tensor | None = None,
+    overlap: float = 0.0,
+    label: str | None = None,
+    show_intervals: bool = True,
+    show_legend: bool = False,
+    axes: Sequence[Any] | Any | None = None,
+    figsize: tuple[float, float] | None = None,
+) -> BucketPlotResult:
+    """Calculate model quantile residuals and draw an R-style bucket plot."""
+    case_weights = model._validated_weights(response, weights).detach().cpu()
+    training_mode = model.training
+    model.eval()
+    try:
+        with torch.no_grad():
+            residuals = quantile_residuals(
+                model,
+                response,
+                design_matrices,
+                offsets=offsets,
+                smooth_covariates=smooth_covariates,
+                neural_inputs=neural_inputs,
+                shared_input=shared_input,
+                uniforms=uniforms,
+                generator=residual_generator,
+            ).detach().cpu()
+    finally:
+        model.train(training_mode)
+
+    x_values = None
+    if x_variable is not None:
+        if (
+            not isinstance(x_variable, Tensor)
+            or x_variable.ndim != 1
+            or x_variable.shape != response.shape
+            or not torch.isfinite(x_variable).all()
+        ):
+            raise ValueError(
+                "x_variable must be a finite vector with one value per response"
+            )
+        x_values = x_variable.detach().cpu()
+    return bucket_plot(
+        residuals,
+        weights=case_weights,
+        x_variable=x_values,
+        x_label=x_label,
+        kind=kind,
+        bootstrap=bootstrap,
+        bootstrap_replicates=bootstrap_replicates,
+        generator=bootstrap_generator,
+        n_intervals=n_intervals,
+        cut_points=cut_points,
+        overlap=overlap,
+        label=label,
+        show_intervals=show_intervals,
+        show_legend=show_legend,
+        axes=axes,
+        figsize=figsize,
+    )
+
+
+def bucket_plot(
+    residuals: Tensor | Sequence[float] | np.ndarray,
+    *,
+    weights: Tensor | Sequence[float] | np.ndarray | None = None,
+    x_variable: Tensor | Sequence[float] | np.ndarray | None = None,
+    x_label: str | None = None,
+    kind: Literal["moment", "centile.central", "centile.tail"] = "moment",
+    bootstrap: bool = True,
+    bootstrap_replicates: int = 99,
+    generator: torch.Generator | None = None,
+    n_intervals: int = 4,
+    cut_points: Sequence[float] | Tensor | None = None,
+    overlap: float = 0.0,
+    label: str | None = None,
+    show_intervals: bool = True,
+    show_legend: bool = False,
+    axes: Sequence[Any] | Any | None = None,
+    figsize: tuple[float, float] | None = None,
+) -> BucketPlotResult:
+    """Plot transformed skewness and kurtosis for arbitrary residuals."""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as error:
+        raise ImportError(
+            "bp() requires matplotlib; install TorchGAMLSS with its "
+            "declared plotting dependency"
+        ) from error
+
+    residual_tensor = _finite_cpu_vector(residuals, context="residuals")
+    if residual_tensor.numel() < 4:
+        raise ValueError("bucket plots require at least four residuals")
+    if weights is None:
+        weight_tensor = torch.ones(
+            residual_tensor.shape,
+            dtype=torch.float64,
+        )
+    else:
+        weight_tensor = _finite_cpu_vector(weights, context="weights").to(
+            dtype=torch.float64
+        )
+        if weight_tensor.shape != residual_tensor.shape:
+            raise ValueError("weights must contain one value per residual")
+        if (weight_tensor < 0).any() or not torch.any(weight_tensor > 0):
+            raise ValueError("weights must be non-negative with a positive sum")
+    if kind not in {"moment", "centile.central", "centile.tail"}:
+        raise ValueError(
+            "kind must be 'moment', 'centile.central', or 'centile.tail'"
+        )
+    if not isinstance(bootstrap, bool):
+        raise ValueError("bootstrap must be boolean")
+    if (
+        not isinstance(bootstrap_replicates, int)
+        or isinstance(bootstrap_replicates, bool)
+        or bootstrap_replicates < 0
+        or (bootstrap and bootstrap_replicates < 1)
+    ):
+        raise ValueError(
+            "bootstrap_replicates must be positive when bootstrap is enabled"
+        )
+    if not isinstance(n_intervals, int) or isinstance(n_intervals, bool):
+        raise ValueError("n_intervals must be an integer")
+    if n_intervals < 1:
+        raise ValueError("n_intervals must be positive")
+    if (
+        not isinstance(overlap, (int, float))
+        or isinstance(overlap, bool)
+        or not math.isfinite(float(overlap))
+        or not 0.0 <= float(overlap) < 1.0
+    ):
+        raise ValueError("overlap must lie in [0, 1)")
+    if x_label is not None and (not isinstance(x_label, str) or not x_label):
+        raise ValueError("x_label must be a non-empty string when supplied")
+    if label is not None and (not isinstance(label, str) or not label):
+        raise ValueError("label must be a non-empty string when supplied")
+    if not isinstance(show_intervals, bool):
+        raise ValueError("show_intervals must be boolean")
+    if not isinstance(show_legend, bool):
+        raise ValueError("show_legend must be boolean")
+
+    residual_values = residual_tensor.numpy().astype(np.float64, copy=False)
+    weight_values = weight_tensor.numpy()
+    x_tensor = None
+    intervals = None
+    panel_masks: list[np.ndarray]
+    if x_variable is None:
+        if cut_points is not None:
+            raise ValueError("cut_points requires x_variable")
+        panel_masks = [np.ones(residual_values.size, dtype=bool)]
+    else:
+        x_tensor = _finite_cpu_vector(x_variable, context="x_variable")
+        if x_tensor.shape != residual_tensor.shape:
+            raise ValueError(
+                "x_variable must contain one value per residual"
+            )
+        x_values = x_tensor.numpy().astype(np.float64, copy=False)
+        if cut_points is None:
+            interval_values = _co_intervals(
+                x_values,
+                number=n_intervals,
+                overlap=float(overlap),
+            )
+        else:
+            interval_values = _cut_point_intervals(x_values, cut_points)
+        panel_masks = [
+            (x_values >= lower) & (x_values <= upper)
+            for lower, upper in interval_values
+        ]
+        if any(
+            not np.any(mask & (weight_values > 0.0))
+            for mask in panel_masks
+        ):
+            raise ValueError(
+                "each bucket-plot interval must contain positive-weight "
+                "observations"
+            )
+        intervals = torch.from_numpy(interval_values.copy())
+
+    plot_axes, figure = _bucket_axes(
+        plt,
+        axes,
+        panel_count=len(panel_masks),
+        figsize=figsize,
+    )
+    panels = []
+    for panel_index, (axis, mask) in enumerate(zip(plot_axes, panel_masks)):
+        panel_residuals = residual_values[mask]
+        panel_weights = weight_values[mask]
+        statistics = _bucket_statistics(
+            panel_residuals,
+            panel_weights,
+            kind=kind,
+        )
+        bootstrap_points = _bucket_bootstrap(
+            panel_residuals,
+            panel_weights,
+            kind=kind,
+            replicates=bootstrap_replicates if bootstrap else 0,
+            generator=generator,
+        )
+        interval = (
+            None
+            if intervals is None
+            else (
+                float(intervals[panel_index, 0]),
+                float(intervals[panel_index, 1]),
+            )
+        )
+        _draw_bucket_panel(
+            axis,
+            statistics,
+            bootstrap_points,
+            kind=kind,
+            interval=interval,
+            x_label=x_label,
+            label=label,
+            show_interval=show_intervals,
+            show_legend=show_legend,
+        )
+        panels.append(
+            BucketPlotPanel(
+                axis=axis,
+                statistics=statistics,
+                bootstrap_points=torch.from_numpy(
+                    bootstrap_points.copy()
+                ),
+                interval=interval,
+            )
+        )
+    figure.tight_layout()
+    return BucketPlotResult(
+        figure=figure,
+        axes=plot_axes,
+        residuals=residual_tensor,
+        weights=weight_tensor,
+        x_values=x_tensor,
+        intervals=intervals,
+        panels=tuple(panels),
+        kind=kind,
+    )
+
+
 def compare_models(
     diagnostics: Mapping[str, ModelDiagnostics],
     *,
@@ -1159,6 +1462,330 @@ def _worm_coefficients(
     coefficients = np.full(4, np.nan, dtype=np.float64)
     coefficients[:estimable_columns] = estimated
     return coefficients
+
+
+def _bucket_statistics(
+    residuals: np.ndarray,
+    weights: np.ndarray,
+    *,
+    kind: Literal["moment", "centile.central", "centile.tail"],
+) -> BucketStatistics:
+    valid = (
+        np.isfinite(residuals)
+        & np.isfinite(weights)
+        & (weights > 0.0)
+    )
+    values = residuals[valid]
+    positive_weights = weights[valid]
+    if values.size < 2 or not positive_weights.size:
+        raise ValueError(
+            "bucket statistics require positive-weight observations"
+        )
+    normalized_weights = positive_weights / np.sum(positive_weights)
+    effective_count = float(np.sum(positive_weights))
+    if kind == "moment":
+        mean = float(np.sum(normalized_weights * values))
+        centered = values - mean
+        second_moment = float(
+            np.sum(normalized_weights * centered**2)
+        )
+        if second_moment <= 0.0:
+            raise ValueError(
+                "moment bucket plots require non-constant residuals"
+            )
+        third_moment = float(
+            np.sum(normalized_weights * centered**3)
+        )
+        fourth_moment = float(
+            np.sum(normalized_weights * centered**4)
+        )
+        skewness = third_moment / second_moment**1.5
+        kurtosis = fourth_moment / second_moment**2
+        excess_kurtosis = kurtosis - 3.0
+        transformed_skewness = _signed_transform(skewness)
+        transformed_kurtosis = _signed_transform(excess_kurtosis)
+        jarque_bera = (
+            effective_count / 6.0 * skewness**2
+            + effective_count / 24.0 * excess_kurtosis**2
+        )
+    else:
+        quantiles = _weighted_quantiles(
+            values,
+            positive_weights,
+            np.array([0.01, 0.25, 0.5, 0.75, 0.99]),
+        )
+        lower_tail, lower_quartile, median, upper_quartile, upper_tail = (
+            quantiles
+        )
+        central_scale = (upper_quartile - lower_quartile) / 2.0
+        tail_scale = (upper_tail - lower_tail) / 2.0
+        if central_scale <= 0.0 or tail_scale <= 0.0:
+            raise ValueError(
+                "centile bucket plots require distinct residual quantiles"
+            )
+        central_skewness = (
+            (lower_quartile + upper_quartile) / 2.0 - median
+        ) / central_scale
+        tail_skewness = (
+            (lower_tail + upper_tail) / 2.0 - median
+        ) / tail_scale
+        kurtosis = (
+            upper_tail - lower_tail
+        ) / (upper_quartile - lower_quartile)
+        excess_kurtosis = kurtosis - 3.449
+        skewness = (
+            central_skewness
+            if kind == "centile.central"
+            else tail_skewness
+        )
+        transformed_skewness = skewness
+        transformed_kurtosis = _signed_transform(excess_kurtosis)
+        jarque_bera = None
+    return BucketStatistics(
+        observation_count=residuals.size,
+        effective_observation_count=effective_count,
+        skewness=float(skewness),
+        transformed_skewness=float(transformed_skewness),
+        kurtosis=float(kurtosis),
+        excess_kurtosis=float(excess_kurtosis),
+        transformed_kurtosis=float(transformed_kurtosis),
+        jarque_bera=(
+            None if jarque_bera is None else float(jarque_bera)
+        ),
+    )
+
+
+def _signed_transform(value: float) -> float:
+    return value / (1.0 + abs(value))
+
+
+def _weighted_quantiles(
+    values: np.ndarray,
+    weights: np.ndarray,
+    probabilities: np.ndarray,
+) -> np.ndarray:
+    """Reproduce the weighted type-7 quantiles used by R centileSK()."""
+    if np.any(probabilities < 0.0) or np.any(probabilities > 1.0):
+        raise ValueError("quantile probabilities must lie in [0, 1]")
+    order = np.argsort(values, kind="mergesort")
+    ordered_values = values[order]
+    ordered_weights = weights[order]
+    unique_values, inverse = np.unique(
+        ordered_values,
+        return_inverse=True,
+    )
+    aggregated_weights = np.zeros(
+        unique_values.size,
+        dtype=np.float64,
+    )
+    np.add.at(aggregated_weights, inverse, ordered_weights)
+    cumulative_weights = np.cumsum(aggregated_weights)
+    total_weight = float(cumulative_weights[-1])
+    positions = 1.0 + (total_weight - 1.0) * probabilities
+    lower = np.maximum(np.floor(positions), 1.0)
+    upper = np.minimum(lower + 1.0, total_weight)
+    fractions = np.mod(positions, 1.0)
+    targets = np.concatenate((lower, upper))
+    indices = np.searchsorted(
+        cumulative_weights,
+        targets,
+        side="left",
+    )
+    indices = np.clip(indices, 0, unique_values.size - 1)
+    selected = unique_values[indices]
+    count = probabilities.size
+    return (
+        (1.0 - fractions) * selected[:count]
+        + fractions * selected[count:]
+    )
+
+
+def _bucket_bootstrap(
+    residuals: np.ndarray,
+    weights: np.ndarray,
+    *,
+    kind: Literal["moment", "centile.central", "centile.tail"],
+    replicates: int,
+    generator: torch.Generator | None,
+) -> np.ndarray:
+    points = np.empty((replicates, 2), dtype=np.float64)
+    for replicate in range(replicates):
+        indices = torch.randint(
+            residuals.size,
+            (residuals.size,),
+            generator=generator,
+        ).numpy()
+        try:
+            statistics = _bucket_statistics(
+                residuals[indices],
+                weights[indices],
+                kind=kind,
+            )
+            points[replicate] = statistics.point
+        except ValueError:
+            points[replicate] = np.nan
+    return points
+
+
+def _bucket_axes(
+    pyplot: Any,
+    axes: Sequence[Any] | Any | None,
+    *,
+    panel_count: int,
+    figsize: tuple[float, float] | None,
+) -> tuple[tuple[Any, ...], Any]:
+    if axes is None:
+        columns = 1 if panel_count == 1 else min(2, panel_count)
+        rows = math.ceil(panel_count / columns)
+        selected_figsize = figsize or (6.0 * columns, 5.0 * rows)
+        figure, raw_axes = pyplot.subplots(
+            rows,
+            columns,
+            figsize=selected_figsize,
+            squeeze=False,
+        )
+        flattened = tuple(raw_axes.reshape(-1))
+        for unused_axis in flattened[panel_count:]:
+            unused_axis.set_visible(False)
+        return flattened[:panel_count], figure
+    flattened = tuple(np.asarray(axes, dtype=object).reshape(-1))
+    if len(flattened) != panel_count:
+        raise ValueError(
+            f"axes must contain exactly {panel_count} Matplotlib axes"
+        )
+    figures = {id(axis.figure): axis.figure for axis in flattened}
+    if len(figures) != 1:
+        raise ValueError("all bucket-plot axes must belong to the same figure")
+    return flattened, next(iter(figures.values()))
+
+
+def _draw_bucket_panel(
+    axis: Any,
+    statistics: BucketStatistics,
+    bootstrap_points: np.ndarray,
+    *,
+    kind: Literal["moment", "centile.central", "centile.tail"],
+    interval: tuple[float, float] | None,
+    x_label: str | None,
+    label: str | None,
+    show_interval: bool,
+    show_legend: bool,
+) -> None:
+    if kind == "moment":
+        _draw_moment_bucket_background(
+            axis,
+            observation_count=statistics.observation_count,
+        )
+        axis.set_xlabel("Transformed moment skewness")
+        axis.set_ylabel("Transformed excess kurtosis")
+        title = "Moment bucket plot"
+    elif kind == "centile.central":
+        axis.set_xlabel("Central centile skewness")
+        axis.set_ylabel("Transformed centile kurtosis")
+        title = "Central centile bucket plot"
+    else:
+        axis.set_xlabel("Tail centile skewness")
+        axis.set_ylabel("Transformed centile kurtosis")
+        title = "Tail centile bucket plot"
+
+    valid_bootstrap = np.isfinite(bootstrap_points).all(axis=1)
+    if np.any(valid_bootstrap):
+        axis.scatter(
+            bootstrap_points[valid_bootstrap, 0],
+            bootstrap_points[valid_bootstrap, 1],
+            s=22,
+            facecolors="lightblue",
+            edgecolors="steelblue",
+            linewidths=0.5,
+            alpha=0.55,
+            label="Bootstrap",
+            zorder=3,
+        )
+    point_x, point_y = statistics.point
+    axis.scatter(
+        [point_x],
+        [point_y],
+        s=70,
+        marker="x",
+        color="black",
+        linewidths=2.0,
+        label="Observed",
+        zorder=5,
+    )
+    if label is not None:
+        axis.annotate(
+            label,
+            (point_x, point_y),
+            xytext=(6, 6),
+            textcoords="offset points",
+            fontsize=10,
+        )
+    axis.axhline(0.0, color="0.75", linewidth=0.8)
+    axis.axvline(0.0, color="0.75", linewidth=0.8)
+    axis.set_xlim(-1.0, 1.0)
+    axis.set_ylim(-1.0, 1.0)
+    axis.grid(alpha=0.2)
+    axis.text(
+        -0.94,
+        -0.93,
+        f"n={statistics.observation_count}",
+        fontsize=8,
+        color="0.35",
+    )
+    if interval is None:
+        axis.set_title(title)
+    elif show_interval:
+        interval_label = x_label or "x"
+        lower = 0.0 if abs(interval[0]) < 5e-12 else interval[0]
+        upper = 0.0 if abs(interval[1]) < 5e-12 else interval[1]
+        axis.set_title(
+            f"{interval_label}: [{lower:.4g}, {upper:.4g}]"
+        )
+    if show_legend:
+        axis.legend(frameon=False, loc="upper left")
+
+
+def _draw_moment_bucket_background(
+    axis: Any,
+    *,
+    observation_count: int,
+) -> None:
+    transformed_skewness = np.linspace(-0.99, 0.99, 801)
+    skewness = transformed_skewness / (
+        1.0 - np.abs(transformed_skewness)
+    )
+    critical_value = float(chi2.ppf(0.95, df=2))
+    squared_limit = (
+        24.0
+        / observation_count
+        * (
+            critical_value
+            - observation_count / 6.0 * skewness**2
+        )
+    )
+    accepted = squared_limit >= 0.0
+    excess_limit = np.sqrt(np.maximum(squared_limit, 0.0))
+    transformed_limit = excess_limit / (1.0 + excess_limit)
+    axis.fill_between(
+        transformed_skewness[accepted],
+        -transformed_limit[accepted],
+        transformed_limit[accepted],
+        color="0.96",
+        label="Jarque-Bera 95% region",
+        zorder=0,
+    )
+    pearson_excess = skewness**2 - 2.0
+    pearson_boundary = pearson_excess / (
+        1.0 + np.abs(pearson_excess)
+    )
+    axis.plot(
+        transformed_skewness,
+        pearson_boundary,
+        color="0.25",
+        linewidth=1.2,
+        label="Moment boundary",
+        zorder=2,
+    )
 
 
 def _scatter_residual_panel(
