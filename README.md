@@ -9,8 +9,8 @@ PyTorch automatic differentiation, composable predictors, and optional GPU
 execution.
 
 > [!WARNING]
-> TorchGAMLSS is pre-alpha software. It is not yet suitable for statistical
-> analysis or production use.
+> TorchGAMLSS 0.1.0a1 is alpha software. It is not yet suitable for
+> production or high-stakes statistical use without independent validation.
 
 ## Initial design
 
@@ -96,6 +96,19 @@ parameters. Aligned parametric-bootstrap refits additionally propagate
 smoothing-parameter selection and retain the dependence among reselected
 parameters.
 
+## Installation
+
+The alpha is currently distributed through private GitHub workflow artifacts.
+After downloading the wheel:
+
+```bash
+python -m pip install torchgamlss-0.1.0a1-py3-none-any.whl
+```
+
+TorchGAMLSS supports Python 3.10 through 3.13 on Linux and Windows. PyTorch
+selects CPU or CUDA support through the installed Torch build; TorchGAMLSS
+itself is a pure-Python wheel.
+
 ## Development
 
 ```bash
@@ -132,7 +145,9 @@ in [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md). Mini-batch optimization,
 CPU/CUDA benchmarks, and reproducibility guidance are in
 [`docs/MINIBATCH.md`](docs/MINIBATCH.md). Hybrid neural distributional
 predictors are described in [`docs/NEURAL.md`](docs/NEURAL.md), and shared
-backbones in [`docs/SHARED.md`](docs/SHARED.md).
+backbones in [`docs/SHARED.md`](docs/SHARED.md). Release verification is
+documented in [`docs/RELEASING.md`](docs/RELEASING.md), and user-visible
+changes in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Attribution and license
 

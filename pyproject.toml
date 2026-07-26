@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "torchgamlss"
-version = "0.0.0"
+dynamic = ["version"]
 description = "Generalized Additive Models for Location, Scale and Shape in PyTorch"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,10 +13,16 @@ authors = [
   { name = "TorchGAMLSS contributors" },
 ]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = [
@@ -38,6 +44,10 @@ dev = [
   "pytest-cov>=5",
   "ruff>=0.9",
 ]
+release = [
+  "build>=1.2",
+  "twine>=6",
+]
 
 [project.urls]
 Repository = "https://github.com/martinoni/torchgamlss"
@@ -45,6 +55,9 @@ Issues = "https://github.com/martinoni/torchgamlss/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/torchgamlss"]
+
+[tool.hatch.version]
+path = "src/torchgamlss/__init__.py"
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -71,3 +71,14 @@ as supported.
 - [x] `wp()` global and numeric covariate-conditioned worm plots
 - [x] `bp()` weighted moment and centile bucket plots with bootstrap
 - [ ] Optional R family-locus overlays for `bp()` backgrounds
+
+## Phase 6 — alpha release engineering
+
+- [x] Single-source PEP 440 version and Alpha package metadata
+- [x] Python 3.10-3.13 CI on Linux and Windows
+- [x] Automated wheel and source-distribution build
+- [x] Strict package metadata and README validation
+- [x] Clean-environment wheel installation and API smoke test
+- [x] Changelog and documented private pre-release procedure
+- [ ] Tag and create the private `v0.1.0a1` GitHub pre-release
+- [ ] Decide whether and when to publish on TestPyPI or PyPI

@@ -11,3 +11,4 @@ __pycache__/
 .Rproj.user/
 build/
 dist/
+work/
