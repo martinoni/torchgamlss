@@ -4,6 +4,49 @@ TorchGAMLSS treats the R implementations as executable references. A family is
 not considered supported until its parameterization, links, log likelihood,
 derivatives, and at least one fitted model have numerical parity tests.
 
+The protocol has two complementary layers:
+
+- focused fixtures in `tests/reference/` isolate densities, derivatives,
+  fitting components, diagnostics, and API behavior;
+- manifest-driven cases in `examples/` execute a complete analysis in R and
+  Python, align standardized tables by semantic keys, and report numerical
+  errors for every declared result.
+
+## Declarative end-to-end parity
+
+`tools/run_parity.py` reads a JSON manifest that declares the R and Python
+commands, result files, row keys, exact columns, numeric columns, and their
+absolute and relative tolerances. Commands are passed directly to subprocesses
+without invoking a shell. Numeric keys, such as probability grids, can also
+have tolerances so harmless cross-language decimal serialization does not
+prevent row alignment.
+
+The first complete case is
+[`examples/normal_location_scale`](../examples/normal_location_scale/README.md).
+It fits the same weighted Normal RS model with parameter-specific offsets and
+predictors for both `mu` and `sigma`. Run both implementations from the
+repository root:
+
+```powershell
+python tools/run_parity.py `
+  examples/normal_location_scale/parity.json `
+  --output-dir work/parity/normal-location-scale
+```
+
+The output includes each implementation's tables and metadata, the Python
+diagnostic figure, and `report.json`. Each numeric column reports its maximum
+absolute and relative error; a failure identifies the first divergent
+semantic key and value.
+
+Python-only environments use the committed R result:
+
+```powershell
+python tools/run_parity.py `
+  examples/normal_location_scale/parity.json `
+  --r-reference examples/normal_location_scale/reference/r `
+  --output-dir work/parity/normal-location-scale-reference
+```
+
 ## Normal family (`NO`)
 
 The first reference slice targets `gamlss.dist` 6.1-1 and `gamlss` 5.5-0. In
@@ -269,6 +312,8 @@ From the repository root:
 Rscript tools/install_r_dependencies.R
 Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
+python tools/run_parity.py examples/normal_location_scale/parity.json `
+  --output-dir work/parity/normal-location-scale
 python -m pytest
 ```
 

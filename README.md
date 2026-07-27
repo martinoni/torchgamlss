@@ -9,7 +9,8 @@ PyTorch automatic differentiation, composable predictors, and optional GPU
 execution.
 
 > [!WARNING]
-> TorchGAMLSS 0.1.0a1 is alpha software. It is not yet suitable for
+> TorchGAMLSS is alpha software. The latest private pre-release is 0.1.0a1;
+> the main development line is 0.1.0a2.dev0. It is not yet suitable for
 > production or high-stakes statistical use without independent validation.
 
 ## Initial design
@@ -86,6 +87,8 @@ The current implementation contains:
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for all supported families' densities or masses,
   links, derivatives, starting values, and fitted models;
+- a declarative R-to-Python parity harness with a complete weighted Normal
+  location-scale example, standardized result tables, and an error report;
 - tests for parameter recovery, gradients, link round trips, and R parity.
 
 The L-BFGS path remains a Torch-native numerical baseline and requires fixed
@@ -98,8 +101,10 @@ parameters.
 
 ## Installation
 
-The alpha is currently distributed through private GitHub workflow artifacts.
-After downloading the wheel:
+The current alpha is distributed through the private
+[`v0.1.0a1` GitHub pre-release](https://github.com/martinoni/torchgamlss/releases/tag/v0.1.0a1).
+Development wheels are also retained as private GitHub workflow artifacts.
+After downloading the release wheel:
 
 ```bash
 python -m pip install torchgamlss-0.1.0a1-py3-none-any.whl
@@ -124,6 +129,20 @@ Rscript tools/install_r_dependencies.R
 Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
 ```
+
+The complete weighted Normal location-scale example can be run in both
+languages with:
+
+```bash
+python tools/run_parity.py examples/normal_location_scale/parity.json \
+  --output-dir work/parity/normal-location-scale
+```
+
+It produces aligned fit, coefficient, fitted-parameter, quantile, and residual
+tables, a machine-readable numerical error report, and a compact diagnostic
+figure. See
+[`examples/normal_location_scale/README.md`](examples/normal_location_scale/README.md)
+for the formulas and the no-R validation mode.
 
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the

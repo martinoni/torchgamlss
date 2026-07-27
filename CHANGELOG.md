@@ -5,6 +5,23 @@ All notable changes to TorchGAMLSS are documented in this file.
 The project follows semantic versioning and uses the Python packaging
 pre-release notation described by PEP 440.
 
+## [0.1.0a2.dev0] - 2026-07-26
+
+Development cycle toward the second alpha release.
+
+### Added
+
+- A reusable manifest-driven R-to-Python parity runner with standardized CSV
+  artifacts, column-specific tolerances, tolerant numeric keys, and
+  machine-readable failure reports.
+- A complete weighted Normal location-scale RS example covering offsets,
+  coefficients, fitted parameters, response quantiles, quantile residuals,
+  likelihood criteria, and a diagnostic visualization.
+- A committed R result for running the example parity test without an R
+  installation, while continuous integration also executes both languages.
+- Continuous-integration retention of the end-to-end parity report, tables,
+  metadata, and plot.
+
 ## [0.1.0a1] - 2026-07-26
 
 First installable alpha release.

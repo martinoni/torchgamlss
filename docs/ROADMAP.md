@@ -80,5 +80,15 @@ as supported.
 - [x] Strict package metadata and README validation
 - [x] Clean-environment wheel installation and API smoke test
 - [x] Changelog and documented private pre-release procedure
-- [ ] Tag and create the private `v0.1.0a1` GitHub pre-release
+- [x] Tag and create the private `v0.1.0a1` GitHub pre-release
 - [ ] Decide whether and when to publish on TestPyPI or PyPI
+
+## Phase 7 — reproducible parity examples
+
+- [x] Reusable declarative R-to-Python parity harness
+- [x] Complete weighted Normal location-scale example with coefficients,
+  quantiles, residuals, and graphical output
+- [x] Run the complete example in R and Python in CI and retain its report
+- [ ] Count-regression example comparing Poisson and negative binomial models
+- [ ] Response-centile example using a Box-Cox family
+- [ ] Expand the translated family catalog beyond the initial eight families

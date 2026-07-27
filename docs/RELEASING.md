@@ -62,7 +62,10 @@ Every push and pull request runs:
 - wheel and source-distribution construction;
 - strict Twine metadata/README validation;
 - installation and smoke testing of the built wheel in a clean environment;
-- regeneration and comparison of all R parity fixtures.
+- regeneration and comparison of all focused R parity fixtures;
+- the complete Normal location-scale analysis in both R and Python, with its
+  numerical report and visualization retained as the
+  `normal-location-scale-parity` artifact.
 
 Successful distribution files are retained as the
 `torchgamlss-distributions` workflow artifact.

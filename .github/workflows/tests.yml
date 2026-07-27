@@ -91,5 +91,21 @@ jobs:
         with:
           r-version: "4.6.1"
           use-public-rspm: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[test]"
       - run: Rscript tools/install_r_dependencies.R
       - run: Rscript tools/generate_r_references.R --check
+      - name: Run end-to-end Normal location-scale parity
+        run: >-
+          python tools/run_parity.py
+          examples/normal_location_scale/parity.json
+          --output-dir work/parity/normal-location-scale
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: normal-location-scale-parity
+          path: work/parity/normal-location-scale
+          if-no-files-found: warn

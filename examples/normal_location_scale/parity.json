@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "case": "normal_location_scale_rs",
+  "description": "Weighted Normal location-scale RS fit with parameter offsets",
+  "working_directory": "../..",
+  "timeout_seconds": 300,
+  "commands": {
+    "r": [
+      "{rscript}",
+      "{case_dir}/run_r.R",
+      "--data",
+      "{case_dir}/data.csv",
+      "--output-dir",
+      "{output_dir}"
+    ],
+    "python": [
+      "{python}",
+      "{case_dir}/run_python.py",
+      "--data",
+      "{case_dir}/data.csv",
+      "--output-dir",
+      "{output_dir}"
+    ]
+  },
+  "artifacts": [
+    {
+      "name": "fit",
+      "file": "fit.csv",
+      "keys": [],
+      "exact": [
+        "converged"
+      ],
+      "numeric": {
+        "global_deviance": {
+          "atol": 1e-9,
+          "rtol": 1e-9
+        },
+        "negative_log_likelihood": {
+          "atol": 1e-9,
+          "rtol": 1e-9
+        },
+        "effective_degrees_of_freedom": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        },
+        "effective_observation_count": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        },
+        "aic": {
+          "atol": 1e-9,
+          "rtol": 1e-9
+        }
+      }
+    },
+    {
+      "name": "coefficients",
+      "file": "coefficients.csv",
+      "keys": [
+        "parameter",
+        "term"
+      ],
+      "exact": [],
+      "numeric": {
+        "estimate": {
+          "atol": 1e-8,
+          "rtol": 1e-7
+        }
+      }
+    },
+    {
+      "name": "fitted parameters",
+      "file": "fitted.csv",
+      "keys": [
+        "observation"
+      ],
+      "exact": [],
+      "numeric": {
+        "mu": {
+          "atol": 1e-8,
+          "rtol": 1e-7
+        },
+        "sigma": {
+          "atol": 1e-8,
+          "rtol": 1e-7
+        }
+      }
+    },
+    {
+      "name": "response quantiles",
+      "file": "quantiles.csv",
+      "keys": [
+        "observation",
+        "probability"
+      ],
+      "numeric_keys": {
+        "probability": {
+          "atol": 1e-14,
+          "rtol": 1e-14
+        }
+      },
+      "exact": [],
+      "numeric": {
+        "centile": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        },
+        "quantile": {
+          "atol": 1e-8,
+          "rtol": 1e-7
+        }
+      }
+    },
+    {
+      "name": "quantile residuals",
+      "file": "residuals.csv",
+      "keys": [
+        "observation"
+      ],
+      "exact": [],
+      "numeric": {
+        "quantile_residual": {
+          "atol": 1e-8,
+          "rtol": 1e-7
+        }
+      }
+    }
+  ]
+}
