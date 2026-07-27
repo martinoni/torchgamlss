@@ -158,6 +158,19 @@ quantiles, and reproducible randomized residuals. See
 [`examples/count_model_comparison/README.md`](examples/count_model_comparison/README.md)
 for the statistical interpretation.
 
+The third complete case fits smooth BCCG fetal-growth centile curves:
+
+```bash
+python tools/run_parity.py examples/bccg_centile_curves/parity.json \
+  --output-dir work/parity/bccg-centile-curves
+```
+
+It compares smooth location, scale, and shape predictors, their EDFs, all
+fitted distribution parameters, quantile residuals, and nine response
+centiles on a common age grid. See
+[`examples/bccg_centile_curves/README.md`](examples/bccg_centile_curves/README.md)
+for the model, visualization, data provenance, and no-R validation mode.
+
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
 P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma

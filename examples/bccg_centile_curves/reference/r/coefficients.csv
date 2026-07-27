@@ -1,0 +1,7 @@
+parameter,term,estimate
+mu,Intercept,-65.0926398144282
+mu,x_linear,10.7093488448122
+sigma,Intercept,-2.56992983972106
+sigma,x_linear,-0.00993498901886567
+nu,Intercept,-2.0512041659813
+nu,x_linear,0.0770530033157054

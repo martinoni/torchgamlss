@@ -81,6 +81,11 @@ Committed R fixtures cover:
   quantile residuals;
 - response sampling and conditional quantiles matched to `qBCCG`.
 
+The complete
+[`bccg_centile_curves`](../examples/bccg_centile_curves/README.md) case
+additionally verifies a smooth location-scale-shape fit and nine fetal-growth
+response-centile curves end to end against R.
+
 The custom Torch distribution exposes both `sample()` and `icdf()`. The
 inverse maps a truncated-normal probability through the Box-Cox response
 transformation.

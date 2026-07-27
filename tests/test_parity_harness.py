@@ -15,6 +15,7 @@ from tools.run_parity import (
 ROOT = Path(__file__).parents[1]
 EXAMPLE_DIR = ROOT / "examples" / "normal_location_scale"
 COUNT_EXAMPLE_DIR = ROOT / "examples" / "count_model_comparison"
+CENTILE_EXAMPLE_DIR = ROOT / "examples" / "bccg_centile_curves"
 
 
 def test_manifest_rejects_numeric_tolerance_for_an_undeclared_key(tmp_path):
@@ -176,4 +177,40 @@ def test_count_model_comparison_matches_committed_r_reference(tmp_path):
     assert fit.loc["NBI", "pearson_dispersion"] < 1.2
     assert (
         output_dir / "python" / "count_model_comparison.png"
+    ).is_file()
+
+
+def test_bccg_centile_curves_match_committed_r_reference(tmp_path):
+    output_dir = tmp_path / "results"
+    report = run_case(
+        CENTILE_EXAMPLE_DIR / "parity.json",
+        output_dir,
+        r_reference=CENTILE_EXAMPLE_DIR / "reference" / "r",
+        python_executable=sys.executable,
+    )
+
+    assert report["passed"]
+    assert {
+        artifact["name"]: artifact["rows"]
+        for artifact in report["artifacts"]
+    } == {
+        "fit": 1,
+        "linear coefficients": 6,
+        "smooth summaries": 3,
+        "fitted parameters": 610,
+        "response centile curves": 1089,
+        "quantile residuals": 610,
+    }
+    smoothing = pd.read_csv(output_dir / "python" / "smoothing.csv")
+    assert smoothing["parameter"].tolist() == ["mu", "sigma", "nu"]
+    assert (smoothing["smoothing_parameter"] == 10.0).all()
+    centiles = pd.read_csv(output_dir / "python" / "centiles.csv")
+    assert centiles["grid_index"].nunique() == 121
+    assert centiles["centile"].nunique() == 9
+    ordered = centiles.sort_values(["grid_index", "centile"])
+    assert (
+        ordered.groupby("grid_index")["quantile"].diff().dropna() > 0
+    ).all()
+    assert (
+        output_dir / "python" / "bccg_centile_curves.png"
     ).is_file()

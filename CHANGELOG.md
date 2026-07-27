@@ -20,7 +20,9 @@ Development cycle toward the second alpha release.
 - A weighted Poisson-versus-NBI count-regression example covering modeled
   overdispersion, information-criterion weights, fitted moments, discrete
   quantiles, and reproducible randomized Dunn-Smyth residuals.
-- A committed R result for running the example parity test without an R
+- A smooth BCCG fetal-growth example covering location, scale, and shape
+  P-splines, nine response-centile curves, and continuous quantile residuals.
+- Committed R results for running the example parity tests without an R
   installation, while continuous integration also executes both languages.
 - Continuous-integration retention of the end-to-end parity report, tables,
   metadata, and plot.

@@ -1,0 +1,2 @@
+case,implementation,family,algorithm,grid_size,gamlss_version,gamlss_dist_version,gamlss_data_version
+bccg_centile_curves,R gamlss,BCCG,RS,121,5.5.0,6.1.1,6.0.7

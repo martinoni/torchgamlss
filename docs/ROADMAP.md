@@ -92,5 +92,5 @@ as supported.
 - [x] Count-regression example comparing Poisson and negative binomial models
 - [x] Run the count-model comparison in R and Python in CI and retain its
   report
-- [ ] Response-centile example using a Box-Cox family
+- [x] Response-centile example using a Box-Cox family
 - [ ] Expand the translated family catalog beyond the initial eight families

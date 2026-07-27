@@ -108,6 +108,11 @@ jobs:
           python tools/run_parity.py
           examples/count_model_comparison/parity.json
           --output-dir work/parity/count-model-comparison
+      - name: Run BCCG response-centile parity
+        run: >-
+          python tools/run_parity.py
+          examples/bccg_centile_curves/parity.json
+          --output-dir work/parity/bccg-centile-curves
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -119,4 +124,10 @@ jobs:
         with:
           name: count-model-comparison-parity
           path: work/parity/count-model-comparison
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bccg-centile-curves-parity
+          path: work/parity/bccg-centile-curves
           if-no-files-found: warn

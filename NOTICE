@@ -70,3 +70,10 @@ target-EDF, GAIC, and GCV smoothing-parameter selection, is translated from
 gamlss 5.5-0, in particular R/add.r and R/pb.R. The latter credits work by
 Mikis Stasinopoulos, Robert Rigby, Paul Eilers, and Simon Wood. The translated
 implementation remains under GPL-3.0-only.
+
+The fetal abdominal-circumference observations in
+examples/bccg_centile_curves/data.csv are copied from the abdom dataset in
+gamlss.data 6.0-7, distributed under GPL-2 or GPL-3. The package identifies
+Dr. Eileen M. Wright as the data source and cites Chitty et al. (1994) and
+Wright and Royston (1997). The copied data are distributed here under
+GPL-3.0-only.

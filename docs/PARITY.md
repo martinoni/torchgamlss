@@ -65,6 +65,23 @@ See the
 [`count_model_comparison` example](../examples/count_model_comparison/README.md)
 for the model equations and no-R command.
 
+The third complete case fits fetal-growth reference curves with a
+three-parameter BCCG model:
+
+```powershell
+python tools/run_parity.py `
+  examples/bccg_centile_curves/parity.json `
+  --output-dir work/parity/bccg-centile-curves
+```
+
+Separate fixed-lambda P-splines let location, scale, and skewness vary with
+gestational age. The case compares every fitted parameter, linear coefficient,
+smooth EDF, continuous quantile residual, and nine response-centile curves on
+a shared prediction grid. It uses the `abdom` data from `gamlss.data` and
+retains the complete report and visualization in CI. See the
+[`bccg_centile_curves` example](../examples/bccg_centile_curves/README.md)
+for data provenance and the no-R command.
+
 ## Normal family (`NO`)
 
 The first reference slice targets `gamlss.dist` 6.1-1 and `gamlss` 5.5-0. In
@@ -332,6 +349,8 @@ Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
 python tools/run_parity.py examples/normal_location_scale/parity.json `
   --output-dir work/parity/normal-location-scale
+python tools/run_parity.py examples/bccg_centile_curves/parity.json `
+  --output-dir work/parity/bccg-centile-curves
 python -m pytest
 ```
 

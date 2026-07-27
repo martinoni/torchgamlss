@@ -1,0 +1,2 @@
+converged,outer_iterations,global_deviance,negative_log_likelihood,effective_degrees_of_freedom,residual_degrees_of_freedom,observation_count,effective_observation_count,aic
+TRUE,15,4776.55906774139,2388.2795338707,17.7100873491574,592.289912650842,610,610,4811.97924243971
