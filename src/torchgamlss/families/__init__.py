@@ -9,6 +9,7 @@ from torchgamlss.families.gamma import Gamma
 from torchgamlss.families.negative_binomial import NegativeBinomial
 from torchgamlss.families.normal import Normal
 from torchgamlss.families.poisson import Poisson
+from torchgamlss.families.student_t import TF, StudentT
 
 __all__ = [
     "BCCG",
@@ -23,4 +24,6 @@ __all__ = [
     "NegativeBinomial",
     "Normal",
     "Poisson",
+    "StudentT",
+    "TF",
 ]

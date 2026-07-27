@@ -93,4 +93,5 @@ as supported.
 - [x] Run the count-model comparison in R and Python in CI and retain its
   report
 - [x] Response-centile example using a Box-Cox family
-- [ ] Expand the translated family catalog beyond the initial eight families
+- [x] Expand the translated family catalog beyond the initial eight families
+  with the Student-t location-scale family (`TF`)

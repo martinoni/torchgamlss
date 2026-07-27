@@ -36,6 +36,13 @@ beta continued fraction while preserving the R parameterization, truncation,
 working scores, and limiting behavior. This translation remains under
 GPL-3.0-only.
 
+The Student-t location-scale implementation and fixtures are derived from and
+tested against the TF family, dTF(), pTF(), and qTF() definitions in
+gamlss.dist 6.1-1. It preserves the R location, scale, and degrees-of-freedom
+parameterization, working scores, expected derivatives, starting values, and
+large-degrees-of-freedom Normal limit. This translation remains under
+GPL-3.0-only.
+
 The Box-Cox power-exponential implementation and fixtures are derived from and
 tested against the BCPE family, dBCPE(), pBCPE(), and qBCPE() definitions in
 gamlss.dist 6.1-1. The differentiable power-exponential CDF uses an

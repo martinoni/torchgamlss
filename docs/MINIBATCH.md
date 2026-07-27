@@ -465,10 +465,10 @@ same CUDA setup.
 ### Family tail-stability matrix
 
 `tests/test_amp_stability.py` exercises Gamma, negative-binomial type I,
-BCCG, BCT, and BCPE with two parameter regimes per family and response
+BCCG, BCT, BCPE, and TF with two parameter regimes per family and response
 quantiles from `0.0001` through `0.9999`. The resulting responses extend from
-`1.79e-6` to `1.22e4`. Each mode starts from the same float32 two-layer shared
-MLP and completes eight epochs over 32 attempted batches.
+approximately `-3.44e3` to `1.22e4`. Each mode starts from the same float32
+two-layer shared MLP and completes eight epochs over 32 attempted batches.
 
 The deterministic RTX 4090 run on 2026-07-25 produced:
 
@@ -479,14 +479,16 @@ The deterministic RTX 4090 run on 2026-07-25 produced:
 | BCCG | 4,226 | `2.36e-6` | `1.41e-5` | 0 |
 | BCT | 12,172 | `4.10e-7` | `1.99e-5` | 0 |
 | BCPE | 8,701 | `4.11e-5` | `4.50e-5` | 0 |
+| TF | 3,484 | `3.99e-6` | `9.21e-5` | 0 |
 
-The relative difference is measured against the final FP32 negative
-log-likelihood from the same initialization and batch order. All objectives,
-full gradients, and predicted parameters remained finite. The Gamma FP16 run
-correctly skipped one overflowing update and stayed within the committed 3%
-stress tolerance. This is a stability regression matrix, not a claim that
-such a short fit has converged or that every possible parameter extreme is
-safe.
+The first five rows were recorded on 2026-07-25; TF was added and measured on
+the same RTX 4090 on 2026-07-27. The relative difference is measured against
+the final FP32 negative log-likelihood from the same initialization and batch
+order. All objectives, full gradients, and predicted parameters remained
+finite. The Gamma FP16 run correctly skipped one overflowing update and stayed
+within the committed 3% stress tolerance. This is a stability regression
+matrix, not a claim that such a short fit has converged or that every possible
+parameter extreme is safe.
 
 Run the matrix on a CUDA development machine with:
 

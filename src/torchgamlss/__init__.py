@@ -17,6 +17,7 @@ from torchgamlss.families import (
     BCCG,
     BCPE,
     BCT,
+    TF,
     Beta,
     BoxCoxColeGreen,
     BoxCoxPowerExponential,
@@ -26,6 +27,7 @@ from torchgamlss.families import (
     NegativeBinomial,
     Normal,
     Poisson,
+    StudentT,
 )
 from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
@@ -114,6 +116,8 @@ __all__ = [
     "SmoothTerm",
     "SharedMLPPredictor",
     "TermContributions",
+    "StudentT",
+    "TF",
     "WormPlotPanel",
     "WormPlotResult",
     "bucket_plot",

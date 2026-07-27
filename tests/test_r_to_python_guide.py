@@ -9,6 +9,7 @@ from torchgamlss import (
     BCPE,
     BCT,
     GAMLSS,
+    TF,
     Beta,
     Gamma,
     NegativeBinomial,
@@ -50,6 +51,12 @@ REFERENCE_DIR = Path(__file__).parent / "reference"
             "BCPE",
             ("mu", "sigma", "nu", "tau"),
             ("IdentityLink", "LogLink", "IdentityLink", "LogLink"),
+        ),
+        (
+            TF(),
+            "TF",
+            ("mu", "sigma", "nu"),
+            ("IdentityLink", "LogLink", "LogLink"),
         ),
     ],
 )

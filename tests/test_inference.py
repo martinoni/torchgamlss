@@ -11,6 +11,7 @@ from torchgamlss import (
     BCPE,
     BCT,
     GAMLSS,
+    TF,
     Beta,
     CGControl,
     NegativeBinomial,
@@ -163,6 +164,17 @@ def _smooth_table_rows(
                 "tau": "~ 1",
             },
             1e-7,
+        ),
+        (
+            "TF",
+            "tf",
+            TF(),
+            {
+                "mu": "y ~ x + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+                "nu": "~ w + offset(nu_offset)",
+            },
+            1e-8,
         ),
     ],
 )

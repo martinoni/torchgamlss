@@ -11,6 +11,7 @@ from torchgamlss import (
     BCPE,
     BCT,
     GAMLSS,
+    TF,
     Family,
     Gamma,
     MiniBatchControl,
@@ -67,6 +68,14 @@ _STRESS_CASES = {
             {"mu": 50.0, "sigma": 0.6, "nu": -1.4, "tau": 0.75},
         ),
         {"mu": 5.0, "sigma": 0.3, "nu": 0.0, "tau": 2.0},
+    ),
+    "TF": _StressCase(
+        TF,
+        (
+            {"mu": -3.0, "sigma": 0.15, "nu": 30.0},
+            {"mu": 20.0, "sigma": 4.0, "nu": 1.2},
+        ),
+        {"mu": 5.0, "sigma": 1.0, "nu": 5.0},
     ),
 }
 
