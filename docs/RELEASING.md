@@ -65,7 +65,9 @@ Every push and pull request runs:
 - regeneration and comparison of all focused R parity fixtures;
 - the complete Normal location-scale analysis in both R and Python, with its
   numerical report and visualization retained as the
-  `normal-location-scale-parity` artifact.
+  `normal-location-scale-parity` artifact;
+- the Poisson-versus-NBI model comparison in both languages, retained as the
+  `count-model-comparison-parity` artifact.
 
 Successful distribution files are retained as the
 `torchgamlss-distributions` workflow artifact.

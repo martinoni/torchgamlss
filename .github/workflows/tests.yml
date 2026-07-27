@@ -103,9 +103,20 @@ jobs:
           python tools/run_parity.py
           examples/normal_location_scale/parity.json
           --output-dir work/parity/normal-location-scale
+      - name: Run Poisson versus NBI model-comparison parity
+        run: >-
+          python tools/run_parity.py
+          examples/count_model_comparison/parity.json
+          --output-dir work/parity/count-model-comparison
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: normal-location-scale-parity
           path: work/parity/normal-location-scale
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: count-model-comparison-parity
+          path: work/parity/count-model-comparison
           if-no-files-found: warn

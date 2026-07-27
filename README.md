@@ -144,6 +144,20 @@ figure. See
 [`examples/normal_location_scale/README.md`](examples/normal_location_scale/README.md)
 for the formulas and the no-R validation mode.
 
+The Poisson-versus-NBI count-regression comparison is the second complete
+case:
+
+```bash
+python tools/run_parity.py examples/count_model_comparison/parity.json \
+  --output-dir work/parity/count-model-comparison
+```
+
+It compares common mean predictors under equidispersion and modeled
+overdispersion, including AIC weights, conditional variances, discrete
+quantiles, and reproducible randomized residuals. See
+[`examples/count_model_comparison/README.md`](examples/count_model_comparison/README.md)
+for the statistical interpretation.
+
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
 P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma

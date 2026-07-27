@@ -1,0 +1,7 @@
+model,parameter,term,estimate
+PO,mu,Intercept,0.730573363673459
+PO,mu,x,0.785115935733808
+NBI,mu,Intercept,0.723239751013116
+NBI,mu,x,0.828571205691814
+NBI,sigma,Intercept,-1.29274874179054
+NBI,sigma,z,-0.707209615172122

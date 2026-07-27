@@ -14,6 +14,7 @@ from tools.run_parity import (
 
 ROOT = Path(__file__).parents[1]
 EXAMPLE_DIR = ROOT / "examples" / "normal_location_scale"
+COUNT_EXAMPLE_DIR = ROOT / "examples" / "count_model_comparison"
 
 
 def test_manifest_rejects_numeric_tolerance_for_an_undeclared_key(tmp_path):
@@ -143,3 +144,36 @@ def test_non_finite_mismatch_still_produces_valid_json(tmp_path):
     assert not report["passed"]
     assert report["artifacts"][0]["columns"][0]["max_absolute_error"] is None
     json.dumps(report, allow_nan=False)
+
+
+def test_count_model_comparison_matches_committed_r_reference(tmp_path):
+    output_dir = tmp_path / "results"
+    report = run_case(
+        COUNT_EXAMPLE_DIR / "parity.json",
+        output_dir,
+        r_reference=COUNT_EXAMPLE_DIR / "reference" / "r",
+        python_executable=sys.executable,
+    )
+
+    assert report["passed"]
+    assert {
+        artifact["name"]: artifact["rows"]
+        for artifact in report["artifacts"]
+    } == {
+        "model fits": 2,
+        "AIC comparison": 2,
+        "coefficients": 6,
+        "fitted moments": 168,
+        "response quantiles": 72,
+        "randomized quantile residuals": 168,
+    }
+    comparison = pd.read_csv(output_dir / "python" / "model_comparison.csv")
+    assert comparison["model"].tolist() == ["NBI", "PO"]
+    assert comparison.loc[0, "weight"] > 0.999
+    assert comparison.loc[1, "delta"] > 14.0
+    fit = pd.read_csv(output_dir / "python" / "fit.csv").set_index("model")
+    assert fit.loc["PO", "pearson_dispersion"] > 2.0
+    assert fit.loc["NBI", "pearson_dispersion"] < 1.2
+    assert (
+        output_dir / "python" / "count_model_comparison.png"
+    ).is_file()

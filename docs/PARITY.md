@@ -47,6 +47,24 @@ python tools/run_parity.py `
   --output-dir work/parity/normal-location-scale-reference
 ```
 
+The second complete case compares Poisson equidispersion with an NBI model
+whose dispersion varies with a covariate:
+
+```powershell
+python tools/run_parity.py `
+  examples/count_model_comparison/parity.json `
+  --output-dir work/parity/count-model-comparison
+```
+
+Both models use the same weighted mean predictor and log-exposure offset. The
+case compares likelihood criteria, Pearson dispersion, AIC ranking and
+weights, coefficients, fitted means and variances, discrete conditional
+quantiles, and randomized Dunn-Smyth residuals. Identical explicit uniform
+values make the discrete residuals exactly reproducible across languages.
+See the
+[`count_model_comparison` example](../examples/count_model_comparison/README.md)
+for the model equations and no-R command.
+
 ## Normal family (`NO`)
 
 The first reference slice targets `gamlss.dist` 6.1-1 and `gamlss` 5.5-0. In

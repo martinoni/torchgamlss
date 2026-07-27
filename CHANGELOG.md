@@ -17,6 +17,9 @@ Development cycle toward the second alpha release.
 - A complete weighted Normal location-scale RS example covering offsets,
   coefficients, fitted parameters, response quantiles, quantile residuals,
   likelihood criteria, and a diagnostic visualization.
+- A weighted Poisson-versus-NBI count-regression example covering modeled
+  overdispersion, information-criterion weights, fitted moments, discrete
+  quantiles, and reproducible randomized Dunn-Smyth residuals.
 - A committed R result for running the example parity test without an R
   installation, while continuous integration also executes both languages.
 - Continuous-integration retention of the end-to-end parity report, tables,

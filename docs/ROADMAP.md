@@ -89,6 +89,8 @@ as supported.
 - [x] Complete weighted Normal location-scale example with coefficients,
   quantiles, residuals, and graphical output
 - [x] Run the complete example in R and Python in CI and retain its report
-- [ ] Count-regression example comparing Poisson and negative binomial models
+- [x] Count-regression example comparing Poisson and negative binomial models
+- [x] Run the count-model comparison in R and Python in CI and retain its
+  report
 - [ ] Response-centile example using a Box-Cox family
 - [ ] Expand the translated family catalog beyond the initial eight families

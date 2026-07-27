@@ -1,0 +1,3 @@
+case,model,implementation,algorithm,gamlss_version,gamlss_dist_version
+count_model_comparison,PO,R gamlss,RS,5.5.0,6.1.1
+count_model_comparison,NBI,R gamlss,RS,5.5.0,6.1.1
