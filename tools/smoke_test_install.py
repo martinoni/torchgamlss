@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import torchgamlss
-from torchgamlss import GAMLSS, Normal
+from torchgamlss import GAMLSS, TF, Normal, StudentT
 
 
 def main() -> None:
@@ -24,6 +24,8 @@ def main() -> None:
             f"runtime version {torchgamlss.__version__!r} does not match "
             f"installed metadata {installed_version!r}"
         )
+    if TF is not StudentT or TF().name != "TF":
+        raise RuntimeError("installed Student-t family exports are invalid")
 
     data = pd.DataFrame(
         {

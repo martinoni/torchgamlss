@@ -10,6 +10,7 @@ from torchgamlss import (
     BCPE,
     BCT,
     GAMLSS,
+    TF,
     Beta,
     Gamma,
     NegativeBinomial,
@@ -31,6 +32,7 @@ FAMILY_CASES = {
     "BCCG": ("bccg_reference.csv", BCCG()),
     "BCT": ("bct_reference.csv", BCT()),
     "BCPE": ("bcpe_reference.csv", BCPE()),
+    "TF": ("tf_reference.csv", TF()),
 }
 
 

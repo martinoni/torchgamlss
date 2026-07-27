@@ -98,6 +98,8 @@ Committed R fixtures cover:
 - a weighted two-parameter Beta model with formulas and offsets;
 - a weighted four-parameter BCT model exercising all six cross-derivative
   blocks;
+- a weighted three-parameter TF model exercising its complete expected
+  derivative matrix;
 - a weighted Beta model combining offsets, cross derivatives, and a fixed
   `pb()` term;
 - Normal additive models with fixed, ML-selected, target-EDF, GAIC-selected,

@@ -106,6 +106,10 @@ bct_reference_path <- file.path(reference_dir, "bct_reference.csv")
 bct_fit_data_path <- file.path(reference_dir, "bct_fit_data.csv")
 bct_rs_reference_path <- file.path(reference_dir, "bct_rs_reference.csv")
 bct_cg_reference_path <- file.path(reference_dir, "bct_cg_reference.csv")
+tf_reference_path <- file.path(reference_dir, "tf_reference.csv")
+tf_fit_data_path <- file.path(reference_dir, "tf_fit_data.csv")
+tf_rs_reference_path <- file.path(reference_dir, "tf_rs_reference.csv")
+tf_cg_reference_path <- file.path(reference_dir, "tf_cg_reference.csv")
 bcpe_reference_path <- file.path(reference_dir, "bcpe_reference.csv")
 bcpe_fit_data_path <- file.path(reference_dir, "bcpe_fit_data.csv")
 bcpe_rs_reference_path <- file.path(reference_dir, "bcpe_rs_reference.csv")
@@ -401,6 +405,69 @@ bct_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+tf_family <- TF()
+tf_cases <- data.frame(
+  y = c(-3.5, -0.8, 0, 2.4, 8),
+  mu = c(-2, -0.5, 0.3, 2, 6),
+  sigma = c(0.4, 0.8, 1.2, 2, 3),
+  nu = c(0.7, 1.5, 3, 8, 30)
+)
+tf_reference <- data.frame(
+  y = tf_cases$y,
+  mu = tf_cases$mu,
+  sigma = tf_cases$sigma,
+  nu = tf_cases$nu,
+  eta_mu = tf_family$mu.linkfun(tf_cases$mu),
+  eta_sigma = tf_family$sigma.linkfun(tf_cases$sigma),
+  eta_nu = tf_family$nu.linkfun(tf_cases$nu),
+  log_density = dTF(
+    tf_cases$y,
+    tf_cases$mu,
+    tf_cases$sigma,
+    tf_cases$nu,
+    log = TRUE
+  ),
+  cdf = pTF(
+    tf_cases$y,
+    tf_cases$mu,
+    tf_cases$sigma,
+    tf_cases$nu
+  ),
+  dldmu = tf_family$dldm(
+    tf_cases$y,
+    tf_cases$mu,
+    tf_cases$sigma,
+    tf_cases$nu
+  ),
+  dldsigma = tf_family$dldd(
+    tf_cases$y,
+    tf_cases$mu,
+    tf_cases$sigma,
+    tf_cases$nu
+  ),
+  dldnu = tf_family$dldv(
+    tf_cases$y,
+    tf_cases$mu,
+    tf_cases$sigma,
+    tf_cases$nu
+  ),
+  d2ldmu2 = tf_family$d2ldm2(tf_cases$sigma, tf_cases$nu),
+  d2ldsigma2 = tf_family$d2ldd2(tf_cases$sigma, tf_cases$nu),
+  d2ldnu2 = tf_family$d2ldv2(
+    tf_cases$y,
+    tf_cases$mu,
+    tf_cases$sigma,
+    tf_cases$nu
+  ),
+  d2ldmudsigma = tf_family$d2ldmdd(tf_cases$y),
+  d2ldmudnu = tf_family$d2ldmdv(tf_cases$y),
+  d2ldsigmadnu = tf_family$d2ldddv(tf_cases$sigma, tf_cases$nu),
+  initial_mu = (tf_cases$y + mean(tf_cases$y)) / 2,
+  initial_sigma = rep(sd(tf_cases$y), nrow(tf_cases)),
+  initial_nu = rep(10, nrow(tf_cases)),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
 bcpe_family <- BCPE()
 bcpe_cases <- data.frame(
   y = c(0.65, 1.2, 2.8, 5.5, 11),
@@ -591,6 +658,16 @@ quantile_residual_reference <- do.call(rbind, list(
     )
   ),
   continuous_quantile_reference(
+    "TF",
+    tf_cases,
+    pTF(
+      tf_cases$y,
+      tf_cases$mu,
+      tf_cases$sigma,
+      tf_cases$nu
+    )
+  ),
+  continuous_quantile_reference(
     "BCPE",
     bcpe_cases,
     pBCPE(
@@ -688,6 +765,16 @@ quantile_prediction_reference <- do.call(rbind, list(
       expanded_parameter(bct_cases$sigma),
       expanded_parameter(bct_cases$nu),
       expanded_parameter(bct_cases$tau)
+    )
+  ),
+  quantile_prediction_rows(
+    "TF",
+    tf_cases,
+    qTF(
+      expanded_probabilities(tf_cases),
+      expanded_parameter(tf_cases$mu),
+      expanded_parameter(tf_cases$sigma),
+      expanded_parameter(tf_cases$nu)
     )
   ),
   quantile_prediction_rows(
@@ -1254,6 +1341,93 @@ bct_cg_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+tf_n <- 160
+tf_x <- seq(-1, 1, length.out = tf_n)
+tf_z <- cos(seq(0, 2 * pi, length.out = tf_n))
+tf_w <- sin(seq(0, 2 * pi, length.out = tf_n))
+tf_mu_offset <- 0.08 * cos(seq(0, 3 * pi, length.out = tf_n))
+tf_sigma_offset <- 0.03 * sin(seq(0, 4 * pi, length.out = tf_n))
+tf_nu_offset <- 0.04 * cos(seq(0, 5 * pi, length.out = tf_n))
+tf_weight <- rep(c(1, 1.5, 2, 0.75), length.out = tf_n)
+tf_mu <- 1.5 + 0.9 * tf_x + tf_mu_offset
+tf_sigma <- exp(-0.55 + 0.18 * tf_z + tf_sigma_offset)
+tf_nu <- exp(log(5) + 0.25 * tf_w + tf_nu_offset)
+tf_probability <- (((seq_len(tf_n) * 67) %% tf_n) + 0.5) / tf_n
+tf_fit_data <- data.frame(
+  x = tf_x,
+  z = tf_z,
+  w = tf_w,
+  y = qTF(
+    tf_probability,
+    mu = tf_mu,
+    sigma = tf_sigma,
+    nu = tf_nu
+  ),
+  weight = tf_weight,
+  mu_offset = tf_mu_offset,
+  sigma_offset = tf_sigma_offset,
+  nu_offset = tf_nu_offset
+)
+tf_rs_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  nu.formula = ~ w + offset(nu_offset),
+  weights = weight,
+  family = TF(),
+  method = RS(),
+  data = tf_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(cc = 1e-8, cyc = 300)
+)
+tf_rs_reference <- data.frame(
+  mu_intercept = unname(coef(tf_rs_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(tf_rs_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(tf_rs_fit, what = "sigma")[[1]]),
+  sigma_z = unname(coef(tf_rs_fit, what = "sigma")[[2]]),
+  nu_intercept = unname(coef(tf_rs_fit, what = "nu")[[1]]),
+  nu_w = unname(coef(tf_rs_fit, what = "nu")[[2]]),
+  global_deviance = unname(deviance(tf_rs_fit)),
+  negative_log_likelihood = -as.numeric(logLik(tf_rs_fit)),
+  outer_iterations = tf_rs_fit$iter,
+  converged = tf_rs_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+tf_cg_fit <- gamlss(
+  y ~ x + offset(mu_offset),
+  sigma.formula = ~ z + offset(sigma_offset),
+  nu.formula = ~ w + offset(nu_offset),
+  weights = weight,
+  family = TF(),
+  method = CG(),
+  data = tf_fit_data,
+  mu.start = tf_mu,
+  sigma.start = tf_sigma,
+  nu.start = tf_nu,
+  control = gamlss.control(
+    c.crit = 1e-9,
+    n.cyc = 200,
+    trace = FALSE,
+    autostep = FALSE
+  ),
+  i.control = glim.control(cc = 1e-9, cyc = 200)
+)
+tf_cg_reference <- data.frame(
+  mu_intercept = unname(coef(tf_cg_fit, what = "mu")[[1]]),
+  mu_x = unname(coef(tf_cg_fit, what = "mu")[[2]]),
+  sigma_intercept = unname(coef(tf_cg_fit, what = "sigma")[[1]]),
+  sigma_z = unname(coef(tf_cg_fit, what = "sigma")[[2]]),
+  nu_intercept = unname(coef(tf_cg_fit, what = "nu")[[1]]),
+  nu_w = unname(coef(tf_cg_fit, what = "nu")[[2]]),
+  global_deviance = unname(deviance(tf_cg_fit)),
+  negative_log_likelihood = -as.numeric(logLik(tf_cg_fit)),
+  outer_iterations = tf_cg_fit$iter,
+  converged = tf_cg_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
 bcpe_n <- 160
 bcpe_x <- seq(-1, 1, length.out = bcpe_n)
 bcpe_z <- cos(seq(0, 2 * pi, length.out = bcpe_n))
@@ -1415,6 +1589,12 @@ inference_results <- list(
     c("Intercept", "x", "Intercept", "z", "Intercept", "w", "Intercept")
   ),
   inference_reference(
+    tf_rs_fit,
+    "TF",
+    c("mu", "mu", "sigma", "sigma", "nu", "nu"),
+    c("Intercept", "x", "Intercept", "z", "Intercept", "w")
+  ),
+  inference_reference(
     bcpe_rs_fit,
     "BCPE",
     c("mu", "mu", "sigma", "sigma", "nu", "nu", "tau"),
@@ -1495,6 +1675,7 @@ model_diagnostics_reference <- do.call(rbind, list(
   diagnostic_reference(be_rs_fit, "BE"),
   diagnostic_reference(bccg_rs_fit, "BCCG"),
   diagnostic_reference(bct_rs_fit, "BCT"),
+  diagnostic_reference(tf_rs_fit, "TF"),
   diagnostic_reference(bcpe_rs_fit, "BCPE"),
   diagnostic_reference(pb_fit, "NO_PB")
 ))
@@ -2482,6 +2663,10 @@ if (check_only) {
   assert_close(bct_fit_data, bct_fit_data_path, tolerance = 1e-12)
   assert_close(bct_rs_reference, bct_rs_reference_path, tolerance = 1e-6)
   assert_close(bct_cg_reference, bct_cg_reference_path, tolerance = 1e-8)
+  assert_close(tf_reference, tf_reference_path, tolerance = 1e-10)
+  assert_close(tf_fit_data, tf_fit_data_path, tolerance = 1e-12)
+  assert_close(tf_rs_reference, tf_rs_reference_path, tolerance = 1e-6)
+  assert_close(tf_cg_reference, tf_cg_reference_path, tolerance = 1e-8)
   assert_close(bcpe_reference, bcpe_reference_path, tolerance = 1e-9)
   assert_close(bcpe_fit_data, bcpe_fit_data_path, tolerance = 1e-12)
   assert_close(bcpe_rs_reference, bcpe_rs_reference_path, tolerance = 1e-6)
@@ -2667,6 +2852,10 @@ if (check_only) {
   write_csv_lf(bct_fit_data, bct_fit_data_path)
   write_csv_lf(bct_rs_reference, bct_rs_reference_path)
   write_csv_lf(bct_cg_reference, bct_cg_reference_path)
+  write_csv_lf(tf_reference, tf_reference_path)
+  write_csv_lf(tf_fit_data, tf_fit_data_path)
+  write_csv_lf(tf_rs_reference, tf_rs_reference_path)
+  write_csv_lf(tf_cg_reference, tf_cg_reference_path)
   write_csv_lf(bcpe_reference, bcpe_reference_path)
   write_csv_lf(bcpe_fit_data, bcpe_fit_data_path)
   write_csv_lf(bcpe_rs_reference, bcpe_rs_reference_path)

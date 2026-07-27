@@ -22,6 +22,10 @@ Development cycle toward the second alpha release.
   quantiles, and reproducible randomized Dunn-Smyth residuals.
 - A smooth BCCG fetal-growth example covering location, scale, and shape
   P-splines, nine response-centile curves, and continuous quantile residuals.
+- The Student-t location-scale family (`TF`) with Torch-native differentiable
+  density and CDF, R-compatible scores and Fisher-scoring derivatives,
+  sampling, quantiles, weighted RS fitting, inference, diagnostics, and CUDA
+  stress coverage.
 - Committed R results for running the example parity tests without an R
   installation, while continuous integration also executes both languages.
 - Continuous-integration retention of the end-to-end parity report, tables,

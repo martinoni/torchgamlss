@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import torch
 
-from torchgamlss import BCT, GAMLSS, Beta, CGControl, Normal, Poisson
+from torchgamlss import BCT, GAMLSS, TF, Beta, CGControl, Normal, Poisson
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
 
@@ -143,6 +143,66 @@ def test_cg_four_parameter_bct_fit_matches_r_gamlss():
     )
     predictions = model.predict_data(data)
     assert tuple(predictions) == ("mu", "sigma", "nu", "tau")
+    assert all(values.shape == (len(data),) for values in predictions.values())
+
+
+def test_cg_three_parameter_tf_fit_matches_r_gamlss():
+    data = pd.read_csv(REFERENCE_DIR / "tf_fit_data.csv")
+    reference = _reference("tf_cg_reference.csv")
+    model = GAMLSS.from_formula(
+        TF(),
+        {
+            "mu": "y ~ x + offset(mu_offset)",
+            "sigma": "~ z + offset(sigma_offset)",
+            "nu": "~ w + offset(nu_offset)",
+        },
+        data,
+    )
+    initial_parameters = {
+        "mu": 1.5 + 0.9 * data["x"] + data["mu_offset"],
+        "sigma": (-0.55 + 0.18 * data["z"] + data["sigma_offset"]).map(math.exp),
+        "nu": (
+            math.log(5.0) + 0.25 * data["w"] + data["nu_offset"]
+        ).map(math.exp),
+    }
+
+    result = model.fit_cg_data(
+        data,
+        weights="weight",
+        initial_parameters=initial_parameters,
+        control=CGControl(
+            outer_tolerance=1e-9,
+            max_outer_iterations=200,
+            inner_tolerance=1e-9,
+            max_inner_iterations=200,
+            autostep=False,
+        ),
+    )
+
+    assert result.converged
+    assert result.outer_iterations == int(reference["outer_iterations"])
+    assert result.effective_degrees_of_freedom == pytest.approx(6.0)
+    _assert_coefficients(
+        model,
+        reference,
+        {
+            "mu": ("mu_intercept", "mu_x"),
+            "sigma": ("sigma_intercept", "sigma_z"),
+            "nu": ("nu_intercept", "nu_w"),
+        },
+    )
+    assert result.global_deviance == pytest.approx(
+        float(reference["global_deviance"]),
+        rel=2e-10,
+        abs=2e-9,
+    )
+    assert result.negative_log_likelihood == pytest.approx(
+        float(reference["negative_log_likelihood"]),
+        rel=2e-10,
+        abs=2e-9,
+    )
+    predictions = model.predict_data(data)
+    assert tuple(predictions) == ("mu", "sigma", "nu")
     assert all(values.shape == (len(data),) for values in predictions.values())
 
 
