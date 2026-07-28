@@ -1,8 +1,9 @@
 # Release process
 
-TorchGAMLSS uses PEP 440 versions and currently publishes GitHub
-pre-releases. Publishing to TestPyPI or PyPI requires a separate decision and
-trusted-publisher configuration.
+TorchGAMLSS uses PEP 440 versions and publishes GitHub pre-releases. The
+package-index rollout is TestPyPI-first and uses OpenID Connect trusted
+publishing, without a long-lived API token. Production PyPI publication
+remains a separate release decision.
 
 ## Version source
 
@@ -87,3 +88,51 @@ After the branch workflow is green:
 Do not publish a final release from an untagged branch build. Do not reuse a
 version after its artifacts have been distributed; increment the alpha,
 beta, or release-candidate suffix instead.
+
+## Publishing to TestPyPI
+
+The manually dispatched `.github/workflows/release.yml` workflow publishes
+only to TestPyPI. Its build job checks out the requested tag, requires the tag
+to be annotated, verifies that the tag and package versions agree, builds the
+wheel and source archive, and runs strict Twine validation. A separate job
+downloads exactly those artifacts and publishes them from the `testpypi`
+GitHub environment with a short-lived OpenID Connect credential.
+
+Before the first publication, register a pending GitHub Actions publisher at
+<https://test.pypi.org/manage/account/publishing/> with these exact values:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `torchgamlss` |
+| Owner | `martinoni` |
+| Repository name | `torchgamlss` |
+| Workflow name | `release.yml` |
+| Environment name | `testpypi` |
+
+TestPyPI accounts are separate from PyPI accounts. No repository secret or
+API token should be created for this workflow.
+
+Once the pending publisher exists, publish an annotated tag with:
+
+```powershell
+gh workflow run release.yml --ref main -f tag=v0.1.0a1
+$runId = gh run list --workflow release.yml --limit 1 `
+  --json databaseId --jq '.[0].databaseId'
+gh run watch $runId --exit-status
+```
+
+After the run succeeds, install from TestPyPI while resolving runtime
+dependencies from PyPI:
+
+```powershell
+python -m venv work/testpypi-smoke
+work/testpypi-smoke/Scripts/python -m pip install `
+  --index-url https://test.pypi.org/simple/ `
+  --extra-index-url https://pypi.org/simple/ `
+  torchgamlss==0.1.0a1
+```
+
+Run `tools/smoke_test_install.py` from outside the repository after
+installation. Production PyPI should receive its own `pypi` environment with
+manual approval and a separately registered trusted publisher only after the
+TestPyPI artifact has passed this smoke test.
