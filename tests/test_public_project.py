@@ -17,6 +17,7 @@ def test_public_project_community_files_are_present():
         ".github/ISSUE_TEMPLATE/feature_request.yml",
         ".github/ISSUE_TEMPLATE/config.yml",
         ".github/dependabot.yml",
+        ".github/workflows/release.yml",
     )
 
     assert all((PROJECT_ROOT / path).is_file() for path in expected)
@@ -60,3 +61,17 @@ def test_citation_metadata_has_public_identity_and_license():
     assert "given-names: Thiago" in citation
     assert "repository-code: https://github.com/martinoni/torchgamlss" in citation
     assert "license: GPL-3.0-only" in citation
+
+
+def test_release_workflow_uses_testpypi_trusted_publishing():
+    workflow = (
+        PROJECT_ROOT / ".github/workflows/release.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "name: testpypi" in workflow
+    assert "id-token: write" in workflow
+    assert "https://test.pypi.org/legacy/" in workflow
+    assert "pypa/gh-action-pypi-publish@" in workflow
+    assert "secrets." not in workflow
+    assert "password:" not in workflow

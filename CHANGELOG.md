@@ -11,6 +11,9 @@ Development cycle toward the second alpha release.
 
 ### Added
 
+- A manually dispatched, annotated-tag-verified TestPyPI trusted-publishing
+  workflow using short-lived OpenID Connect credentials and an approval
+  environment instead of a repository API token.
 - A reusable manifest-driven R-to-Python parity runner with standardized CSV
   artifacts, column-specific tolerances, tolerant numeric keys, and
   machine-readable failure reports.

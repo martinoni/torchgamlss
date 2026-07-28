@@ -84,7 +84,8 @@ as supported.
 - [x] Tag and create the `v0.1.0a1` GitHub pre-release
 - [x] Public-project community, security, citation, and issue metadata
 - [x] Publish the repository and protect the default branch
-- [ ] Decide whether and when to publish on TestPyPI or PyPI
+- [x] Adopt TestPyPI-first trusted publishing with production PyPI gated
+- [ ] Complete the first TestPyPI publication and clean-install smoke test
 
 ## Phase 7 — reproducible parity examples
 
