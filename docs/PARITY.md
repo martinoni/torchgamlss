@@ -194,6 +194,25 @@ The Student-t CDF is the same differentiable regularized incomplete-beta
 implementation validated for BCT, without Box-Cox transformation or
 truncation. The `nu > 1e6` branch follows R's Normal limit.
 
+## Power-exponential location-scale-shape family (`PE`)
+
+The tenth translated family targets `PE(mu, sigma, nu)`. Its fixtures cover:
+
+- `dPE(..., log=TRUE)`, `pPE()`, and the identity/log/log links;
+- all three parameter scores and all six expected second-derivative entries
+  supplied by `PE()`;
+- R-compatible starts and unrestricted finite response support;
+- converged weighted RS and CG fits with separate predictors and offsets for
+  `mu`, `sigma`, and `nu`;
+- six-coefficient full-Hessian inference, information criteria, conditional
+  quantiles, sampling, and continuous quantile residuals.
+
+In the R parameterization, `mu` is the mean and `sigma` is the standard
+deviation for every positive `nu`. Values below two give heavier tails,
+`nu=2` is exactly Normal, and values above two give lighter tails. The
+differentiable density, CDF, inverse CDF, and sampler reuse the untruncated
+power-exponential core independently validated for BCPE.
+
 ## Box-Cox t family (`BCT`)
 
 BCT is the first four-parameter parity target. Its fixtures cover:
@@ -237,8 +256,8 @@ autograd differentiates the likelihood CDF directly. Tests also verify the
 
 Inference fixtures compare TorchGAMLSS with `vcov.gamlss(type="all")` and the
 default `summary.gamlss(type="vcov")` calculations for weighted, offset models
-from the `NO`, `PO`, `NBI`, `BE`, `BCCG`, `BCT`, `BCPE`, and `TF` families. They
-cover:
+from the `NO`, `PO`, `NBI`, `BE`, `BCCG`, `BCT`, `BCPE`, `TF`, and `PE`
+families. They cover:
 
 - the full observed-Hessian covariance matrix, including cross-parameter
   entries;
@@ -266,9 +285,9 @@ one parameter. TorchGAMLSS exposes the corresponding full within-curve
 covariance and simulation-based simultaneous band as extensions; the R
 fixtures directly validate the covariance diagonal.
 
-Quantile fixtures compare seven probabilities for all nine families directly
-against `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`, `qBCCG`, `qBCT`, `qBCPE`, and
-`qTF`.
+Quantile fixtures compare seven probabilities for all ten families directly
+against `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`, `qBCCG`, `qBCT`, `qBCPE`, `qTF`,
+and `qPE`.
 Discrete tests additionally verify the smallest-count CDF definition.
 Response-scale centile bootstrap bands are a simulate-and-refit extension over
 these parity-tested quantiles.
@@ -276,8 +295,8 @@ these parity-tested quantiles.
 Parametric smooth bootstrap is also an extension: it composes the
 parity-tested family distributions, RS/CG fitting, and smoothing-selection
 updates rather than reproducing a single `gamlss` return value. Seeded
-samplers for BCCG, BCT, BCPE, and TF are checked through their fitted CDFs using
-the probability integral transform. Joint bootstrap covariance and
+samplers for BCCG, BCT, BCPE, TF, and PE are checked through their fitted CDFs
+using the probability integral transform. Joint bootstrap covariance and
 multi-smooth max-|t| bands reuse the same aligned refits; they do not claim a
 direct R return-value counterpart. Smooth contrasts, numerical derivatives,
 grid extrema, and interpolated crossings are likewise derived TorchGAMLSS
@@ -293,6 +312,8 @@ backfitting in TorchGAMLSS with `gamlss(..., method=CG())`. They cover:
 - a weighted BCT model with seven coefficients, explicit parameter-scale
   starts, and all six cross-derivative blocks;
 - a weighted TF model with six coefficients, explicit parameter-scale starts,
+  and its complete expected derivative matrix;
+- a weighted PE model with six coefficients, explicit parameter-scale starts,
   and its complete expected derivative matrix;
 - a weighted Beta model combining cross derivatives, offsets, and a
   fixed-lambda `pb()` term;
@@ -311,7 +332,7 @@ automatic step halving in both implementations because the R final-iteration
 halving path can leave its saved coefficients out of sync with its fitted
 predictors. With that path excluded, the four-parameter coefficients agree to
 approximately `1e-11` and the deviance to float64 precision.
-The TF CG coefficients, likelihood, and deviance agree within `2e-9`.
+The TF and PE CG coefficients, likelihood, and deviance agree within `2e-9`.
 
 The fixed-lambda CG fits and the ML case reproduce R's outer iteration counts.
 For target-EDF, GAIC, and GCV, parity is based on the selected smoothing
@@ -322,7 +343,7 @@ contribution and coefficient vector, not only their summed predictors.
 
 ## Diagnostics and quantile residuals
 
-Diagnostics fixtures cover all nine supported families and a fixed-lambda
+Diagnostics fixtures cover all ten supported families and a fixed-lambda
 Normal P-spline fit. They compare:
 
 - log likelihood and global deviance;
@@ -337,8 +358,8 @@ penalty. This reproduces `fit$df.fit` without counting the unpenalized
 polynomial subspace twice.
 
 Quantile-residual fixtures compare the `pNO`, `pGA`, `pPO`, `pNBI`, `pBE`,
-`pBCCG`, `pBCT`, `pBCPE`, and `pTF` CDFs and normal-score transformations. The
-discrete PO and NBI fixtures use committed uniform values inside
+`pBCCG`, `pBCT`, `pBCPE`, `pTF`, and `pPE` CDFs and normal-score
+transformations. The discrete PO and NBI fixtures use committed uniform values inside
 `[F(y-1), F(y)]`, making the randomized Dunn-Smyth calculation exactly
 reproducible.
 

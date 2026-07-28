@@ -11,6 +11,7 @@ from torchgamlss import (
     BCPE,
     BCT,
     GAMLSS,
+    PE,
     TF,
     Beta,
     BucketPlotResult,
@@ -142,6 +143,17 @@ def _diagnostic_row(family: str) -> dict[str, str]:
             },
             1e-8,
         ),
+        (
+            "PE",
+            "pe",
+            PE(),
+            {
+                "mu": "y ~ x + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+                "nu": "~ w + offset(nu_offset)",
+            },
+            1e-8,
+        ),
     ],
 )
 def test_model_diagnostics_match_r_gamlss(
@@ -263,6 +275,7 @@ def test_smooth_model_effective_degrees_of_freedom_match_r_gamlss():
         ("BCT", "bct_reference.csv", BCT()),
         ("BCPE", "bcpe_reference.csv", BCPE()),
         ("TF", "tf_reference.csv", TF()),
+        ("PE", "pe_reference.csv", PE()),
     ],
 )
 def test_quantile_residuals_match_r_gamlss(family_code, reference_name, family):

@@ -100,6 +100,8 @@ Committed R fixtures cover:
   blocks;
 - a weighted three-parameter TF model exercising its complete expected
   derivative matrix;
+- a weighted three-parameter PE model exercising its complete expected
+  derivative matrix;
 - a weighted Beta model combining offsets, cross derivatives, and a fixed
   `pb()` term;
 - Normal additive models with fixed, ML-selected, target-EDF, GAIC-selected,

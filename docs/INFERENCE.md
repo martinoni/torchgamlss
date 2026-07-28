@@ -27,9 +27,9 @@ Formula coefficient names are parameter-qualified, for example
 `mu.Intercept`, `mu.x`, `sigma.Intercept`, and `sigma.z`. Low-level models use
 stable positional names such as `mu[0]`. The same joint calculation supports
 three-parameter BCCG models and retains covariance involving `nu`
-coefficients. Three-parameter TF models do the same with a log-linked `nu`.
-Four-parameter BCT and BCPE models additionally retain covariance involving
-`tau`.
+coefficients. Three-parameter TF and PE models do the same with a log-linked
+`nu`. Four-parameter BCT and BCPE models additionally retain covariance
+involving `tau`.
 
 The corresponding tensor API is:
 
@@ -262,7 +262,7 @@ model.
 
 The reported pointwise intervals are percentile bootstrap intervals.
 `standard_errors` and `covariance_matrix` are empirical across the successful
-refitted curves. The original model is never mutated. All nine public
+refitted curves. The original model is never mutated. All ten public
 families provide the response sampler required by this workflow.
 
 `simultaneous_confidence_band()` uses the replicate distribution of the

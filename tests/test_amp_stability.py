@@ -11,6 +11,7 @@ from torchgamlss import (
     BCPE,
     BCT,
     GAMLSS,
+    PE,
     TF,
     Family,
     Gamma,
@@ -76,6 +77,14 @@ _STRESS_CASES = {
             {"mu": 20.0, "sigma": 4.0, "nu": 1.2},
         ),
         {"mu": 5.0, "sigma": 1.0, "nu": 5.0},
+    ),
+    "PE": _StressCase(
+        PE,
+        (
+            {"mu": -3.0, "sigma": 0.15, "nu": 5.0},
+            {"mu": 20.0, "sigma": 200.0, "nu": 0.75},
+        ),
+        {"mu": 5.0, "sigma": 100.0, "nu": 1.8},
     ),
 }
 

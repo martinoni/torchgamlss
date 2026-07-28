@@ -11,6 +11,7 @@ from torchgamlss import (
     BCPE,
     BCT,
     GAMLSS,
+    PE,
     TF,
     Beta,
     CGControl,
@@ -176,6 +177,17 @@ def _smooth_table_rows(
             },
             1e-8,
         ),
+        (
+            "PE",
+            "pe",
+            PE(),
+            {
+                "mu": "y ~ x + offset(mu_offset)",
+                "sigma": "~ z + offset(sigma_offset)",
+                "nu": "~ w + offset(nu_offset)",
+            },
+            1e-8,
+        ),
     ],
 )
 def test_full_hessian_inference_matches_r_gamlss(
@@ -196,13 +208,17 @@ def test_full_hessian_inference_matches_r_gamlss(
 
     result = model.inference_data(data, weights="weight")
     rows = _table_rows(family_code)
-    # R's optimHess uses finite differences. Its BCPE Hessian is slightly less
-    # accurate than our autograd Hessian even though the fitted coefficients
-    # agree to machine precision.
+    # R's optimHess uses finite differences. Its BCPE and PE Hessians are less
+    # accurate than our autograd Hessians even though the fitted coefficients
+    # agree to numerical precision.
     if family_code == "BCPE":
         covariance_tolerances = {"rtol": 8e-3, "atol": 1e-4}
         derived_tolerances = {"rtol": 8e-3, "atol": 2e-6}
         p_value_tolerances = {"rtol": 2e-3, "atol": 3e-7}
+    elif family_code == "PE":
+        covariance_tolerances = {"rtol": 8e-2, "atol": 5e-6}
+        derived_tolerances = {"rtol": 4e-2, "atol": 2e-6}
+        p_value_tolerances = {"rtol": 1e-2, "atol": 1e-6}
     else:
         covariance_tolerances = {"rtol": 5e-6, "atol": 5e-7}
         derived_tolerances = {"rtol": 5e-6, "atol": 5e-7}
