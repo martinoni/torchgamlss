@@ -17,6 +17,7 @@ from torchgamlss import (
     Normal,
     Poisson,
     RSControl,
+    TruncatedFamily,
 )
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
@@ -71,6 +72,17 @@ def test_r_to_python_family_mapping(family, code, parameters, link_types):
     assert family.name == code
     assert family.parameter_names == parameters
     assert tuple(type(family.links[name]).__name__ for name in parameters) == link_types
+
+
+def test_r_to_python_truncated_family_mapping():
+    continuous = TruncatedFamily(Normal(), lower=0)
+    discrete = TruncatedFamily(Poisson(), lower=0, upper=6)
+
+    assert continuous.name == "NOtr"
+    assert continuous.parameter_names == ("mu", "sigma")
+    assert discrete.name == "POtr"
+    assert discrete.parameter_names == ("mu",)
+    assert discrete.is_discrete
 
 
 def test_r_to_python_formula_workflow_smoke():

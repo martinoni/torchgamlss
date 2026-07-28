@@ -44,6 +44,18 @@ class Poisson(Family):
             mu,
         )
 
+    def _differentiable_cdf(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate the Poisson CDF on-device with gradients in ``mu``."""
+        mu, response = torch.broadcast_tensors(parameters["mu"], response)
+        count = torch.floor(response)
+        positive_shape = torch.clamp(count + 1.0, min=1.0)
+        cdf = torch.special.gammaincc(positive_shape, mu)
+        return torch.where(response < 0, torch.zeros_like(cdf), cdf)
+
     def _quantile(
         self,
         probabilities: Tensor,

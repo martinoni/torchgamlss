@@ -11,6 +11,7 @@ from torchgamlss.families.normal import Normal
 from torchgamlss.families.poisson import Poisson
 from torchgamlss.families.power_exponential import PE, PowerExponential
 from torchgamlss.families.student_t import TF, StudentT
+from torchgamlss.families.truncated import TruncatedFamily
 
 __all__ = [
     "BCCG",
@@ -29,4 +30,5 @@ __all__ = [
     "PE",
     "StudentT",
     "TF",
+    "TruncatedFamily",
 ]

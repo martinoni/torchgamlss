@@ -98,3 +98,45 @@ as supported.
   with the Student-t location-scale family (`TF`)
 - [x] Expand the translated family catalog to ten families with the symmetric
   power-exponential family (`PE`)
+
+## Phase 8 — family composition and truncation
+
+- [x] Generic derived-family protocol with differentiable normalization
+- [x] Fixed-bound `TruncatedFamily` for continuous responses
+- [x] Fixed-bound `TruncatedFamily` for discrete responses
+- [x] R parity for truncated Normal and Poisson families
+- [ ] Observation-specific truncation bounds compatible with `gamlss.tr`
+- [ ] Extend truncation parity across the translated family catalog
+
+## Phase 9 — survival and censoring
+
+- [ ] Survival-oriented Weibull, log-normal, inverse-Gaussian, and generalized
+  gamma families
+- [ ] Right-, left-, and interval-censored response representation
+- [ ] Censored likelihood composition compatible with `gamlss.cens`
+- [ ] Survival, hazard, and cumulative-hazard prediction
+- [ ] Reproducible censored-survival parity example
+
+## Phase 10 — inflated and adjusted distributions
+
+- [ ] Generic point-mass composition at zero and one
+- [ ] Zero-inflated Poisson and negative-binomial families
+- [ ] Zero/one-inflated and adjusted beta families
+- [ ] R parity against `gamlss.inf` and `gamlss.dist`
+- [ ] Diagnostics for fitted boundary masses
+
+## Phase 11 — finite mixtures
+
+- [ ] Mixture-family protocol with stable log-sum-exp likelihoods
+- [ ] Parameter sharing and component-specific predictors
+- [ ] Initialization and label-ordering conventions
+- [ ] R parity against `gamlss.mx`
+- [ ] Posterior component probabilities and mixture diagnostics
+
+## Phase 12 — additive-model ecosystem
+
+- [ ] Tensor-product and multidimensional smooths
+- [ ] Free-knot and expanded penalty families
+- [ ] Spatial smooths and GMRF-style penalties
+- [ ] Cross-validation and rolling-origin model validation
+- [ ] Expanded diagnostic and plotting compatibility with the GAMLSS ecosystem

@@ -30,6 +30,7 @@ from torchgamlss.families import (
     Poisson,
     PowerExponential,
     StudentT,
+    TruncatedFamily,
 )
 from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
@@ -122,6 +123,7 @@ __all__ = [
     "TermContributions",
     "StudentT",
     "TF",
+    "TruncatedFamily",
     "WormPlotPanel",
     "WormPlotResult",
     "bucket_plot",
