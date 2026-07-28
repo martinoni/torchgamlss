@@ -1,5 +1,9 @@
 # TorchGAMLSS
 
+[![tests](https://github.com/martinoni/torchgamlss/actions/workflows/tests.yml/badge.svg)](https://github.com/martinoni/torchgamlss/actions/workflows/tests.yml)
+[![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](https://www.python.org/)
+[![GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+
 TorchGAMLSS is an early-stage PyTorch implementation of Generalized Additive
 Models for Location, Scale and Shape (GAMLSS).
 
@@ -9,9 +13,24 @@ The project aims to combine numerical compatibility with the R packages
 and optional GPU execution.
 
 > [!WARNING]
-> TorchGAMLSS is alpha software. The latest private pre-release is 0.1.0a1;
+> TorchGAMLSS is alpha software. The latest GitHub pre-release is 0.1.0a1;
 > the main development line is 0.1.0a2.dev0. It is not yet suitable for
 > production or high-stakes statistical use without independent validation.
+
+## Project scope
+
+TorchGAMLSS is an independent project and is not affiliated with or endorsed
+by the original GAMLSS authors. The R packages remain the canonical reference
+for the established GAMLSS methodology.
+
+Another independent project,
+[`gamlss-python`](https://github.com/fzhao70/gamlss-python), provides a
+NumPy/SciPy-oriented Python port that prioritizes close reproduction of the R
+API and algorithms. TorchGAMLSS instead focuses on PyTorch autograd, CPU/CUDA
+execution, streaming and mini-batch optimization, neural predictors, and
+differentiable composition with classical GAMLSS fitting. Users should choose
+the implementation whose scope best matches their analysis and validate
+important results against the R reference.
 
 ## Initial design
 
@@ -105,9 +124,9 @@ parameters.
 
 ## Installation
 
-The current alpha is distributed through the private
+The current alpha is distributed through the
 [`v0.1.0a1` GitHub pre-release](https://github.com/martinoni/torchgamlss/releases/tag/v0.1.0a1).
-Development wheels are also retained as private GitHub workflow artifacts.
+Development wheels are also retained as GitHub Actions workflow artifacts.
 After downloading the release wheel:
 
 ```bash
@@ -117,6 +136,46 @@ python -m pip install torchgamlss-0.1.0a1-py3-none-any.whl
 TorchGAMLSS supports Python 3.10 through 3.13 on Linux and Windows. PyTorch
 selects CPU or CUDA support through the installed Torch build; TorchGAMLSS
 itself is a pure-Python wheel.
+
+To install the current development branch directly from GitHub:
+
+```bash
+python -m pip install \
+  "torchgamlss @ git+https://github.com/martinoni/torchgamlss.git"
+```
+
+## Quick start
+
+```python
+import pandas as pd
+
+from torchgamlss import GAMLSS, Normal
+
+data = pd.DataFrame(
+    {
+        "x": [-2.0, -1.4, -0.8, -0.2, 0.3, 0.9, 1.5, 2.1],
+        "y": [-2.2, -1.3, -0.7, -0.1, 0.5, 1.0, 1.8, 2.4],
+    }
+)
+
+model = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": "y ~ x",
+        "sigma": "~ 1",
+    },
+    data,
+)
+fit = model.fit_rs_data(data)
+
+print(fit.converged)
+print(model.predict_data(data)["mu"])
+```
+
+Every distribution parameter can have its own formula, smooth terms, offsets,
+or neural contribution. See
+[`docs/R_TO_PYTHON.md`](docs/R_TO_PYTHON.md) for a complete mapping from an R
+workflow.
 
 ## Development
 
@@ -203,14 +262,23 @@ backbones in [`docs/SHARED.md`](docs/SHARED.md). Release verification is
 documented in [`docs/RELEASING.md`](docs/RELEASING.md), and user-visible
 changes in [`CHANGELOG.md`](CHANGELOG.md).
 
+## Contributing, security, and citation
+
+Contributions and reproducible parity reports are welcome. Read
+[`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request and use the
+private process in [`SECURITY.md`](SECURITY.md) for security-sensitive
+reports. Community participation follows the
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+Citation metadata are available in [`CITATION.cff`](CITATION.cff). Scientific
+work using TorchGAMLSS should also cite the original GAMLSS methodology
+described below.
+
 ## Attribution and license
 
 GAMLSS was introduced by Rigby and Stasinopoulos (2005). This project is a
 translation-oriented implementation based on the GPL-licensed R ecosystem and
 is distributed under the GNU General Public License v3.0 only.
-
-TorchGAMLSS is an independent project and is not affiliated with or endorsed
-by the original GAMLSS authors.
 
 ## Reference
 

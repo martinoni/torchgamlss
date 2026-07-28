@@ -30,10 +30,15 @@ Development cycle toward the second alpha release.
   standard-deviation scale, tail shape, differentiable density and CDF,
   R-compatible RS and CG derivatives, inference, diagnostics, sampling,
   quantiles, and CUDA FP16/BF16 stress coverage.
+- Fixed-bound continuous and discrete truncation through `TruncatedFamily`,
+  with differentiable Normal and Poisson normalization, left/right/two-sided
+  `gamlss.tr` parity, sampling, RS/L-BFGS fitting, and CUDA coverage.
 - Committed R results for running the example parity tests without an R
   installation, while continuous integration also executes both languages.
 - Continuous-integration retention of the end-to-end parity report, tables,
   metadata, and plot.
+- Public-project contribution, security, conduct, citation, issue, and pull
+  request guidance.
 
 ## [0.1.0a1] - 2026-07-26
 

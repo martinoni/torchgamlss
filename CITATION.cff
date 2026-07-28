@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: >-
+  If you use TorchGAMLSS, please cite this software and the original GAMLSS
+  methodology described in the README.
+title: TorchGAMLSS
+type: software
+authors:
+  - family-names: Martinoni
+    given-names: Thiago
+repository-code: https://github.com/martinoni/torchgamlss
+url: https://github.com/martinoni/torchgamlss
+license: GPL-3.0-only
+keywords:
+  - GAMLSS
+  - PyTorch
+  - distributional regression
+  - statistical modelling
+  - CUDA

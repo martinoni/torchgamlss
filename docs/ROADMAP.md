@@ -80,8 +80,10 @@ as supported.
 - [x] Automated wheel and source-distribution build
 - [x] Strict package metadata and README validation
 - [x] Clean-environment wheel installation and API smoke test
-- [x] Changelog and documented private pre-release procedure
-- [x] Tag and create the private `v0.1.0a1` GitHub pre-release
+- [x] Changelog and documented GitHub pre-release procedure
+- [x] Tag and create the `v0.1.0a1` GitHub pre-release
+- [x] Public-project community, security, citation, and issue metadata
+- [ ] Publish the repository and protect the default branch
 - [ ] Decide whether and when to publish on TestPyPI or PyPI
 
 ## Phase 7 — reproducible parity examples

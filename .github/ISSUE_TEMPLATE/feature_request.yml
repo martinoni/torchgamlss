@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a scoped statistical, computational, or API enhancement
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Which workflow or scientific problem would this enable?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the API and expected statistical behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Link relevant R packages, source functions, papers, or implementations.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked the roadmap and existing issues.
+          required: true

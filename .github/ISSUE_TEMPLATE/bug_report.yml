@@ -1,0 +1,54 @@
+name: Bug report
+description: Report incorrect behavior or a reproducible numerical discrepancy
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve TorchGAMLSS. Do not include secrets or
+        private data. Use the Security tab for vulnerabilities.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest self-contained Python example.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: r_reference
+    attributes:
+      label: R reference
+      description: For parity issues, include the R package version, code, and result.
+      render: r
+  - type: input
+    id: version
+    attributes:
+      label: TorchGAMLSS version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python, Torch, OS, dtype, device, and CUDA versions.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I understand that TorchGAMLSS is alpha software.
+          required: true
