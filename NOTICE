@@ -6,6 +6,12 @@ behavior from the R packages gamlss and gamlss.dist by Mikis Stasinopoulos,
 Robert Rigby, and contributors. Those packages are distributed under the GNU
 General Public License, version 2 or version 3.
 
+Fixed-bound truncation behavior and parity fixtures are derived from and
+tested against gamlss.tr 5.1-9 by the GAMLSS contributors, distributed under
+GPL-2 or GPL-3. TorchGAMLSS corrects a vectorization defect in the generic R
+helpers while preserving their observation-wise scalar definition and
+discrete open-bound convention.
+
 TorchGAMLSS is not affiliated with or endorsed by the original authors.
 
 Formula parsing and categorical encoding use Formulaic by Matthew Wardrop,

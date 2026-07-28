@@ -10,7 +10,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
-  { name = "TorchGAMLSS contributors" },
+  { name = "Thiago Martinoni" },
+]
+maintainers = [
+  { name = "Thiago Martinoni" },
+]
+keywords = [
+  "gamlss",
+  "pytorch",
+  "distributional-regression",
+  "statistics",
+  "cuda",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -50,8 +60,11 @@ release = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/martinoni/torchgamlss"
 Repository = "https://github.com/martinoni/torchgamlss"
 Issues = "https://github.com/martinoni/torchgamlss/issues"
+Documentation = "https://github.com/martinoni/torchgamlss/tree/main/docs"
+Changelog = "https://github.com/martinoni/torchgamlss/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/torchgamlss"]

@@ -1,8 +1,8 @@
 # Release process
 
-TorchGAMLSS uses PEP 440 versions and currently publishes only private GitHub
+TorchGAMLSS uses PEP 440 versions and currently publishes GitHub
 pre-releases. Publishing to TestPyPI or PyPI requires a separate decision and
-credentials.
+trusted-publisher configuration.
 
 ## Version source
 
@@ -72,7 +72,7 @@ Every push and pull request runs:
 Successful distribution files are retained as the
 `torchgamlss-distributions` workflow artifact.
 
-## Cutting a private pre-release
+## Cutting a GitHub pre-release
 
 After the branch workflow is green:
 
@@ -80,7 +80,7 @@ After the branch workflow is green:
 2. Confirm that the runtime and built metadata report the same version.
 3. Create an annotated tag named `v<version>`.
 4. Push the tag and wait for its workflow to pass.
-5. Create a private GitHub pre-release from the tag.
+5. Create a GitHub pre-release from the tag.
 6. Attach the wheel and source archive produced by the tag workflow.
 7. Install the attached wheel once more before announcing the release.
 
