@@ -99,6 +99,25 @@ class Family(ABC):
                 f"CDF is not implemented for the {self.name} family"
             ) from error
 
+    def _differentiable_cdf(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate a CDF that retains gradients with respect to parameters.
+
+        Derived likelihoods such as truncation need parameter derivatives of
+        their normalizing probabilities. Families whose public CDF uses an
+        external numerical implementation can override this internal hook.
+        """
+        try:
+            return self.distribution(parameters).cdf(response)
+        except NotImplementedError as error:
+            raise NotImplementedError(
+                f"a differentiable CDF is not implemented for the {self.name} "
+                "family"
+            ) from error
+
     def quantile(
         self,
         probabilities: Any,

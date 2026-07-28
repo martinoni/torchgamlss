@@ -157,6 +157,29 @@ For NBI, `sigma` is the quadratic overdispersion in
 `Var(Y) = mu + sigma * mu^2`. For BE, `sigma` is the square root of the
 variance ratio, so `Var(Y) = sigma^2 * mu * (1 - mu)`.
 
+## Fixed-bound truncated families (`gamlss.tr`)
+
+The first derived-family slice targets `gamlss.tr` 5.1-9. The committed
+fixture covers left, right, and two-sided truncation of both Normal and Poisson
+families:
+
+- conditional log density or mass;
+- conditional CDF and inverse CDF;
+- parameter-scale scores from the truncated normalizer;
+- the base-family expected second derivatives retained by `gamlss.tr`;
+- continuous closed-bound and discrete open-bound support conventions.
+
+The generic CRAN helpers evaluate a scalar boundary CDF incorrectly when they
+receive vectors of observation-specific distribution parameters: the
+base-family CDF follows the scalar boundary length and reuses its first
+parameter row. The generator therefore evaluates each R reference row
+separately. This tests the scalar definition implemented by `gamlss.tr`
+without copying that vectorization defect into TorchGAMLSS.
+
+TorchGAMLSS additionally verifies differentiable linked-parameter likelihoods,
+seeded sampling, agreement between RS and L-BFGS fits, and on-device Normal
+and Poisson gradients on CUDA.
+
 ## Box-Cox Cole-Green family (`BCCG`)
 
 The BCCG slice is the first three-parameter parity target. Its fixtures cover:
@@ -390,6 +413,7 @@ From the repository root:
 Rscript tools/install_r_dependencies.R
 Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
+Rscript tools/generate_truncated_references.R
 python tools/run_parity.py examples/normal_location_scale/parity.json `
   --output-dir work/parity/normal-location-scale
 python tools/run_parity.py examples/bccg_centile_curves/parity.json `
@@ -407,6 +431,8 @@ changing files and compares them with explicit tolerances.
   <https://cran.r-project.org/package=gamlss.dist>
 - `gamlss` 5.5-0, distributed by CRAN under GPL-2 or GPL-3:
   <https://cran.r-project.org/package=gamlss>
+- `gamlss.tr` 5.1-9, distributed by CRAN under GPL-2 or GPL-3:
+  <https://cran.r-project.org/package=gamlss.tr>
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
 

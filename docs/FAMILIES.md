@@ -68,6 +68,36 @@ The response must be finite and strictly between zero and one. Boundary values
 zero and one require a different response family and are not silently moved
 into the interior.
 
+## Fixed-bound truncation (`gamlss.tr`)
+
+`TruncatedFamily` composes an existing family with one or two fixed scalar
+bounds. It preserves the base parameter names, links, and predictors:
+
+```python
+from torchgamlss import Normal, Poisson, TruncatedFamily
+
+positive_normal = TruncatedFamily(Normal(), lower=0.0)
+bounded_counts = TruncatedFamily(Poisson(), lower=0, upper=8)
+```
+
+Continuous bounds are closed. Discrete bounds follow `gamlss.tr`'s open-bound
+convention, so the second example supports integer counts `1, ..., 7`.
+Use `None` for an absent side:
+
+| R `gamlss.tr` | TorchGAMLSS |
+| --- | --- |
+| `trun(par=0, family="NO", type="left")` | `TruncatedFamily(Normal(), lower=0)` |
+| `trun(par=2, family="NO", type="right")` | `TruncatedFamily(Normal(), upper=2)` |
+| `trun(par=c(-1, 2), family="NO", type="both")` | `TruncatedFamily(Normal(), lower=-1, upper=2)` |
+
+The log likelihood, CDF, quantiles, sampling, and parameter scores include the
+truncation normalizer. Classical RS/CG working second derivatives are inherited
+from the base family, matching `gamlss.tr`. Normal and Poisson truncations are
+verified against R for left, right, and two-sided cases and run fully on CUDA.
+Other base families remain experimental until their differentiable CDFs and R
+parity fixtures are added. Observation-specific bounds are not part of the
+fixed-bound API yet.
+
 ## Response simulation
 
 Every public family implements `family.sample(parameters, generator=...)`.
@@ -87,7 +117,9 @@ Every public family implements
 `family.quantile(probabilities, parameters)`. Parameter tensors are
 broadcast, and the returned final dimension follows the probability vector.
 Quantiles are numerically matched to `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`,
-`qBCCG`, `qBCT`, `qBCPE`, `qTF`, and `qPE`.
+`qBCCG`, `qBCT`, `qBCPE`, `qTF`, and `qPE`. Fixed-bound truncated quantiles
+map probabilities into the retained base-family probability interval before
+inversion.
 
 For Poisson and NBI, the result uses the usual left-continuous discrete
 definition: the smallest non-negative integer whose CDF is at least the
@@ -113,6 +145,8 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - seeded response simulation, including probability-integral-transform checks
   for BCCG, BCT, BCPE, TF, and PE;
 - response quantiles at seven probabilities for all ten families;
+- fixed-bound truncated Normal and Poisson density/mass, CDF, quantile, score,
+  sampling, RS/L-BFGS, and CUDA behavior;
 - weighted RS fits with parameter-specific offsets and formulas;
 - CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, BCPE, TF,
   and PE across central and extreme response quantiles.

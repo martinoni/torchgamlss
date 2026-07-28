@@ -4,9 +4,9 @@ TorchGAMLSS is an early-stage PyTorch implementation of Generalized Additive
 Models for Location, Scale and Shape (GAMLSS).
 
 The project aims to combine numerical compatibility with the R packages
-[`gamlss`](https://github.com/gamlss-dev/gamlss) and `gamlss.dist` with
-PyTorch automatic differentiation, composable predictors, and optional GPU
-execution.
+[`gamlss`](https://github.com/gamlss-dev/gamlss), `gamlss.dist`, and
+`gamlss.tr` with PyTorch automatic differentiation, composable predictors,
+and optional GPU execution.
 
 > [!WARNING]
 > TorchGAMLSS is alpha software. The latest private pre-release is 0.1.0a1;
@@ -34,6 +34,9 @@ The current implementation contains:
   Student-t location-scale (`TF`), power-exponential location-scale-shape
   (`PE`), four-parameter Box-Cox t (`BCT`), and Box-Cox power-exponential
   (`BCPE`) families;
+- fixed-bound continuous and discrete family truncation through
+  `TruncatedFamily`, with R parity and on-device gradients verified for
+  Normal and Poisson bases;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
@@ -129,6 +132,7 @@ To regenerate and validate the reference values with R:
 Rscript tools/install_r_dependencies.R
 Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
+Rscript tools/generate_truncated_references.R
 ```
 
 The complete weighted Normal location-scale example can be run in both

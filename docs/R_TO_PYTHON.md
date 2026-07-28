@@ -109,6 +109,39 @@ family = Normal(mu_link=LogLink())
 The public link classes are `IdentityLink`, `LogLink`, `LogitLink`, and
 `InverseLink`.
 
+## Translating `gamlss.tr`
+
+A fixed left-truncated R family:
+
+```r
+NOtr <- trun(par = 0, family = "NO", type = "left")
+fit_r <- gamlss(y ~ x, sigma.formula = ~ z, family = NOtr, data = data)
+```
+
+maps to a composed Python family:
+
+```python
+from torchgamlss import GAMLSS, Normal, TruncatedFamily
+
+family = TruncatedFamily(Normal(), lower=0.0)
+model = GAMLSS.from_formula(
+    family,
+    {"mu": "y ~ x", "sigma": "~ z"},
+    data,
+)
+fit = model.fit_rs_data(data)
+```
+
+The bound mapping is `type="left"` to `lower=`, `type="right"` to `upper=`,
+and `type="both"` to both arguments. For continuous families the endpoints
+belong to the support. For discrete families, as in `gamlss.tr`, both supplied
+endpoints are excluded. Thus
+`TruncatedFamily(Poisson(), lower=0, upper=6)` supports counts 1 through 5.
+
+This release verifies fixed scalar bounds for Normal and Poisson. The R
+package's `varying=TRUE` observation-specific truncation is a later Phase 8
+item.
+
 ## Quantile and centile prediction
 
 R family quantile functions map to one common model API:
