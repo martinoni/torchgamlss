@@ -17,6 +17,7 @@ from torchgamlss.families import (
     BCCG,
     BCPE,
     BCT,
+    PE,
     TF,
     Beta,
     BoxCoxColeGreen,
@@ -27,6 +28,7 @@ from torchgamlss.families import (
     NegativeBinomial,
     Normal,
     Poisson,
+    PowerExponential,
     StudentT,
 )
 from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
@@ -94,6 +96,8 @@ __all__ = [
     "NegativeBinomial",
     "Normal",
     "Poisson",
+    "PowerExponential",
+    "PE",
     "PSpline",
     "QuantileBandResult",
     "QuantileBootstrapResult",

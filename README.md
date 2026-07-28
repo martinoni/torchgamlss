@@ -31,8 +31,9 @@ The current implementation contains:
 - identity, inverse, log, and logit links;
 - Normal (`NO`), Gamma (`GA`), Poisson (`PO`), negative-binomial type I
   (`NBI`), Beta (`BE`), three-parameter Box-Cox Cole-Green (`BCCG`), and
-  Student-t location-scale (`TF`), four-parameter Box-Cox t (`BCT`), and
-  Box-Cox power-exponential (`BCPE`) families;
+  Student-t location-scale (`TF`), power-exponential location-scale-shape
+  (`PE`), four-parameter Box-Cox t (`BCT`), and Box-Cox power-exponential
+  (`BCPE`) families;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
@@ -178,8 +179,9 @@ parameterization. Poisson, NBI, and Beta are described in
 [`docs/FAMILIES.md`](docs/FAMILIES.md), BCCG in
 [`docs/BCCG.md`](docs/BCCG.md), BCT in [`docs/BCT.md`](docs/BCT.md), and BCPE
 in [`docs/BCPE.md`](docs/BCPE.md). The Student-t location-scale family is
-documented in [`docs/TF.md`](docs/TF.md). Classical starting values are
-documented in
+documented in [`docs/TF.md`](docs/TF.md), and the power-exponential
+location-scale-shape family in [`docs/PE.md`](docs/PE.md). Classical starting
+values are documented in
 [`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). Classical fitting is
 described in [`docs/RS.md`](docs/RS.md) and [`docs/CG.md`](docs/CG.md). The
 R-to-Python workflow mapping is in

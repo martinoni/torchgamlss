@@ -43,6 +43,7 @@ as supported.
 - [x] Three-parameter BCCG family
 - [x] First four-parameter family: BCT
 - [x] BCPE four-parameter family
+- [x] Symmetric power-exponential location-scale-shape family (`PE`)
 - [x] R-to-Python API and numerical compatibility guide
 - [x] Within-curve covariance and conditional simultaneous smooth bands
 - [x] Parametric smooth bootstrap and bands with repeated lambda selection
@@ -95,3 +96,5 @@ as supported.
 - [x] Response-centile example using a Box-Cox family
 - [x] Expand the translated family catalog beyond the initial eight families
   with the Student-t location-scale family (`TF`)
+- [x] Expand the translated family catalog to ten families with the symmetric
+  power-exponential family (`PE`)

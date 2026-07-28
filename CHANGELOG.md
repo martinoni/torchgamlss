@@ -26,6 +26,10 @@ Development cycle toward the second alpha release.
   density and CDF, R-compatible scores and Fisher-scoring derivatives,
   sampling, quantiles, weighted RS fitting, inference, diagnostics, and CUDA
   stress coverage.
+- The power-exponential location-scale-shape family (`PE`) with
+  standard-deviation scale, tail shape, differentiable density and CDF,
+  R-compatible RS and CG derivatives, inference, diagnostics, sampling,
+  quantiles, and CUDA FP16/BF16 stress coverage.
 - Committed R results for running the example parity tests without an R
   installation, while continuous integration also executes both languages.
 - Continuous-integration retention of the end-to-end parity report, tables,

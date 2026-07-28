@@ -13,7 +13,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import torchgamlss
-from torchgamlss import GAMLSS, TF, Normal, StudentT
+from torchgamlss import (
+    GAMLSS,
+    PE,
+    TF,
+    Normal,
+    PowerExponential,
+    StudentT,
+)
 
 
 def main() -> None:
@@ -26,6 +33,8 @@ def main() -> None:
         )
     if TF is not StudentT or TF().name != "TF":
         raise RuntimeError("installed Student-t family exports are invalid")
+    if PE is not PowerExponential or PE().name != "PE":
+        raise RuntimeError("installed power-exponential family exports are invalid")
 
     data = pd.DataFrame(
         {

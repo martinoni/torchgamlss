@@ -73,10 +73,10 @@ into the interior.
 Every public family implements `family.sample(parameters, generator=...)`.
 A seeded `torch.Generator` makes a draw reproducible without changing Torch's
 global random-number-generator state. Normal, Gamma, Beta, Poisson, and NBI
-delegate to their Torch distributions. BCCG, BCT, and BCPE sample their
+delegate to built-in Torch distributions. BCCG, BCT, and BCPE sample their
 truncated latent normal, Student-t, and power-exponential representations,
-respectively. TF samples its untruncated location-scale Student-t
-representation.
+respectively. TF and PE sample custom untruncated location-scale
+representations.
 
 This interface is used by the fixed-design parametric smooth bootstrap
 described in [`INFERENCE.md`](INFERENCE.md).
@@ -87,7 +87,7 @@ Every public family implements
 `family.quantile(probabilities, parameters)`. Parameter tensors are
 broadcast, and the returned final dimension follows the probability vector.
 Quantiles are numerically matched to `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`,
-`qBCCG`, `qBCT`, `qBCPE`, and `qTF`.
+`qBCCG`, `qBCT`, `qBCPE`, `qTF`, and `qPE`.
 
 For Poisson and NBI, the result uses the usual left-continuous discrete
 definition: the smallest non-negative integer whose CDF is at least the
@@ -111,15 +111,16 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - autograd after the link chain rule;
 - response-support validation;
 - seeded response simulation, including probability-integral-transform checks
-  for BCCG, BCT, BCPE, and TF;
-- response quantiles at seven probabilities for all nine families;
+  for BCCG, BCT, BCPE, TF, and PE;
+- response quantiles at seven probabilities for all ten families;
 - weighted RS fits with parameter-specific offsets and formulas;
-- CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, BCPE, and TF
-  across central and extreme response quantiles.
+- CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, BCPE, TF,
+  and PE across central and extreme response quantiles.
 
 See [`PARITY.md`](PARITY.md) for package versions and regeneration commands.
 The three-parameter Box-Cox Cole-Green family is documented separately in
 [`BCCG.md`](BCCG.md), and the four-parameter Box-Cox t family in
 [`BCT.md`](BCT.md). The four-parameter Box-Cox power-exponential family is in
 [`BCPE.md`](BCPE.md), and the Student-t location-scale family is in
-[`TF.md`](TF.md).
+[`TF.md`](TF.md). The symmetric power-exponential family is in
+[`PE.md`](PE.md).

@@ -79,6 +79,7 @@ from `fit`.
 | `BCT()` | `BCT()` or `BoxCoxT()` | `mu`, `sigma`, `nu`, `tau` | identity, log, identity, log |
 | `BCPE()` | `BCPE()` or `BoxCoxPowerExponential()` | `mu`, `sigma`, `nu`, `tau` | identity, log, identity, log |
 | `TF()` | `TF()` or `StudentT()` | `mu`, `sigma`, `nu` | identity, log, log |
+| `PE()` | `PE()` or `PowerExponential()` | `mu`, `sigma`, `nu` | identity, log, log |
 
 The distribution conventions are the R conventions, not necessarily those
 of a similarly named `torch.distributions` class. In particular:
@@ -90,6 +91,8 @@ of a similarly named `torch.distributions` class. In particular:
   `Var(Y) = sigma**2 * mu * (1 - mu)`.
 - `TF.sigma` is a scale parameter, with
   `Var(Y) = sigma**2 * nu / (nu - 2)` when `nu > 2`.
+- `PE.sigma` is the standard deviation for every positive `nu`; `nu=2`
+  gives the Normal distribution.
 
 Links are supplied as objects rather than strings:
 
@@ -116,6 +119,7 @@ R family quantile functions map to one common model API:
 | `qPO()`, `qNBI()` | `model.predict_quantiles_data(...)` |
 | `qBCCG()`, `qBCT()`, `qBCPE()` | `model.predict_quantiles_data(...)` |
 | `qTF()` | `model.predict_quantiles_data(...)` |
+| `qPE()` | `model.predict_quantiles_data(...)` |
 | centile percentages | `model.predict_centiles_data(...)` |
 
 ```python
@@ -683,7 +687,7 @@ appropriate final quantities with explicit tolerances.
 TorchGAMLSS is pre-alpha and currently covers a focused subset of R `gamlss`.
 Important exclusions include:
 
-- families other than the nine listed above;
+- families other than the ten listed above;
 - smoothers other than the current `pb()` implementation;
 - transformed or interaction smooth terms;
 - automatic missing-value row removal;
