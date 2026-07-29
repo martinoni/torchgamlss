@@ -101,6 +101,7 @@ jobs:
       - run: Rscript tools/install_r_dependencies.R
       - run: Rscript tools/generate_r_references.R --check
       - run: Rscript tools/generate_truncated_references.R --check
+      - run: Rscript tools/generate_censored_references.R --check
       - name: Run end-to-end Normal location-scale parity
         run: >-
           python tools/run_parity.py

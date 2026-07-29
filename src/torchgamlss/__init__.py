@@ -17,20 +17,27 @@ from torchgamlss.families import (
     BCCG,
     BCPE,
     BCT,
+    LOGNO,
     PE,
     TF,
+    WEI,
     Beta,
     BoxCoxColeGreen,
     BoxCoxPowerExponential,
     BoxCoxT,
+    CensoredFamily,
+    CensoredResponse,
+    Censoring,
     Family,
     Gamma,
+    LogNormal,
     NegativeBinomial,
     Normal,
     Poisson,
     PowerExponential,
     StudentT,
     TruncatedFamily,
+    Weibull,
 )
 from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.formula import FormulaData
@@ -64,6 +71,7 @@ from torchgamlss.quantiles import (
     QuantilePrediction,
 )
 from torchgamlss.smooths import PSpline, SmoothTerm
+from torchgamlss.survival import SurvivalPrediction
 
 __all__ = [
     "BCCG",
@@ -78,6 +86,9 @@ __all__ = [
     "BucketStatistics",
     "CGControl",
     "CGFitResult",
+    "CensoredFamily",
+    "CensoredResponse",
+    "Censoring",
     "Family",
     "FitResult",
     "FormulaData",
@@ -88,6 +99,8 @@ __all__ = [
     "InverseLink",
     "Link",
     "LogLink",
+    "LOGNO",
+    "LogNormal",
     "LogitLink",
     "ModelDiagnostics",
     "MiniBatchControl",
@@ -122,8 +135,11 @@ __all__ = [
     "SharedMLPPredictor",
     "TermContributions",
     "StudentT",
+    "SurvivalPrediction",
     "TF",
     "TruncatedFamily",
+    "WEI",
+    "Weibull",
     "WormPlotPanel",
     "WormPlotResult",
     "bucket_plot",

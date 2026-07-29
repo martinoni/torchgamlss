@@ -68,6 +68,22 @@ The response must be finite and strictly between zero and one. Boundary values
 zero and one require a different response family and are not silently moved
 into the interior.
 
+## Event-time families and censoring
+
+`Weibull` (`WEI`) follows `gamlss.dist::WEI`: `mu` is its positive scale and
+`sigma` its positive shape, both with log links. `LogNormal` (`LOGNO`) follows
+`gamlss.dist::LOGNO`: `mu` is the unrestricted mean of `log(Y)` with an
+identity link, and `sigma` is its positive standard deviation with a log link.
+Both require strictly positive responses.
+
+Continuous event-time families expose `survival()`, `hazard()`, and
+`cumulative_hazard()` alongside density, CDF, quantile, sampling, mean, and
+variance. `CensoredFamily` composes one with a fixed `CensoredResponse`
+containing exact, right-, left-, or interval-censored rows compatible with
+`survival::Surv` status codes. See [`CENSORING.md`](CENSORING.md) for the
+representation, fitting, prediction, CUDA behavior, and current full-batch
+restriction.
+
 ## Scalar- and observation-bound truncation (`gamlss.tr`)
 
 `TruncatedFamily` composes an existing family with one or two fixed bounds.
@@ -161,7 +177,12 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - response-support validation;
 - seeded response simulation, including probability-integral-transform checks
   for BCCG, BCT, BCPE, TF, and PE;
-- response quantiles at seven probabilities for all ten families;
+- response quantiles at seven probabilities for the first ten families, plus
+  event-time quantiles for WEI and LOGNO;
+- WEI and LOGNO survival functions, hazards, cumulative hazards, moments,
+  linked autograd, and `gamlss.dist` scores/working derivatives;
+- exact, right-, left-, and interval-censored WEI and LOGNO likelihoods and
+  scores against `gamlss.cens`;
 - scalar- and observation-bound truncation across all ten families, including
   density/mass, CDF, quantile, score, sampling, autograd, and CUDA behavior;
 - truncated Normal RS/L-BFGS and formula-data fitting plus truncated Poisson
