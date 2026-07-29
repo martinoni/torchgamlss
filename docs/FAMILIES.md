@@ -74,7 +74,11 @@ into the interior.
 `sigma` its positive shape, both with log links. `LogNormal` (`LOGNO`) follows
 `gamlss.dist::LOGNO`: `mu` is the unrestricted mean of `log(Y)` with an
 identity link, and `sigma` is its positive standard deviation with a log link.
-Both require strictly positive responses.
+`InverseGaussian` (`IG`) uses positive mean `mu` and dispersion `sigma`, both
+with log links, so `Var(Y) = sigma² mu³`. `GeneralizedGamma` (`GG`) uses
+positive `mu` and `sigma` with log links plus unrestricted shape `nu` with an
+identity link. Its `nu=0` limit is log-normal with median `mu`. All four
+families require strictly positive responses.
 
 Continuous event-time families expose `survival()`, `hazard()`, and
 `cumulative_hazard()` alongside density, CDF, quantile, sampling, mean, and
@@ -117,7 +121,7 @@ Use `None` for an absent side:
 The log likelihood, CDF, quantiles, sampling, and parameter scores include the
 truncation normalizer. Classical RS/CG working second derivatives are inherited
 from the base family, matching `gamlss.tr`. Truncation is verified against R
-for all ten translated families and their scalar and observation-specific
+for all ten pre-survival families and their scalar and observation-specific
 definitions. Normal and Poisson cover left, right, and two-sided cases; Gamma,
 NBI, Beta, BCCG, TF, PE, BCT, and BCPE additionally verify scalar and varying
 two-sided cases. Their differentiable likelihoods run fully on CUDA.
@@ -150,7 +154,8 @@ Every public family implements
 `family.quantile(probabilities, parameters)`. Parameter tensors are
 broadcast, and the returned final dimension follows the probability vector.
 Quantiles are numerically matched to `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`,
-`qBCCG`, `qBCT`, `qBCPE`, `qTF`, and `qPE`. Truncated quantiles map
+`qBCCG`, `qBCT`, `qBCPE`, `qTF`, `qPE`, `qWEI`, `qLOGNO`, `qIG`, and `qGG`.
+Truncated quantiles map
 probabilities into each observation's retained base-family probability
 interval before inversion.
 
@@ -178,12 +183,14 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - seeded response simulation, including probability-integral-transform checks
   for BCCG, BCT, BCPE, TF, and PE;
 - response quantiles at seven probabilities for the first ten families, plus
-  event-time quantiles for WEI and LOGNO;
-- WEI and LOGNO survival functions, hazards, cumulative hazards, moments,
+  event-time quantiles for WEI, LOGNO, IG, and GG;
+- WEI, LOGNO, IG, and GG survival functions, hazards, cumulative hazards, moments,
   linked autograd, and `gamlss.dist` scores/working derivatives;
-- exact, right-, left-, and interval-censored WEI and LOGNO likelihoods and
+- exact, right-, left-, and interval-censored WEI, LOGNO, IG, and GG likelihoods and
   scores against `gamlss.cens`;
-- scalar- and observation-bound truncation across all ten families, including
+- RS/L-BFGS fitting for IG and GG, CUDA gradients and sampling, and a complete
+  right-censored GG regression parity example;
+- scalar- and observation-bound truncation across all ten pre-survival families, including
   density/mass, CDF, quantile, score, sampling, autograd, and CUDA behavior;
 - truncated Normal RS/L-BFGS and formula-data fitting plus truncated Poisson
   RS/L-BFGS behavior;

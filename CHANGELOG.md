@@ -14,11 +14,16 @@ Development cycle toward the third alpha release.
 - Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
   `gamlss.dist` parity for density, CDF, quantiles, survival functions,
   hazards, moments, scores, working derivatives, and starting values.
+- Inverse-Gaussian (`IG`) and generalized-gamma (`GG`) event-time families,
+  including stable `GG` log-normal-limit series, Torch-native differentiable
+  tails, sampling, moments, RS/L-BFGS fitting, and CUDA coverage.
 - `CensoredResponse` and `CensoredFamily` for exact, right-, left-, and
   interval-censored continuous responses, with `survival::Surv` status-code
   compatibility and `gamlss.cens` likelihood/score parity.
 - Model prediction of survival, hazard, and cumulative-hazard curves through
   `predict_survival()` and `predict_survival_data()`, including CUDA coverage.
+- A complete right-censored `GG` parity example comparing fitted parameters,
+  latent quantiles, survival curves, hazards, and cumulative hazards with R.
 - Observation-specific continuous and discrete truncation bounds through fixed
   one-dimensional tensors, with `gamlss.tr` `varying=TRUE` parity plus formula
   fitting, sampling, quantile, autograd, and CUDA coverage.

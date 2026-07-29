@@ -161,7 +161,7 @@ variance ratio, so `Var(Y) = sigma^2 * mu * (1 - mu)`.
 
 The first derived-family slice targets `gamlss.tr` 5.1-9. The committed
 fixture covers scalar bounds and `varying=TRUE` observation-specific bounds
-across all ten translated families. Normal and Poisson exercise left, right,
+across all ten pre-survival families. Normal and Poisson exercise left, right,
 and two-sided truncation; Gamma, NBI, Beta, BCCG, TF, PE, BCT, and BCPE
 exercise scalar and observation-specific two-sided truncation:
 
@@ -197,20 +197,26 @@ the committed artifact.
 
 ## Survival families and censored likelihoods (`gamlss.cens`)
 
-The first survival slice targets `gamlss.dist` 6.1-1 and `gamlss.cens` 5.0-7.
-The base-family fixture verifies Weibull (`WEI`) and log-normal (`LOGNO`):
+The survival slice targets `gamlss.dist` 6.1-1 and `gamlss.cens` 5.0-7.
+The base-family fixture verifies Weibull (`WEI`), log-normal (`LOGNO`),
+inverse-Gaussian (`IG`), and generalized gamma (`GG`):
 
 - log density, CDF, inverse CDF, survival, hazard, and cumulative hazard;
 - distribution mean and variance;
 - parameter scores and all working expected second derivatives;
 - R-compatible default links and starting expressions.
 
-The censored fixture covers right-, left-, and mixed interval data for both
-families. Mixed interval rows exercise the four `survival::Surv` status codes:
+The censored fixture covers right-, left-, and mixed interval data for all
+four families. Mixed interval rows exercise the four `survival::Surv` status codes:
 right censored (`0`), exact (`1`), left censored (`2`), and interval censored
 (`3`). Likelihood contributions and the numerical parameter scores generated
 by `cens()` are compared row by row. The base-family working second
 derivatives are retained, following the implementation in `gamlss.cens`.
+
+`gamlss.dist::pGG()` can complement some rows when one vector mixes positive
+and negative `nu` values because it passes a vector-valued `lower.tail` flag
+to `pGA()`. The reference generator evaluates distribution and censoring rows
+individually, preserving the scalar `pGG()` semantics for each parameter set.
 
 `gamlss.cens` obtains first derivatives through `gamlss::numeric.deriv`. Its
 default perturbation is zero if a vector parameter contains an exact zero;
@@ -224,6 +230,12 @@ Python tests additionally cover response validation, direct likelihood
 branch identities, link-scale chain rules, full-batch formula fitting with RS
 and L-BFGS, event-time prediction, and CUDA execution. The committed
 artifacts are `survival_family_reference.csv` and `censored_reference.csv`.
+
+The end-to-end `generalized_gamma_survival` case fits a right-censored
+three-parameter regression to 96 rows. R RS and Torch L-BFGS independently
+optimize the same likelihood; the gate compares deviance, coefficients,
+fitted parameters, latent event-time quantiles, and survival, hazard, and
+cumulative-hazard curves.
 
 ## Box-Cox Cole-Green family (`BCCG`)
 
@@ -353,7 +365,7 @@ one parameter. TorchGAMLSS exposes the corresponding full within-curve
 covariance and simulation-based simultaneous band as extensions; the R
 fixtures directly validate the covariance diagonal.
 
-Quantile fixtures compare seven probabilities for all ten families directly
+Quantile fixtures compare seven probabilities for the ten pre-survival families directly
 against `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`, `qBCCG`, `qBCT`, `qBCPE`, `qTF`,
 and `qPE`.
 Discrete tests additionally verify the smallest-count CDF definition.
@@ -411,7 +423,7 @@ contribution and coefficient vector, not only their summed predictors.
 
 ## Diagnostics and quantile residuals
 
-Diagnostics fixtures cover all ten supported families and a fixed-lambda
+Diagnostics fixtures cover all ten pre-survival families and a fixed-lambda
 Normal P-spline fit. They compare:
 
 - log likelihood and global deviance;

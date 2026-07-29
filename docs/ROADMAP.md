@@ -115,11 +115,11 @@ as supported.
 ## Phase 9 — survival and censoring
 
 - [x] Weibull (`WEI`) and log-normal (`LOGNO`) survival families
-- [ ] Inverse-Gaussian and generalized gamma survival families
+- [x] Inverse-Gaussian and generalized gamma survival families
 - [x] Right-, left-, and interval-censored response representation
 - [x] Censored likelihood composition compatible with `gamlss.cens`
 - [x] Survival, hazard, and cumulative-hazard prediction
-- [ ] Reproducible censored-survival parity example
+- [x] Reproducible censored-survival parity example
 
 ## Phase 10 — inflated and adjusted distributions
 

@@ -16,6 +16,7 @@ ROOT = Path(__file__).parents[1]
 EXAMPLE_DIR = ROOT / "examples" / "normal_location_scale"
 COUNT_EXAMPLE_DIR = ROOT / "examples" / "count_model_comparison"
 CENTILE_EXAMPLE_DIR = ROOT / "examples" / "bccg_centile_curves"
+SURVIVAL_EXAMPLE_DIR = ROOT / "examples" / "generalized_gamma_survival"
 
 
 def test_manifest_rejects_numeric_tolerance_for_an_undeclared_key(tmp_path):
@@ -213,4 +214,38 @@ def test_bccg_centile_curves_match_committed_r_reference(tmp_path):
     ).all()
     assert (
         output_dir / "python" / "bccg_centile_curves.png"
+    ).is_file()
+
+
+def test_generalized_gamma_survival_matches_committed_r_reference(tmp_path):
+    output_dir = tmp_path / "results"
+    report = run_case(
+        SURVIVAL_EXAMPLE_DIR / "parity.json",
+        output_dir,
+        r_reference=SURVIVAL_EXAMPLE_DIR / "reference" / "r",
+        python_executable=sys.executable,
+    )
+
+    assert report["passed"]
+    assert {
+        artifact["name"]: artifact["rows"]
+        for artifact in report["artifacts"]
+    } == {
+        "censored model fit": 1,
+        "regression coefficients": 4,
+        "fitted distribution parameters": 96,
+        "survival curves": 21,
+        "latent event-time quantiles": 9,
+    }
+    fit = pd.read_csv(output_dir / "python" / "fit.csv").iloc[0]
+    assert fit["event_count"] == 54
+    assert fit["censored_count"] == 42
+    survival = pd.read_csv(output_dir / "python" / "survival.csv")
+    assert (
+        survival.groupby("profile")["survival"].diff().dropna() < 0
+    ).all()
+    assert (
+        output_dir
+        / "python"
+        / "generalized_gamma_survival.png"
     ).is_file()

@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 import torchgamlss
 from torchgamlss import (
     GAMLSS,
+    GG,
+    IG,
     LOGNO,
     PE,
     TF,
@@ -22,6 +24,8 @@ from torchgamlss import (
     CensoredFamily,
     CensoredResponse,
     Gamma,
+    GeneralizedGamma,
+    InverseGaussian,
     LogNormal,
     Normal,
     PowerExponential,
@@ -45,6 +49,8 @@ def main() -> None:
         raise RuntimeError("installed power-exponential family exports are invalid")
     if WEI is not Weibull or LOGNO is not LogNormal:
         raise RuntimeError("installed survival-family exports are invalid")
+    if IG is not InverseGaussian or GG is not GeneralizedGamma:
+        raise RuntimeError("installed extended survival-family exports are invalid")
 
     data = pd.DataFrame(
         {

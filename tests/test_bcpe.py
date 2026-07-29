@@ -5,12 +5,14 @@ import pandas as pd
 import pytest
 import torch
 from scipy.special import gammainc as scipy_regularized_gamma_p
+from scipy.special import gammaincc as scipy_regularized_gamma_q
 
 from torchgamlss import BCCG, BCPE, GAMLSS, BoxCoxPowerExponential, RSControl
 from torchgamlss.families.bcpe import (
     _power_exponential_cdf,
     _power_exponential_log_prob,
     _regularized_gamma_p,
+    _regularized_gamma_q,
 )
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
@@ -146,6 +148,35 @@ def test_regularized_gamma_matches_scipy_and_has_shape_gradient():
     probabilities = _regularized_gamma_p(shape, argument)
     expected = torch.tensor(
         scipy_regularized_gamma_p(
+            shape.detach().numpy(),
+            argument.detach().numpy(),
+        ),
+        dtype=torch.float64,
+    )
+
+    torch.testing.assert_close(probabilities, expected, rtol=3e-13, atol=3e-13)
+    gradients = torch.autograd.grad(
+        probabilities.sum(),
+        (shape, argument),
+    )
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+def test_regularized_upper_gamma_matches_scipy_and_has_shape_gradient():
+    shape = torch.tensor(
+        [0.05, 0.2, 0.7, 1.0, 2.5, 10.0, 100.0],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    argument = torch.tensor(
+        [1e-6, 0.05, 0.8, 1.0, 4.0, 12.0, 90.0],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+
+    probabilities = _regularized_gamma_q(shape, argument)
+    expected = torch.tensor(
+        scipy_regularized_gamma_q(
             shape.detach().numpy(),
             argument.detach().numpy(),
         ),

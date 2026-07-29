@@ -52,13 +52,15 @@ The current implementation contains:
   (`NBI`), Beta (`BE`), three-parameter Box-Cox Cole-Green (`BCCG`), and
   Student-t location-scale (`TF`), power-exponential location-scale-shape
   (`PE`), four-parameter Box-Cox t (`BCT`), and Box-Cox power-exponential
-  (`BCPE`), Weibull (`WEI`), and log-normal (`LOGNO`) families;
+  (`BCPE`), Weibull (`WEI`), log-normal (`LOGNO`), inverse-Gaussian (`IG`),
+  and generalized gamma (`GG`) families;
 - scalar- or observation-bound continuous and discrete family truncation
   through `TruncatedFamily`, with `gamlss.tr` parity and on-device gradients
-  verified across all ten translated base families;
+  verified across all ten pre-survival base families;
 - exact, right-, left-, and interval-censored continuous likelihoods through
   `CensoredResponse` and `CensoredFamily`, with `survival::Surv` status
-  compatibility and `gamlss.cens` parity for Weibull and log-normal models;
+  compatibility and `gamlss.cens` parity for Weibull, log-normal,
+  inverse-Gaussian, and generalized-gamma models;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
@@ -248,6 +250,18 @@ fitted distribution parameters, quantile residuals, and nine response
 centiles on a common age grid. See
 [`examples/bccg_centile_curves/README.md`](examples/bccg_centile_curves/README.md)
 for the model, visualization, data provenance, and no-R validation mode.
+
+The fourth complete case fits a right-censored generalized-gamma regression:
+
+```bash
+python tools/run_parity.py examples/generalized_gamma_survival/parity.json \
+  --output-dir work/parity/generalized-gamma-survival
+```
+
+It compares the three fitted distribution parameters, latent event-time
+quantiles, and survival, hazard, and cumulative-hazard curves. See
+[`examples/generalized_gamma_survival/README.md`](examples/generalized_gamma_survival/README.md)
+for the censoring design and no-R validation mode.
 
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the

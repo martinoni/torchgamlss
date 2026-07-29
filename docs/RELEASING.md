@@ -70,7 +70,11 @@ Every push and pull request runs:
   numerical report and visualization retained as the
   `normal-location-scale-parity` artifact;
 - the Poisson-versus-NBI model comparison in both languages, retained as the
-  `count-model-comparison-parity` artifact.
+  `count-model-comparison-parity` artifact;
+- the BCCG centile-curve analysis, retained as the
+  `bccg-centile-curves-parity` artifact;
+- the right-censored generalized-gamma regression, retained as the
+  `generalized-gamma-survival-parity` artifact.
 
 Successful distribution files are retained as the
 `torchgamlss-distributions` workflow artifact.

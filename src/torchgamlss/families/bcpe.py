@@ -115,6 +115,39 @@ def _regularized_gamma_p(shape: Tensor, argument: Tensor) -> Tensor:
     return result.clamp(0.0, 1.0)
 
 
+def _regularized_gamma_q(shape: Tensor, argument: Tensor) -> Tensor:
+    """Return the regularized upper gamma with shape differentiation."""
+    shape, argument = torch.broadcast_tensors(shape, argument)
+    finfo = torch.finfo(argument.dtype)
+    finite_argument = torch.where(
+        torch.isposinf(argument),
+        shape + 1000.0,
+        argument,
+    )
+    safe_argument = finite_argument.clamp_min(finfo.tiny)
+    use_series = safe_argument < shape + 1.0
+    series_argument = torch.where(
+        use_series,
+        safe_argument,
+        0.5 * (shape + 1.0),
+    )
+    fraction_argument = torch.where(
+        use_series,
+        shape + 2.0,
+        safe_argument,
+    )
+    series = _gamma_series(shape, series_argument)
+    complement = _gamma_complement_fraction(shape, fraction_argument)
+    result = torch.where(use_series, 1.0 - series, complement)
+    result = torch.where(argument <= 0, torch.ones_like(result), result)
+    result = torch.where(
+        torch.isposinf(argument),
+        torch.zeros_like(result),
+        result,
+    )
+    return result.clamp(0.0, 1.0)
+
+
 def _log_scale(tau: Tensor) -> Tensor:
     return 0.5 * (
         -(2.0 / tau) * _LOG_TWO + torch.lgamma(1.0 / tau) - torch.lgamma(3.0 / tau)

@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "case": "generalized_gamma_right_censored_mle",
+  "description": "Right-censored generalized-gamma regression with survival curves",
+  "working_directory": "../..",
+  "timeout_seconds": 300,
+  "commands": {
+    "r": [
+      "{rscript}",
+      "{case_dir}/run_r.R",
+      "--data",
+      "{case_dir}/data.csv",
+      "--output-dir",
+      "{output_dir}"
+    ],
+    "python": [
+      "{python}",
+      "{case_dir}/run_python.py",
+      "--data",
+      "{case_dir}/data.csv",
+      "--output-dir",
+      "{output_dir}"
+    ]
+  },
+  "artifacts": [
+    {
+      "name": "censored model fit",
+      "file": "fit.csv",
+      "keys": [],
+      "exact": [
+        "converged"
+      ],
+      "numeric": {
+        "global_deviance": {
+          "atol": 2e-6,
+          "rtol": 2e-6
+        },
+        "negative_log_likelihood": {
+          "atol": 2e-6,
+          "rtol": 2e-6
+        },
+        "effective_degrees_of_freedom": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        },
+        "observation_count": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        },
+        "event_count": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        },
+        "censored_count": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        }
+      }
+    },
+    {
+      "name": "regression coefficients",
+      "file": "coefficients.csv",
+      "keys": [
+        "parameter",
+        "term"
+      ],
+      "exact": [],
+      "numeric": {
+        "estimate": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        }
+      }
+    },
+    {
+      "name": "fitted distribution parameters",
+      "file": "fitted.csv",
+      "keys": [
+        "observation"
+      ],
+      "exact": [],
+      "numeric": {
+        "mu": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        },
+        "sigma": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        },
+        "nu": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        }
+      }
+    },
+    {
+      "name": "survival curves",
+      "file": "survival.csv",
+      "keys": [
+        "profile",
+        "x",
+        "time"
+      ],
+      "numeric_keys": {
+        "x": {
+          "atol": 1e-14,
+          "rtol": 1e-14
+        },
+        "time": {
+          "atol": 1e-14,
+          "rtol": 1e-14
+        }
+      },
+      "exact": [],
+      "numeric": {
+        "survival": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        },
+        "hazard": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        },
+        "cumulative_hazard": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        }
+      }
+    },
+    {
+      "name": "latent event-time quantiles",
+      "file": "quantiles.csv",
+      "keys": [
+        "profile",
+        "x",
+        "probability"
+      ],
+      "numeric_keys": {
+        "x": {
+          "atol": 1e-14,
+          "rtol": 1e-14
+        },
+        "probability": {
+          "atol": 1e-14,
+          "rtol": 1e-14
+        }
+      },
+      "exact": [],
+      "numeric": {
+        "centile": {
+          "atol": 1e-12,
+          "rtol": 1e-12
+        },
+        "quantile": {
+          "atol": 5e-4,
+          "rtol": 5e-4
+        }
+      }
+    }
+  ]
+}
