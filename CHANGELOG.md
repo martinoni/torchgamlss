@@ -5,6 +5,10 @@ All notable changes to TorchGAMLSS are documented in this file.
 The project follows semantic versioning and uses the Python packaging
 pre-release notation described by PEP 440.
 
+## [0.1.0a3.dev0] - 2026-07-28
+
+Development cycle toward the third alpha release.
+
 ## [0.1.0a2] - 2026-07-28
 
 Second installable alpha release.

@@ -13,8 +13,9 @@ The project aims to combine numerical compatibility with the R packages
 and optional GPU execution.
 
 > [!WARNING]
-> TorchGAMLSS 0.1.0a2 is alpha software. It is not yet suitable for production
-> or high-stakes statistical use without independent validation.
+> TorchGAMLSS is alpha software. The latest GitHub pre-release is 0.1.0a2;
+> the main development line is 0.1.0a3.dev0. It is not yet suitable for
+> production or high-stakes statistical use without independent validation.
 
 ## Project scope
 

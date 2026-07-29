@@ -86,6 +86,7 @@ as supported.
 - [x] Publish the repository and protect the default branch
 - [x] Adopt TestPyPI-first trusted publishing with production PyPI gated
 - [x] Complete the first TestPyPI publication and clean-install smoke test
+- [x] Tag, publish, and clean-install validate `v0.1.0a2`
 
 ## Phase 7 — reproducible parity examples
 
