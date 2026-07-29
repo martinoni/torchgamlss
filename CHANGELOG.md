@@ -43,6 +43,11 @@ Development cycle toward the second alpha release.
 - Public-project contribution, security, conduct, citation, issue, and pull
   request guidance.
 
+### Changed
+
+- Published `0.1.0a1` to TestPyPI through the approved trusted-publishing
+  workflow and verified the indexed wheel in an isolated installation.
+
 ## [0.1.0a1] - 2026-07-26
 
 First installable alpha release.
@@ -73,4 +78,5 @@ First installable alpha release.
 - Only one-dimensional, equally spaced P-spline bases are implemented.
 - The bucket-plot family-locus overlays stored in R-specific serialized assets
   are not bundled.
-- Public package-index publication has not been enabled.
+- Production PyPI publication has not been enabled; the alpha is available
+  from TestPyPI and the GitHub pre-release.

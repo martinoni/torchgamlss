@@ -85,7 +85,7 @@ as supported.
 - [x] Public-project community, security, citation, and issue metadata
 - [x] Publish the repository and protect the default branch
 - [x] Adopt TestPyPI-first trusted publishing with production PyPI gated
-- [ ] Complete the first TestPyPI publication and clean-install smoke test
+- [x] Complete the first TestPyPI publication and clean-install smoke test
 
 ## Phase 7 — reproducible parity examples
 
