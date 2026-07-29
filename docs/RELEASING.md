@@ -98,8 +98,14 @@ wheel and source archive, and runs strict Twine validation. A separate job
 downloads exactly those artifacts and publishes them from the `testpypi`
 GitHub environment with a short-lived OpenID Connect credential.
 
-Before the first publication, register a pending GitHub Actions publisher at
-<https://test.pypi.org/manage/account/publishing/> with these exact values:
+The first trusted publication, `0.1.0a1`, completed on 2026-07-29 UTC and is
+available at <https://test.pypi.org/project/torchgamlss/0.1.0a1/>. Its
+[release workflow run](https://github.com/martinoni/torchgamlss/actions/runs/30412935839)
+and isolated wheel smoke test both passed.
+
+When bootstrapping a replacement TestPyPI project, register a pending GitHub
+Actions publisher at <https://test.pypi.org/manage/account/publishing/> with
+these exact values:
 
 | Field | Value |
 | --- | --- |
@@ -121,18 +127,36 @@ $runId = gh run list --workflow release.yml --limit 1 `
 gh run watch $runId --exit-status
 ```
 
-After the run succeeds, install from TestPyPI while resolving runtime
-dependencies from PyPI:
+After the run succeeds, download only TorchGAMLSS from TestPyPI, verify its
+digest against the release asset, and install the local wheel. This avoids
+using a secondary package index to resolve dependencies:
 
 ```powershell
+$version = "0.1.0a1"
+$download = "work/testpypi-download"
 python -m venv work/testpypi-smoke
-work/testpypi-smoke/Scripts/python -m pip install `
+python -m pip download --no-deps `
   --index-url https://test.pypi.org/simple/ `
-  --extra-index-url https://pypi.org/simple/ `
-  torchgamlss==0.1.0a1
+  --dest $download `
+  "torchgamlss==$version"
+$wheel = Get-ChildItem $download -Filter "torchgamlss-$version-*.whl"
+Get-FileHash $wheel -Algorithm SHA256
+work/testpypi-smoke/Scripts/python -m pip install $wheel
 ```
 
-Run `tools/smoke_test_install.py` from outside the repository after
-installation. Production PyPI should receive its own `pypi` environment with
-manual approval and a separately registered trusted publisher only after the
+Run the smoke test stored in the release tag from outside the repository. The
+development-branch test may require APIs added after an older tag:
+
+```powershell
+Push-Location work
+try {
+  git -C .. show "v${version}:tools/smoke_test_install.py" |
+    & testpypi-smoke/Scripts/python -
+} finally {
+  Pop-Location
+}
+```
+
+Production PyPI should receive its own `pypi` environment with manual
+approval and a separately registered trusted publisher only after the
 TestPyPI artifact has passed this smoke test.

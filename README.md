@@ -124,18 +124,26 @@ parameters.
 
 ## Installation
 
-The current alpha is distributed through the
-[`v0.1.0a1` GitHub pre-release](https://github.com/martinoni/torchgamlss/releases/tag/v0.1.0a1).
-Development wheels are also retained as GitHub Actions workflow artifacts.
-After downloading the release wheel:
+The current alpha is published on
+[TestPyPI](https://test.pypi.org/project/torchgamlss/0.1.0a1/) and attached to
+the [`v0.1.0a1` GitHub pre-release](https://github.com/martinoni/torchgamlss/releases/tag/v0.1.0a1).
+Download only TorchGAMLSS from TestPyPI, then install the local wheel so its
+runtime dependencies are resolved from the production PyPI index:
 
 ```bash
+python -m pip download --no-deps \
+  --index-url https://test.pypi.org/simple/ \
+  torchgamlss==0.1.0a1
 python -m pip install torchgamlss-0.1.0a1-py3-none-any.whl
 ```
 
 TorchGAMLSS supports Python 3.10 through 3.13 on Linux and Windows. PyTorch
 selects CPU or CUDA support through the installed Torch build; TorchGAMLSS
-itself is a pure-Python wheel.
+itself is a pure-Python wheel. Install the matching CUDA-enabled Torch build
+first when GPU execution is required; see
+[`docs/NEURAL.md`](docs/NEURAL.md#cuda-and-benchmark).
+
+Development wheels are also retained as GitHub Actions workflow artifacts.
 
 To install the current development branch directly from GitHub:
 
