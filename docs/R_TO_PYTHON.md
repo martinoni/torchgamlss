@@ -162,9 +162,11 @@ For `type="both"`, the R `par` value is an `n x 2` matrix created with
 `cbind(lower, upper)`; Python receives the same columns as separate `lower=`
 and `upper=` tensors. These tensors are fixed data rather than learned model
 parameters and must remain aligned with the response or prediction rows.
-Normal and Poisson are verified against `gamlss.tr` for scalar and varying
-left, right, and two-sided truncation. Varying bounds currently require
-full-batch fitting; mini-batch and streaming fitting require scalar bounds.
+All ten translated families are verified against `gamlss.tr` for scalar and
+varying truncation. Normal and Poisson cover left, right, and two-sided cases;
+the remaining families cover scalar and varying two-sided cases. Varying
+bounds currently require full-batch fitting; mini-batch and streaming fitting
+require scalar bounds.
 
 ## Quantile and centile prediction
 

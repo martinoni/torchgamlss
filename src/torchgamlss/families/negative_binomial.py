@@ -11,6 +11,7 @@ from torch.distributions import NegativeBinomial as TorchNegativeBinomial
 
 from torchgamlss.families._scipy import scipy_call, scipy_cdf
 from torchgamlss.families.base import Family
+from torchgamlss.families.bct import _regularized_incomplete_beta
 from torchgamlss.links import Link, LogLink
 
 
@@ -62,6 +63,31 @@ class NegativeBinomial(Family):
             response,
             total_count,
             success_probability,
+        )
+
+    def _differentiable_cdf(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        mu, sigma, response = self._broadcast(response, parameters)
+        total_count = sigma.reciprocal()
+        success_probability = (1.0 + mu * sigma).reciprocal()
+        count = torch.floor(response)
+        beta_shape = torch.where(
+            count < 0,
+            torch.ones_like(count),
+            count + 1.0,
+        )
+        probability = _regularized_incomplete_beta(
+            success_probability,
+            total_count,
+            beta_shape,
+        )
+        return torch.where(
+            count < 0,
+            torch.zeros_like(probability),
+            probability,
         )
 
     def _quantile(

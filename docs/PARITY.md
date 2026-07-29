@@ -161,7 +161,9 @@ variance ratio, so `Var(Y) = sigma^2 * mu * (1 - mu)`.
 
 The first derived-family slice targets `gamlss.tr` 5.1-9. The committed
 fixture covers scalar bounds and `varying=TRUE` observation-specific bounds
-for left, right, and two-sided truncation of both Normal and Poisson families:
+across all ten translated families. Normal and Poisson exercise left, right,
+and two-sided truncation; Gamma, NBI, Beta, BCCG, TF, PE, BCT, and BCPE
+exercise scalar and observation-specific two-sided truncation:
 
 - conditional log density or mass;
 - conditional CDF and inverse CDF;
@@ -181,8 +183,17 @@ TorchGAMLSS.
 
 TorchGAMLSS additionally verifies differentiable linked-parameter likelihoods,
 seeded sampling, formula-data methods, agreement between RS and L-BFGS fits,
-and on-device Normal and Poisson gradients on CUDA. CI regenerates the fixture
-with R and compares it to the committed artifact.
+and on-device gradients for the complete catalog on CUDA. Gamma, Beta, and NBI
+normalizers use differentiable Torch regularized-gamma or regularized-beta
+implementations; their public diagnostic CDFs and inverse CDFs retain the
+SciPy bridge.
+
+`gamlss.tr` 5.1-9 returns `NaN` for the `nu` score under `varying=TRUE` for
+BCCG, BCT, and BCPE. Those unavailable R cells remain empty in the fixture.
+TorchGAMLSS verifies that every corresponding parameter gradient is finite,
+including the BCPE `tau` gradient at `nu=0`, and compares every score that R
+does provide. CI regenerates the complete fixture with R and compares it to
+the committed artifact.
 
 ## Box-Cox Cole-Green family (`BCCG`)
 

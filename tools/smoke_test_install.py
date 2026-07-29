@@ -17,6 +17,7 @@ from torchgamlss import (
     GAMLSS,
     PE,
     TF,
+    Gamma,
     Normal,
     PowerExponential,
     StudentT,
@@ -75,6 +76,25 @@ def main() -> None:
         raise RuntimeError("installed varying-truncation quantiles have wrong shape")
     if not torch.isfinite(varying_quantiles).all():
         raise RuntimeError("installed varying-truncation quantiles are non-finite")
+
+    gamma_truncation = TruncatedFamily(Gamma(), lower=0.2, upper=4.0)
+    gamma_predictors = {
+        "mu": torch.tensor([0.0, 0.5], requires_grad=True),
+        "sigma": torch.tensor([-0.8, -0.3], requires_grad=True),
+    }
+    gamma_parameters = gamma_truncation.parameters_from_predictors(gamma_predictors)
+    gamma_loss = -gamma_truncation.log_prob(
+        torch.tensor([0.8, 2.0]),
+        gamma_parameters,
+    ).sum()
+    gamma_gradients = torch.autograd.grad(
+        gamma_loss,
+        tuple(gamma_predictors.values()),
+    )
+    if not torch.isfinite(gamma_loss) or not all(
+        torch.isfinite(gradient).all() for gradient in gamma_gradients
+    ):
+        raise RuntimeError("installed Gamma truncation gradients are invalid")
 
     residual_plot = model.plot_data(data)
     worm_plot = model.wp_data(data)
