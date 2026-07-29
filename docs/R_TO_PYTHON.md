@@ -168,6 +168,55 @@ the remaining families cover scalar and varying two-sided cases. Varying
 bounds currently require full-batch fitting; mini-batch and streaming fitting
 require scalar bounds.
 
+## Translating `gamlss.cens`
+
+A right-censored Weibull model in R:
+
+```r
+library(gamlss.cens)
+library(survival)
+
+WEIrc <- cens("WEI", type = "right")
+fit_r <- gamlss(
+  Surv(time, event) ~ x,
+  sigma.formula = ~ 1,
+  family = WEIrc,
+  data = data
+)
+```
+
+maps to fixed censoring metadata plus a composed family:
+
+```python
+import torch
+
+from torchgamlss import CensoredFamily, CensoredResponse, GAMLSS, Weibull
+
+time = torch.as_tensor(data["time"].to_numpy(), dtype=torch.float64)
+event = torch.as_tensor(data["event"].to_numpy())
+response = CensoredResponse.right(time, event)
+family = CensoredFamily(Weibull(), response)
+
+model = GAMLSS.from_formula(
+    family,
+    {"mu": "time ~ x", "sigma": "~ 1"},
+    data,
+)
+fit = model.fit_rs_data(data)
+```
+
+Use `CensoredResponse.left(time, event)` for `type="left"`.
+`CensoredResponse.interval(lower, upper)` represents rows known to lie in
+`(lower, upper]`; a mixed interval dataset can pass status codes `0`, `1`,
+`2`, and `3` directly to `CensoredResponse`. Those codes match the
+`survival::Surv(..., type="interval2")` representation.
+
+The response column used by the formula must equal `response.observed` row for
+row. Censoring tensors are fixed data, so the current implementation uses
+full-batch RS, CG, or L-BFGS rather than mini-batch/streaming fitting. See
+[`CENSORING.md`](CENSORING.md) for interval construction and survival
+prediction.
+
 ## Quantile and centile prediction
 
 R family quantile functions map to one common model API:

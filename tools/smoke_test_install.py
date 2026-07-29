@@ -15,13 +15,19 @@ import matplotlib.pyplot as plt
 import torchgamlss
 from torchgamlss import (
     GAMLSS,
+    LOGNO,
     PE,
     TF,
+    WEI,
+    CensoredFamily,
+    CensoredResponse,
     Gamma,
+    LogNormal,
     Normal,
     PowerExponential,
     StudentT,
     TruncatedFamily,
+    Weibull,
 )
 
 
@@ -37,6 +43,8 @@ def main() -> None:
         raise RuntimeError("installed Student-t family exports are invalid")
     if PE is not PowerExponential or PE().name != "PE":
         raise RuntimeError("installed power-exponential family exports are invalid")
+    if WEI is not Weibull or LOGNO is not LogNormal:
+        raise RuntimeError("installed survival-family exports are invalid")
 
     data = pd.DataFrame(
         {
@@ -95,6 +103,38 @@ def main() -> None:
         torch.isfinite(gradient).all() for gradient in gamma_gradients
     ):
         raise RuntimeError("installed Gamma truncation gradients are invalid")
+
+    survival_time = torch.tensor([0.8, 1.5, 2.0], dtype=torch.float64)
+    event = torch.tensor([1, 0, 1])
+    censored = CensoredFamily(
+        Weibull(),
+        CensoredResponse.right(survival_time, event),
+    )
+    survival_data = pd.DataFrame(
+        {
+            "time": survival_time.numpy(),
+            "x": [-1.0, 0.0, 1.0],
+        }
+    )
+    survival_model = GAMLSS.from_formula(
+        censored,
+        {"mu": "time ~ x", "sigma": "~ 1"},
+        survival_data,
+    )
+    censored_loss = survival_model.negative_log_likelihood(
+        survival_time,
+        survival_model.prepare_formula_data(survival_data).design_matrices,
+    )
+    curves = survival_model.predict_survival_data(
+        survival_data,
+        times=[0.5, 1.0, 2.0],
+    )
+    if not torch.isfinite(censored_loss):
+        raise RuntimeError("installed censored likelihood is non-finite")
+    if curves.survival.shape != (3, 3):
+        raise RuntimeError("installed survival prediction has wrong shape")
+    if not torch.isfinite(curves.hazard).all():
+        raise RuntimeError("installed survival prediction is non-finite")
 
     residual_plot = model.plot_data(data)
     worm_plot = model.wp_data(data)

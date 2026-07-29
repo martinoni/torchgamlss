@@ -8,9 +8,9 @@ TorchGAMLSS is an early-stage PyTorch implementation of Generalized Additive
 Models for Location, Scale and Shape (GAMLSS).
 
 The project aims to combine numerical compatibility with the R packages
-[`gamlss`](https://github.com/gamlss-dev/gamlss), `gamlss.dist`, and
-`gamlss.tr` with PyTorch automatic differentiation, composable predictors,
-and optional GPU execution.
+[`gamlss`](https://github.com/gamlss-dev/gamlss), `gamlss.dist`,
+`gamlss.tr`, and `gamlss.cens` with PyTorch automatic differentiation,
+composable predictors, and optional GPU execution.
 
 > [!WARNING]
 > TorchGAMLSS is alpha software. The latest GitHub pre-release is 0.1.0a2;
@@ -52,10 +52,13 @@ The current implementation contains:
   (`NBI`), Beta (`BE`), three-parameter Box-Cox Cole-Green (`BCCG`), and
   Student-t location-scale (`TF`), power-exponential location-scale-shape
   (`PE`), four-parameter Box-Cox t (`BCT`), and Box-Cox power-exponential
-  (`BCPE`) families;
+  (`BCPE`), Weibull (`WEI`), and log-normal (`LOGNO`) families;
 - scalar- or observation-bound continuous and discrete family truncation
   through `TruncatedFamily`, with `gamlss.tr` parity and on-device gradients
   verified across all ten translated base families;
+- exact, right-, left-, and interval-censored continuous likelihoods through
+  `CensoredResponse` and `CensoredFamily`, with `survival::Surv` status
+  compatibility and `gamlss.cens` parity for Weibull and log-normal models;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
@@ -81,8 +84,8 @@ The current implementation contains:
 - target-EDF P-splines compatible with `pb(x, df=...)`;
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with
   `pb.control(method=...)`;
-- prediction on response, link, additive-term, quantile, and centile scales,
-  including new data;
+- prediction on response, link, additive-term, quantile, centile, survival,
+  hazard, and cumulative-hazard scales, including new data;
 - joint full-Hessian covariance, standard errors, Wald tests, and confidence
   intervals for parametric models and conditional linear-coefficient inference
   with fitted smooth contributions held fixed;
@@ -201,6 +204,8 @@ Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
 Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
+Rscript tools/generate_censored_references.R
+Rscript tools/generate_censored_references.R --check
 ```
 
 The complete weighted Normal location-scale example can be run in both
@@ -261,6 +266,8 @@ R-to-Python workflow mapping is in
 documented in
 [`docs/PREDICTION.md`](docs/PREDICTION.md), and the tabular formula API in
 [`docs/FORMULAS.md`](docs/FORMULAS.md). See
+[`docs/CENSORING.md`](docs/CENSORING.md) for event-time families, censored
+responses, and survival prediction. See
 [`docs/INFERENCE.md`](docs/INFERENCE.md) for covariance and Wald inference.
 Likelihood criteria, model comparison, and quantile residuals are documented
 in [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md). Mini-batch optimization,

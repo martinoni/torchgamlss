@@ -62,6 +62,7 @@ from torchgamlss.quantiles import (
     quantile_bootstrap as run_quantile_bootstrap,
 )
 from torchgamlss.smooths import PSpline, SmoothTerm
+from torchgamlss.survival import SurvivalPrediction, survival_prediction
 
 
 @dataclass(frozen=True)
@@ -170,8 +171,7 @@ class GAMLSS(nn.Module):
                 f"{sorted(extra_neural_parameters)}"
             )
         if any(
-            not isinstance(module, nn.Module)
-            for module in neural_predictors.values()
+            not isinstance(module, nn.Module) for module in neural_predictors.values()
         ):
             raise ValueError("Every neural predictor must be a torch.nn.Module")
         self.neural_predictors = nn.ModuleDict(dict(neural_predictors))
@@ -188,16 +188,13 @@ class GAMLSS(nn.Module):
         )
         if shared_predictor is None:
             if shared_parameters is not None:
-                raise ValueError(
-                    "shared_parameters requires a shared_predictor"
-                )
+                raise ValueError("shared_parameters requires a shared_predictor")
             normalized_shared_parameters: tuple[str, ...] = ()
         else:
             if shared_parameters is None:
                 if inferred_shared_parameters is None:
                     raise ValueError(
-                        "shared_parameters is required for a custom "
-                        "shared_predictor"
+                        "shared_parameters is required for a custom shared_predictor"
                     )
                 shared_parameters = inferred_shared_parameters
             try:
@@ -218,9 +215,9 @@ class GAMLSS(nn.Module):
                 raise ValueError(
                     "shared_parameters must contain distinct parameter names"
                 )
-            unknown_shared_parameters = set(
-                normalized_shared_parameters
-            ).difference(expected)
+            unknown_shared_parameters = set(normalized_shared_parameters).difference(
+                expected
+            )
             if unknown_shared_parameters:
                 raise ValueError(
                     "Shared predictor contains unknown parameters: "
@@ -228,8 +225,7 @@ class GAMLSS(nn.Module):
                 )
             if (
                 inferred_shared_parameters is not None
-                and tuple(inferred_shared_parameters)
-                != normalized_shared_parameters
+                and tuple(inferred_shared_parameters) != normalized_shared_parameters
             ):
                 raise ValueError(
                     "shared_parameters must match the shared predictor heads"
@@ -486,6 +482,27 @@ class GAMLSS(nn.Module):
         return self.predict_quantiles(
             prepared.design_matrices,
             probabilities=probabilities,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            neural_inputs=parameter_neural_inputs,
+            shared_input=model_shared_input,
+        )
+
+    def predict_survival_data(
+        self,
+        data: Any,
+        *,
+        times: Any,
+        neural_inputs: Mapping[str, Any] | None = None,
+        shared_input: Any = None,
+    ) -> SurvivalPrediction:
+        """Predict event-time survival, hazard, and cumulative hazard."""
+        prepared = self.prepare_formula_data(data)
+        parameter_neural_inputs = self._formula_neural_inputs(data, neural_inputs)
+        model_shared_input = self._formula_shared_input(data, shared_input)
+        return self.predict_survival(
+            prepared.design_matrices,
+            times=times,
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             neural_inputs=parameter_neural_inputs,
@@ -818,9 +835,7 @@ class GAMLSS(nn.Module):
         )
         model_shared_input = self._formula_shared_input(data, shared_input)
         inferred_x_label = (
-            x_variable
-            if x_label is None and isinstance(x_variable, str)
-            else x_label
+            x_variable if x_label is None and isinstance(x_variable, str) else x_label
         )
         return self.plot(
             prepared.response,
@@ -882,9 +897,7 @@ class GAMLSS(nn.Module):
         )
         model_shared_input = self._formula_shared_input(data, shared_input)
         inferred_x_label = (
-            x_variable
-            if x_label is None and isinstance(x_variable, str)
-            else x_label
+            x_variable if x_label is None and isinstance(x_variable, str) else x_label
         )
         return self.wp(
             prepared.response,
@@ -957,9 +970,7 @@ class GAMLSS(nn.Module):
         )
         model_shared_input = self._formula_shared_input(data, shared_input)
         inferred_x_label = (
-            x_variable
-            if x_label is None and isinstance(x_variable, str)
-            else x_label
+            x_variable if x_label is None and isinstance(x_variable, str) else x_label
         )
         return self.bp(
             prepared.response,
@@ -1067,13 +1078,9 @@ class GAMLSS(nn.Module):
             model_parameter,
         )
         for parameter, neural_input in validated_neural_inputs.items():
-            if (
-                neural_input.ndim < 1
-                or neural_input.shape[0] != observation_count
-            ):
+            if neural_input.ndim < 1 or neural_input.shape[0] != observation_count:
                 raise ValueError(
-                    f"neural input for {parameter!r} must have one row "
-                    "per observation"
+                    f"neural input for {parameter!r} must have one row per observation"
                 )
         validated_shared_input = self._validated_shared_input(
             shared_input,
@@ -1226,6 +1233,28 @@ class GAMLSS(nn.Module):
             quantiles=quantiles,
         )
 
+    def predict_survival(
+        self,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        times: Any,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
+    ) -> SurvivalPrediction:
+        """Predict event-time functions over a shared time grid."""
+        parameters = self.predict(
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
+            shared_input=shared_input,
+            type="response",
+        )
+        assert isinstance(parameters, dict)
+        return survival_prediction(self.family, times, parameters)
+
     def predict_centiles(
         self,
         design_matrices: Mapping[str, Tensor],
@@ -1300,13 +1329,16 @@ class GAMLSS(nn.Module):
         reduction: str = "sum",
     ) -> Tensor:
         """Return the negative log-likelihood with sum, mean, or no reduction."""
-        losses = -self.distribution(
+        parameters = self.predict(
             design_matrices,
             offsets,
             smooth_covariates=smooth_covariates,
             neural_inputs=neural_inputs,
             shared_input=shared_input,
-        ).log_prob(response)
+            type="response",
+        )
+        assert isinstance(parameters, dict)
+        losses = -self.family.log_prob(response, parameters)
         observation_weights = self._validated_weights(losses, weights)
         losses = losses * observation_weights
         if reduction == "sum":
@@ -1962,9 +1994,7 @@ class GAMLSS(nn.Module):
         validated = {}
         for parameter, inputs in neural_inputs.items():
             if not isinstance(inputs, Tensor):
-                raise ValueError(
-                    f"neural input for {parameter!r} must be a tensor"
-                )
+                raise ValueError(f"neural input for {parameter!r} must be a tensor")
             if (
                 inputs.dtype != model_parameter.dtype
                 or inputs.device != model_parameter.device
@@ -1984,9 +2014,7 @@ class GAMLSS(nn.Module):
     ) -> Tensor | None:
         if self.shared_predictor is None:
             if shared_input is not None:
-                raise ValueError(
-                    "shared_input was supplied without a shared_predictor"
-                )
+                raise ValueError("shared_input was supplied without a shared_predictor")
             return None
         if shared_input is None:
             raise ValueError(
@@ -2031,14 +2059,11 @@ class GAMLSS(nn.Module):
             return {}
         assert shared_input is not None
         if shared_input.shape[0] != observation_count:
-            raise ValueError(
-                "shared_input must have one row per observation"
-            )
+            raise ValueError("shared_input must have one row per observation")
         raw_contributions = self.shared_predictor(shared_input)
         if not isinstance(raw_contributions, Mapping):
             raise ValueError(
-                "shared_predictor must return a mapping from parameter names "
-                "to tensors"
+                "shared_predictor must return a mapping from parameter names to tensors"
             )
         expected = set(self.shared_parameters)
         received = set(raw_contributions)
@@ -2125,9 +2150,7 @@ class GAMLSS(nn.Module):
                 context=f"neural input for {parameter!r}",
             )
             assert tensor is not None
-            result[parameter] = (
-                tensor.unsqueeze(-1) if tensor.ndim == 1 else tensor
-            )
+            result[parameter] = tensor.unsqueeze(-1) if tensor.ndim == 1 else tensor
         return result
 
     def _formula_shared_input(
@@ -2137,9 +2160,7 @@ class GAMLSS(nn.Module):
     ) -> Tensor | None:
         if self.shared_predictor is None:
             if value is not None:
-                raise ValueError(
-                    "shared_input was supplied without a shared_predictor"
-                )
+                raise ValueError("shared_input was supplied without a shared_predictor")
             return None
         if value is None:
             raise ValueError(

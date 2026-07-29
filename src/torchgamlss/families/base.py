@@ -99,6 +99,53 @@ class Family(ABC):
                 f"CDF is not implemented for the {self.name} family"
             ) from error
 
+    def survival(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate the survival function ``P(Y > response)``."""
+        if self.is_discrete:
+            raise NotImplementedError(
+                f"survival is not implemented for the discrete {self.name} family"
+            )
+        return torch.exp(self._log_survival(response, parameters))
+
+    def cumulative_hazard(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate the cumulative hazard ``-log(P(Y > response))``."""
+        return -self._log_survival(response, parameters)
+
+    def hazard(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate the continuous-time hazard (density / survival)."""
+        log_survival = self._log_survival(response, parameters)
+        return torch.exp(self.log_prob(response, parameters) - log_survival)
+
+    def _log_cdf(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate a differentiable log CDF for derived likelihoods."""
+        cdf = self._differentiable_cdf(response, parameters)
+        return torch.log(cdf.clamp_min(torch.finfo(cdf.dtype).tiny))
+
+    def _log_survival(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate a differentiable log survival for derived likelihoods."""
+        cdf = self._differentiable_cdf(response, parameters)
+        return torch.log1p(-cdf.clamp_max(1.0 - torch.finfo(cdf.dtype).eps))
+
     def _differentiable_cdf(
         self,
         response: Tensor,
@@ -114,8 +161,7 @@ class Family(ABC):
             return self.distribution(parameters).cdf(response)
         except NotImplementedError as error:
             raise NotImplementedError(
-                f"a differentiable CDF is not implemented for the {self.name} "
-                "family"
+                f"a differentiable CDF is not implemented for the {self.name} family"
             ) from error
 
     def quantile(

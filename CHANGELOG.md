@@ -11,12 +11,26 @@ Development cycle toward the third alpha release.
 
 ### Added
 
+- Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
+  `gamlss.dist` parity for density, CDF, quantiles, survival functions,
+  hazards, moments, scores, working derivatives, and starting values.
+- `CensoredResponse` and `CensoredFamily` for exact, right-, left-, and
+  interval-censored continuous responses, with `survival::Surv` status-code
+  compatibility and `gamlss.cens` likelihood/score parity.
+- Model prediction of survival, hazard, and cumulative-hazard curves through
+  `predict_survival()` and `predict_survival_data()`, including CUDA coverage.
 - Observation-specific continuous and discrete truncation bounds through fixed
   one-dimensional tensors, with `gamlss.tr` `varying=TRUE` parity plus formula
   fitting, sampling, quantile, autograd, and CUDA coverage.
 - Scalar and observation-specific truncation parity across the complete
   translated family catalog, including differentiable Torch CDFs for Gamma,
   Beta, and NBI normalizers and finite BCPE shape gradients at `nu=0`.
+
+### Changed
+
+- Full-batch Torch likelihood evaluation now calls the family likelihood
+  interface, allowing composed likelihoods such as censoring to participate
+  correctly in L-BFGS fitting.
 
 ## [0.1.0a2] - 2026-07-28
 

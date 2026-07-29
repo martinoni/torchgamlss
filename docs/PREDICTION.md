@@ -81,6 +81,34 @@ The default band uses one max-|t| critical value over every prediction row and
 every requested centile. `joint=False` calibrates a separate simultaneous
 band over the prediction rows for each centile.
 
+## Survival, hazard, and cumulative hazard
+
+Continuous event-time models evaluate all three functions on one shared time
+grid:
+
+```python
+curves = model.predict_survival_data(
+    new_data,
+    times=[0.5, 1.0, 2.0, 4.0],
+)
+
+curves.times
+curves.survival
+curves.hazard
+curves.cumulative_hazard
+```
+
+Each function has one row per observation and one column per requested time.
+The prediction uses the latent event-time distribution, so the same API
+applies when the model was fitted through `CensoredFamily`. Formula-free
+models use `predict_survival()` with design matrices and optional offsets,
+smooth covariates, neural inputs, or a shared input. The result preserves the
+model dtype and device.
+
+The current verified event-time families are Weibull (`WEI`) and log-normal
+(`LOGNO`). See [`CENSORING.md`](CENSORING.md) for parameterizations, censored
+response status codes, and fitting restrictions.
+
 ## Link scale
 
 Pass `type="link"` to obtain each complete additive predictor:

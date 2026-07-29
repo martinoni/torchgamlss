@@ -195,6 +195,36 @@ including the BCPE `tau` gradient at `nu=0`, and compares every score that R
 does provide. CI regenerates the complete fixture with R and compares it to
 the committed artifact.
 
+## Survival families and censored likelihoods (`gamlss.cens`)
+
+The first survival slice targets `gamlss.dist` 6.1-1 and `gamlss.cens` 5.0-7.
+The base-family fixture verifies Weibull (`WEI`) and log-normal (`LOGNO`):
+
+- log density, CDF, inverse CDF, survival, hazard, and cumulative hazard;
+- distribution mean and variance;
+- parameter scores and all working expected second derivatives;
+- R-compatible default links and starting expressions.
+
+The censored fixture covers right-, left-, and mixed interval data for both
+families. Mixed interval rows exercise the four `survival::Surv` status codes:
+right censored (`0`), exact (`1`), left censored (`2`), and interval censored
+(`3`). Likelihood contributions and the numerical parameter scores generated
+by `cens()` are compared row by row. The base-family working second
+derivatives are retained, following the implementation in `gamlss.cens`.
+
+`gamlss.cens` obtains first derivatives through `gamlss::numeric.deriv`. Its
+default perturbation is zero if a vector parameter contains an exact zero;
+for `LOGNO.mu`, that makes the complete numerical gradient vector `NaN` even
+though the likelihood is finite. The reference grid therefore uses a small
+nonzero mean-log value in that row. TorchGAMLSS differentiates the complete
+censored likelihood with autograd and independently requires every score to
+be finite.
+
+Python tests additionally cover response validation, direct likelihood
+branch identities, link-scale chain rules, full-batch formula fitting with RS
+and L-BFGS, event-time prediction, and CUDA execution. The committed
+artifacts are `survival_family_reference.csv` and `censored_reference.csv`.
+
 ## Box-Cox Cole-Green family (`BCCG`)
 
 The BCCG slice is the first three-parameter parity target. Its fixtures cover:
@@ -430,6 +460,8 @@ Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
 Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
+Rscript tools/generate_censored_references.R
+Rscript tools/generate_censored_references.R --check
 python tools/run_parity.py examples/normal_location_scale/parity.json `
   --output-dir work/parity/normal-location-scale
 python tools/run_parity.py examples/bccg_centile_curves/parity.json `
@@ -449,6 +481,8 @@ changing files and compares them with explicit tolerances.
   <https://cran.r-project.org/package=gamlss>
 - `gamlss.tr` 5.1-9, distributed by CRAN under GPL-2 or GPL-3:
   <https://cran.r-project.org/package=gamlss.tr>
+- `gamlss.cens` 5.0-7, distributed by CRAN under GPL-2 or GPL-3:
+  <https://cran.r-project.org/package=gamlss.cens>
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
 
