@@ -157,11 +157,11 @@ For NBI, `sigma` is the quadratic overdispersion in
 `Var(Y) = mu + sigma * mu^2`. For BE, `sigma` is the square root of the
 variance ratio, so `Var(Y) = sigma^2 * mu * (1 - mu)`.
 
-## Fixed-bound truncated families (`gamlss.tr`)
+## Scalar- and observation-bound truncated families (`gamlss.tr`)
 
 The first derived-family slice targets `gamlss.tr` 5.1-9. The committed
-fixture covers left, right, and two-sided truncation of both Normal and Poisson
-families:
+fixture covers scalar bounds and `varying=TRUE` observation-specific bounds
+for left, right, and two-sided truncation of both Normal and Poisson families:
 
 - conditional log density or mass;
 - conditional CDF and inverse CDF;
@@ -173,12 +173,16 @@ The generic CRAN helpers evaluate a scalar boundary CDF incorrectly when they
 receive vectors of observation-specific distribution parameters: the
 base-family CDF follows the scalar boundary length and reuses its first
 parameter row. The generator therefore evaluates each R reference row
-separately. This tests the scalar definition implemented by `gamlss.tr`
-without copying that vectorization defect into TorchGAMLSS.
+separately for scalar-bound cases. Varying cases are evaluated vectorized with
+the `gamlss.tr` representation: an observation-length vector for one-sided
+truncation and an `n x 2` matrix for two-sided truncation. This tests both
+definitions without copying the scalar helper's vectorization defect into
+TorchGAMLSS.
 
 TorchGAMLSS additionally verifies differentiable linked-parameter likelihoods,
-seeded sampling, agreement between RS and L-BFGS fits, and on-device Normal
-and Poisson gradients on CUDA.
+seeded sampling, formula-data methods, agreement between RS and L-BFGS fits,
+and on-device Normal and Poisson gradients on CUDA. CI regenerates the fixture
+with R and compares it to the committed artifact.
 
 ## Box-Cox Cole-Green family (`BCCG`)
 
@@ -414,6 +418,7 @@ Rscript tools/install_r_dependencies.R
 Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
 Rscript tools/generate_truncated_references.R
+Rscript tools/generate_truncated_references.R --check
 python tools/run_parity.py examples/normal_location_scale/parity.json `
   --output-dir work/parity/normal-location-scale
 python tools/run_parity.py examples/bccg_centile_curves/parity.json `

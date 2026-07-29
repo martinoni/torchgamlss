@@ -20,6 +20,7 @@ from torchgamlss import (
     Normal,
     PowerExponential,
     StudentT,
+    TruncatedFamily,
 )
 
 
@@ -56,6 +57,24 @@ def main() -> None:
         raise RuntimeError("wheel smoke-test prediction returned wrong parameters")
     if not all(torch.isfinite(value).all() for value in parameters.values()):
         raise RuntimeError("wheel smoke-test prediction is non-finite")
+
+    varying = TruncatedFamily(
+        Normal(),
+        lower=torch.tensor([-1.0, -0.5, 0.0]),
+        upper=torch.tensor([1.0, 1.5, 2.0]),
+    )
+    varying_parameters = {
+        "mu": torch.tensor([0.0, 0.5, 1.0]),
+        "sigma": torch.tensor([1.0, 1.0, 1.0]),
+    }
+    varying_quantiles = varying.quantile(
+        torch.tensor([0.25, 0.5, 0.75]),
+        varying_parameters,
+    )
+    if varying_quantiles.shape != (3, 3):
+        raise RuntimeError("installed varying-truncation quantiles have wrong shape")
+    if not torch.isfinite(varying_quantiles).all():
+        raise RuntimeError("installed varying-truncation quantiles are non-finite")
 
     residual_plot = model.plot_data(data)
     worm_plot = model.wp_data(data)

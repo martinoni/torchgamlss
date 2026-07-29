@@ -138,9 +138,33 @@ belong to the support. For discrete families, as in `gamlss.tr`, both supplied
 endpoints are excluded. Thus
 `TruncatedFamily(Poisson(), lower=0, upper=6)` supports counts 1 through 5.
 
-This release verifies fixed scalar bounds for Normal and Poisson. The R
-package's `varying=TRUE` observation-specific truncation is a later Phase 8
-item.
+Observation-specific R bounds use `varying=TRUE`:
+
+```r
+NOtr <- trun(
+  par = data$lower,
+  family = "NO",
+  type = "left",
+  varying = TRUE
+)
+```
+
+and map to fixed one-dimensional tensors:
+
+```python
+import torch
+
+lower = torch.as_tensor(data["lower"].to_numpy(), dtype=torch.float64)
+family = TruncatedFamily(Normal(), lower=lower)
+```
+
+For `type="both"`, the R `par` value is an `n x 2` matrix created with
+`cbind(lower, upper)`; Python receives the same columns as separate `lower=`
+and `upper=` tensors. These tensors are fixed data rather than learned model
+parameters and must remain aligned with the response or prediction rows.
+Normal and Poisson are verified against `gamlss.tr` for scalar and varying
+left, right, and two-sided truncation. Varying bounds currently require
+full-batch fitting; mini-batch and streaming fitting require scalar bounds.
 
 ## Quantile and centile prediction
 

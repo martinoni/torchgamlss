@@ -9,6 +9,12 @@ pre-release notation described by PEP 440.
 
 Development cycle toward the third alpha release.
 
+### Added
+
+- Observation-specific continuous and discrete truncation bounds through fixed
+  one-dimensional tensors, with `gamlss.tr` `varying=TRUE` parity plus formula
+  fitting, sampling, quantile, autograd, and CUDA coverage.
+
 ## [0.1.0a2] - 2026-07-28
 
 Second installable alpha release.

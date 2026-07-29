@@ -68,16 +68,24 @@ The response must be finite and strictly between zero and one. Boundary values
 zero and one require a different response family and are not silently moved
 into the interior.
 
-## Fixed-bound truncation (`gamlss.tr`)
+## Scalar- and observation-bound truncation (`gamlss.tr`)
 
-`TruncatedFamily` composes an existing family with one or two fixed scalar
-bounds. It preserves the base parameter names, links, and predictors:
+`TruncatedFamily` composes an existing family with one or two fixed bounds.
+Each bound may be a scalar shared by every observation or a one-dimensional
+tensor containing one value per observation. The family preserves the base
+parameter names, links, and predictors:
 
 ```python
+import torch
+
 from torchgamlss import Normal, Poisson, TruncatedFamily
 
 positive_normal = TruncatedFamily(Normal(), lower=0.0)
 bounded_counts = TruncatedFamily(Poisson(), lower=0, upper=8)
+
+lower = torch.tensor([-1.0, -0.5, 0.0])
+upper = torch.tensor([1.0, 1.5, 2.0])
+varying_normal = TruncatedFamily(Normal(), lower=lower, upper=upper)
 ```
 
 Continuous bounds are closed. Discrete bounds follow `gamlss.tr`'s open-bound
@@ -95,8 +103,16 @@ truncation normalizer. Classical RS/CG working second derivatives are inherited
 from the base family, matching `gamlss.tr`. Normal and Poisson truncations are
 verified against R for left, right, and two-sided cases and run fully on CUDA.
 Other base families remain experimental until their differentiable CDFs and R
-parity fixtures are added. Observation-specific bounds are not part of the
-fixed-bound API yet.
+parity fixtures are added.
+
+Observation-specific tensors are fixed data, never trainable parameters. They
+must be finite, have the same length as the response or prediction rows, and,
+for discrete families, contain integer-valued endpoints. TorchGAMLSS moves
+them to the parameter dtype and device when evaluating the family. Full-batch
+RS, CG, and L-BFGS fitting, formula-data methods, quantiles, and sampling are
+supported. The current mini-batch and streaming loaders require scalar bounds
+because they do not transport bound rows with each batch. For a new prediction
+dataset, construct a family with bounds aligned to those prediction rows.
 
 ## Response simulation
 
@@ -117,9 +133,9 @@ Every public family implements
 `family.quantile(probabilities, parameters)`. Parameter tensors are
 broadcast, and the returned final dimension follows the probability vector.
 Quantiles are numerically matched to `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`,
-`qBCCG`, `qBCT`, `qBCPE`, `qTF`, and `qPE`. Fixed-bound truncated quantiles
-map probabilities into the retained base-family probability interval before
-inversion.
+`qBCCG`, `qBCT`, `qBCPE`, `qTF`, and `qPE`. Truncated quantiles map
+probabilities into each observation's retained base-family probability
+interval before inversion.
 
 For Poisson and NBI, the result uses the usual left-continuous discrete
 definition: the smallest non-negative integer whose CDF is at least the
@@ -145,8 +161,8 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - seeded response simulation, including probability-integral-transform checks
   for BCCG, BCT, BCPE, TF, and PE;
 - response quantiles at seven probabilities for all ten families;
-- fixed-bound truncated Normal and Poisson density/mass, CDF, quantile, score,
-  sampling, RS/L-BFGS, and CUDA behavior;
+- scalar- and observation-bound truncated Normal and Poisson density/mass,
+  CDF, quantile, score, sampling, RS/L-BFGS, and CUDA behavior;
 - weighted RS fits with parameter-specific offsets and formulas;
 - CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, BCPE, TF,
   and PE across central and extreme response quantiles.

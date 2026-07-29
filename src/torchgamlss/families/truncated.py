@@ -1,4 +1,4 @@
-"""Fixed-bound truncated GAMLSS families."""
+"""Scalar- and observation-bound truncated GAMLSS families."""
 
 from __future__ import annotations
 
@@ -25,20 +25,59 @@ class _TruncatedDistribution(Distribution):
         family: Family,
         parameters: Mapping[str, Tensor],
         *,
-        lower: float | None,
-        upper: float | None,
+        lower: float | Tensor | None,
+        upper: float | Tensor | None,
         validate_args: bool | None = None,
     ) -> None:
         self.family = family
-        self.parameters = dict(parameters)
-        self.lower = lower
-        self.upper = upper
-        self.base_distribution = family.distribution(parameters)
-
         parameter_values = [
             parameters[parameter] for parameter in family.parameter_names
         ]
         broadcast_parameters = torch.broadcast_tensors(*parameter_values)
+        parameter_shape = broadcast_parameters[0].shape
+        reference = broadcast_parameters[0]
+        aligned_lower = self._align_bound(
+            lower,
+            reference,
+            parameter_shape,
+            "lower",
+        )
+        aligned_upper = self._align_bound(
+            upper,
+            reference,
+            parameter_shape,
+            "upper",
+        )
+        bounds = [
+            bound for bound in (aligned_lower, aligned_upper) if bound is not None
+        ]
+        try:
+            broadcast_values = torch.broadcast_tensors(
+                *broadcast_parameters,
+                *bounds,
+            )
+        except RuntimeError as error:
+            raise ValueError(
+                "truncation bounds cannot be broadcast with family parameters"
+            ) from error
+        parameter_count = len(family.parameter_names)
+        broadcast_parameters = broadcast_values[:parameter_count]
+        bound_index = parameter_count
+        self.lower = None
+        if aligned_lower is not None:
+            self.lower = broadcast_values[bound_index]
+            bound_index += 1
+        self.upper = None
+        if aligned_upper is not None:
+            self.upper = broadcast_values[bound_index]
+        self.parameters = dict(
+            zip(
+                family.parameter_names,
+                broadcast_parameters,
+                strict=True,
+            )
+        )
+        self.base_distribution = family.distribution(self.parameters)
         self._batch_reference = broadcast_parameters[0]
         self._lower_mass, self._upper_mass = self._boundary_masses()
         raw_normalization = self._upper_mass - self._lower_mass
@@ -51,20 +90,43 @@ class _TruncatedDistribution(Distribution):
             validate_args=validate_args,
         )
 
+    @staticmethod
+    def _align_bound(
+        bound: float | Tensor | None,
+        reference: Tensor,
+        parameter_shape: torch.Size,
+        label: str,
+    ) -> Tensor | None:
+        if bound is None:
+            return None
+        if isinstance(bound, Tensor):
+            value = bound.to(dtype=reference.dtype, device=reference.device)
+        else:
+            value = reference.new_tensor(bound)
+        if value.ndim == 0 or not parameter_shape:
+            return value
+        observation_count = value.shape[0]
+        parameter_observations = parameter_shape[0]
+        if parameter_observations not in (1, observation_count):
+            raise ValueError(
+                f"{label} truncation bound has {observation_count} rows but "
+                f"family parameters have {parameter_observations}"
+            )
+        return value.reshape((observation_count,) + (1,) * (len(parameter_shape) - 1))
+
     def _boundary_masses(self) -> tuple[Tensor, Tensor]:
         if self.lower is None:
             lower_mass = torch.zeros_like(self._batch_reference)
         else:
-            lower = self._batch_reference.new_tensor(self.lower)
             lower_mass = self.family._differentiable_cdf(
-                lower,
+                self.lower,
                 self.parameters,
             )
 
         if self.upper is None:
             upper_mass = torch.ones_like(self._batch_reference)
         else:
-            upper = self._batch_reference.new_tensor(self.upper)
+            upper = self.upper
             if self.family.is_discrete:
                 upper = upper - 1.0
             upper_mass = self.family._differentiable_cdf(
@@ -116,9 +178,7 @@ class _TruncatedDistribution(Distribution):
             or not bool(((value >= 0) & (value <= 1)).all())
         ):
             raise ValueError("truncated-distribution probabilities must be in [0, 1]")
-        base_probabilities = (
-            self._lower_mass + value * self._normalization
-        )
+        base_probabilities = self._lower_mass + value * self._normalization
         return self.family._quantile(base_probabilities, self.parameters)
 
     @torch.no_grad()
@@ -147,11 +207,12 @@ class _TruncatedDistribution(Distribution):
 
 
 class TruncatedFamily(Family):
-    """Create a fixed-bound truncation of an existing response family.
+    """Create a scalar- or observation-bound truncation of a response family.
 
     Continuous bounds are closed. Discrete bounds follow ``gamlss.tr`` and
-    are open: ``lower < y < upper``. At least one finite scalar bound is
-    required.
+    are open: ``lower < y < upper``. Each supplied bound may be a finite
+    scalar or a fixed one-dimensional tensor with one value per observation.
+    At least one bound is required.
 
     The first derivatives include the truncation normalizer. For classical
     RS/CG fitting, expected second derivatives are inherited from the base
@@ -172,15 +233,10 @@ class TruncatedFamily(Family):
         self.upper = self._validate_bound(upper, "upper")
         if self.lower is None and self.upper is None:
             raise ValueError("at least one truncation bound is required")
-        if (
-            self.lower is not None
-            and self.upper is not None
-            and self.lower >= self.upper
-        ):
-            raise ValueError("lower truncation bound must be less than upper")
+        self._validate_bound_pair()
         if family.is_discrete:
             for label, bound in (("lower", self.lower), ("upper", self.upper)):
-                if bound is not None and not bound.is_integer():
+                if bound is not None and not self._is_integer_bound(bound):
                     raise ValueError(
                         f"{label} truncation bound must be an integer for "
                         "a discrete family"
@@ -189,26 +245,64 @@ class TruncatedFamily(Family):
         self.name = f"{family.name}tr"
         self.parameter_names = family.parameter_names
         self.is_discrete = family.is_discrete
+        self.varying = isinstance(self.lower, Tensor) or isinstance(
+            self.upper,
+            Tensor,
+        )
 
     @staticmethod
     def _validate_bound(
         bound: Real | Tensor | None,
         label: str,
-    ) -> float | None:
+    ) -> float | Tensor | None:
         if bound is None:
             return None
         if isinstance(bound, Tensor):
-            if bound.ndim != 0 or bound.requires_grad:
+            if bound.requires_grad:
                 raise ValueError(
-                    f"{label} truncation bound must be a fixed scalar"
+                    f"{label} truncation bound must be fixed and cannot "
+                    "require gradients"
                 )
-            bound = float(bound.detach().cpu())
+            if bound.ndim not in (0, 1) or bound.numel() < 1:
+                raise ValueError(
+                    f"{label} truncation bound must be a scalar or a "
+                    "non-empty one-dimensional tensor"
+                )
+            if bound.dtype == torch.bool or bound.is_complex():
+                raise TypeError(f"{label} truncation bound must be real")
+            if not torch.isfinite(bound).all():
+                raise ValueError(f"{label} truncation bound must be finite")
+            if bound.ndim == 0:
+                return float(bound.detach().cpu())
+            return bound.detach().clone()
         elif isinstance(bound, bool) or not isinstance(bound, Real):
             raise TypeError(f"{label} truncation bound must be a real scalar")
         value = float(bound)
         if not torch.isfinite(torch.tensor(value)):
             raise ValueError(f"{label} truncation bound must be finite")
         return value
+
+    def _validate_bound_pair(self) -> None:
+        if self.lower is None or self.upper is None:
+            return
+        lower = torch.as_tensor(self.lower, dtype=torch.float64, device="cpu")
+        upper = torch.as_tensor(self.upper, dtype=torch.float64, device="cpu")
+        try:
+            lower, upper = torch.broadcast_tensors(lower, upper)
+        except RuntimeError as error:
+            raise ValueError(
+                "lower and upper truncation bounds must have the same observation count"
+            ) from error
+        if bool((lower >= upper).any()):
+            raise ValueError(
+                "lower truncation bound must be less than upper for every observation"
+            )
+
+    @staticmethod
+    def _is_integer_bound(bound: float | Tensor) -> bool:
+        if isinstance(bound, Tensor):
+            return bool((bound == torch.floor(bound)).all())
+        return bound.is_integer()
 
     @property
     def links(self) -> Mapping[str, Link]:
@@ -240,8 +334,7 @@ class TruncatedFamily(Family):
     ) -> dict[str, Tensor]:
         self.validate_response(response)
         create_graph = torch.is_grad_enabled() and any(
-            parameters[parameter].requires_grad
-            for parameter in self.parameter_names
+            parameters[parameter].requires_grad for parameter in self.parameter_names
         )
         with torch.enable_grad():
             values = []
@@ -250,9 +343,7 @@ class TruncatedFamily(Family):
                 if not value.requires_grad:
                     value = value.detach().requires_grad_(True)
                 values.append(value)
-            broadcast_values = torch.broadcast_tensors(*values, response)[
-                : len(values)
-            ]
+            broadcast_values = torch.broadcast_tensors(*values, response)[: len(values)]
             differentiable_parameters = dict(
                 zip(self.parameter_names, broadcast_values, strict=True)
             )
@@ -280,23 +371,43 @@ class TruncatedFamily(Family):
     ) -> None:
         self.family.validate_response(response, context=context)
         outside = torch.zeros_like(response, dtype=torch.bool)
-        if self.lower is not None:
+        lower = self._bound_for_response(self.lower, response, "lower")
+        upper = self._bound_for_response(self.upper, response, "upper")
+        if lower is not None:
             if self.is_discrete:
-                outside = outside | (response <= self.lower)
+                outside = outside | (response <= lower)
             else:
-                outside = outside | (response < self.lower)
-        if self.upper is not None:
+                outside = outside | (response < lower)
+        if upper is not None:
             if self.is_discrete:
-                outside = outside | (response >= self.upper)
+                outside = outside | (response >= upper)
             else:
-                outside = outside | (response > self.upper)
+                outside = outside | (response > upper)
         if bool(outside.any()):
             interval = self._support_description()
-            raise ValueError(
-                f"{self.name} {context} requires responses in {interval}"
-            )
+            raise ValueError(f"{self.name} {context} requires responses in {interval}")
+
+    @staticmethod
+    def _bound_for_response(
+        bound: float | Tensor | None,
+        response: Tensor,
+        label: str,
+    ) -> Tensor | None:
+        if bound is None:
+            return None
+        if isinstance(bound, Tensor):
+            if bound.shape[0] != response.shape[0]:
+                raise ValueError(
+                    f"{label} truncation bound must have one value per "
+                    f"observation: expected {response.shape[0]}, got "
+                    f"{bound.shape[0]}"
+                )
+            return bound.to(dtype=response.dtype, device=response.device)
+        return response.new_tensor(bound)
 
     def _support_description(self) -> str:
+        if self.varying:
+            return "the observation-specific truncation intervals"
         left = "-inf" if self.lower is None else f"{self.lower:g}"
         right = "inf" if self.upper is None else f"{self.upper:g}"
         if self.is_discrete:

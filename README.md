@@ -53,9 +53,9 @@ The current implementation contains:
   Student-t location-scale (`TF`), power-exponential location-scale-shape
   (`PE`), four-parameter Box-Cox t (`BCT`), and Box-Cox power-exponential
   (`BCPE`) families;
-- fixed-bound continuous and discrete family truncation through
-  `TruncatedFamily`, with R parity and on-device gradients verified for
-  Normal and Poisson bases;
+- scalar- or observation-bound continuous and discrete family truncation
+  through `TruncatedFamily`, with `gamlss.tr` parity and on-device gradients
+  verified for Normal and Poisson bases;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
@@ -200,6 +200,7 @@ Rscript tools/install_r_dependencies.R
 Rscript tools/generate_r_references.R
 Rscript tools/generate_r_references.R --check
 Rscript tools/generate_truncated_references.R
+Rscript tools/generate_truncated_references.R --check
 ```
 
 The complete weighted Normal location-scale example can be run in both
