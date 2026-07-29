@@ -1,6 +1,7 @@
 import csv
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import torch
 
@@ -14,14 +15,18 @@ CASES = (
     "poisson_left",
     "poisson_right",
     "poisson_both",
+    "normal_varying_left",
+    "normal_varying_right",
+    "normal_varying_both",
+    "poisson_varying_left",
+    "poisson_varying_right",
+    "poisson_varying_both",
 )
 
 
 def _case_rows(case: str) -> list[dict[str, str]]:
     with REFERENCE_PATH.open(newline="", encoding="utf-8") as reference_file:
-        return [
-            row for row in csv.DictReader(reference_file) if row["case"] == case
-        ]
+        return [row for row in csv.DictReader(reference_file) if row["case"] == case]
 
 
 def _tensor(rows: list[dict[str, str]], column: str) -> torch.Tensor:
@@ -34,8 +39,21 @@ def _tensor(rows: list[dict[str, str]], column: str) -> torch.Tensor:
 def _family(rows: list[dict[str, str]]) -> TruncatedFamily:
     row = rows[0]
     base = Normal() if row["family"] == "NO" else Poisson()
-    lower = float(row["lower"]) if row["lower"] else None
-    upper = float(row["upper"]) if row["upper"] else None
+    varying = row["varying"] == "TRUE"
+
+    def bound(column: str) -> float | torch.Tensor | None:
+        values = [entry[column] for entry in rows]
+        if not values[0]:
+            return None
+        if varying:
+            return torch.tensor(
+                [float(value) for value in values],
+                dtype=torch.float64,
+            )
+        return float(values[0])
+
+    lower = bound("lower")
+    upper = bound("upper")
     return TruncatedFamily(base, lower=lower, upper=upper)
 
 
@@ -127,6 +145,29 @@ def test_truncated_density_cdf_quantile_and_derivatives_match_r(case):
                 "mu": torch.tensor([-0.3, 0.9, 1.6], dtype=torch.float64),
             },
         ),
+        (
+            TruncatedFamily(
+                Normal(),
+                lower=torch.tensor([-0.5, -0.2, 0.0]),
+                upper=torch.tensor([1.8, 2.0, 2.2]),
+            ),
+            torch.tensor([-0.2, 0.7, 1.5], dtype=torch.float64),
+            {
+                "mu": torch.tensor([-0.1, 0.4, 1.0], dtype=torch.float64),
+                "sigma": torch.tensor([-0.4, 0.1, 0.3], dtype=torch.float64),
+            },
+        ),
+        (
+            TruncatedFamily(
+                Poisson(),
+                lower=torch.tensor([0, 1, 2]),
+                upper=torch.tensor([5, 7, 9]),
+            ),
+            torch.tensor([1.0, 3.0, 6.0], dtype=torch.float64),
+            {
+                "mu": torch.tensor([-0.3, 0.9, 1.6], dtype=torch.float64),
+            },
+        ),
     ),
 )
 def test_truncated_log_likelihood_autograd_matches_parameter_scores(
@@ -135,8 +176,7 @@ def test_truncated_log_likelihood_autograd_matches_parameter_scores(
     predictors,
 ):
     predictors = {
-        parameter: value.requires_grad_()
-        for parameter, value in predictors.items()
+        parameter: value.requires_grad_() for parameter, value in predictors.items()
     }
     parameters = family.parameters_from_predictors(predictors)
     gradients = torch.autograd.grad(
@@ -163,9 +203,7 @@ def test_truncated_log_likelihood_autograd_matches_parameter_scores(
 
 def test_continuous_and_discrete_bounds_follow_gamlss_tr_conventions():
     continuous = TruncatedFamily(Normal(), lower=0.0, upper=2.0)
-    continuous.validate_response(
-        torch.tensor([0.0, 1.0, 2.0], dtype=torch.float64)
-    )
+    continuous.validate_response(torch.tensor([0.0, 1.0, 2.0], dtype=torch.float64))
 
     discrete = TruncatedFamily(Poisson(), lower=0, upper=4)
     discrete.validate_response(torch.tensor([1.0, 2.0, 3.0]))
@@ -194,6 +232,18 @@ def test_truncated_family_validates_bounds_and_preserves_base_metadata():
     assert family.parameter_names == base.parameter_names
     assert family.links == base.links
     assert not family.is_discrete
+    assert not family.varying
+
+    varying = TruncatedFamily(
+        base,
+        lower=torch.tensor([-1.0, 0.0]),
+        upper=2.0,
+    )
+    assert varying.varying
+    torch.testing.assert_close(
+        varying.lower,
+        torch.tensor([-1.0, 0.0]),
+    )
 
     with pytest.raises(ValueError, match="at least one"):
         TruncatedFamily(base)
@@ -201,8 +251,57 @@ def test_truncated_family_validates_bounds_and_preserves_base_metadata():
         TruncatedFamily(base, lower=2, upper=1)
     with pytest.raises(ValueError, match="integer"):
         TruncatedFamily(Poisson(), lower=0.5)
-    with pytest.raises(ValueError, match="fixed scalar"):
-        TruncatedFamily(base, lower=torch.tensor([0.0, 1.0]))
+    with pytest.raises(ValueError, match="one-dimensional"):
+        TruncatedFamily(base, lower=torch.ones(2, 2))
+    with pytest.raises(ValueError, match="cannot require gradients"):
+        TruncatedFamily(base, lower=torch.tensor([0.0], requires_grad=True))
+    with pytest.raises(ValueError, match="finite"):
+        TruncatedFamily(base, lower=torch.tensor([0.0, torch.inf]))
+    with pytest.raises(ValueError, match="same observation count"):
+        TruncatedFamily(
+            base,
+            lower=torch.tensor([0.0, 1.0]),
+            upper=torch.tensor([2.0, 3.0, 4.0]),
+        )
+    with pytest.raises(ValueError, match="every observation"):
+        TruncatedFamily(
+            base,
+            lower=torch.tensor([0.0, 2.0]),
+            upper=torch.tensor([1.0, 1.5]),
+        )
+    with pytest.raises(ValueError, match="integer"):
+        TruncatedFamily(Poisson(), lower=torch.tensor([0.0, 1.5]))
+
+
+def test_observation_specific_bounds_validate_rows_and_support_description():
+    family = TruncatedFamily(
+        Normal(),
+        lower=torch.tensor([-1.0, 0.0, 1.0]),
+        upper=torch.tensor([0.5, 1.5, 3.0]),
+    )
+    family.validate_response(torch.tensor([-0.5, 0.8, 2.5]))
+
+    with pytest.raises(ValueError, match="one value per observation"):
+        family.validate_response(torch.tensor([-0.5, 0.8]))
+    with pytest.raises(ValueError, match="observation-specific"):
+        family.validate_response(torch.tensor([-1.1, 0.8, 2.5]))
+
+    parameters = {
+        "mu": torch.tensor([-0.3, 0.5, 1.8], dtype=torch.float64),
+        "sigma": torch.tensor([0.8, 1.0, 0.7], dtype=torch.float64),
+    }
+    quantiles = family.quantile([0.2, 0.5, 0.8], parameters)
+    assert quantiles.shape == (3, 3)
+    assert (quantiles >= family.lower.to(dtype=torch.float64).unsqueeze(-1)).all()
+    assert (quantiles <= family.upper.to(dtype=torch.float64).unsqueeze(-1)).all()
+
+    with pytest.raises(ValueError, match="has 3 rows"):
+        family.distribution(
+            {
+                "mu": torch.zeros(2, dtype=torch.float64),
+                "sigma": torch.ones(2, dtype=torch.float64),
+            }
+        )
 
 
 def test_truncated_sampling_is_reproducible_and_respects_support():
@@ -231,15 +330,36 @@ def test_truncated_sampling_is_reproducible_and_respects_support():
     )
 
     poisson = TruncatedFamily(Poisson(), lower=0, upper=5)
-    poisson_parameters = {
-        "mu": torch.full((1000,), 2.5, dtype=torch.float64)
-    }
+    poisson_parameters = {"mu": torch.full((1000,), 2.5, dtype=torch.float64)}
     counts = poisson.sample(
         poisson_parameters,
         generator=torch.Generator().manual_seed(2028),
     )
     assert ((counts > 0) & (counts < 5)).all()
     assert (counts == torch.floor(counts)).all()
+
+
+def test_observation_specific_sampling_respects_each_interval():
+    observation_count = 4000
+    lower = torch.linspace(-1.0, 1.0, observation_count, dtype=torch.float64)
+    upper = lower + 2.0
+    family = TruncatedFamily(Normal(), lower=lower, upper=upper)
+    parameters = {
+        "mu": lower + 0.8,
+        "sigma": torch.full_like(lower, 0.7),
+    }
+    samples = family.sample(
+        parameters,
+        generator=torch.Generator().manual_seed(2031),
+    )
+    probabilities = family.cdf(samples, parameters)
+
+    assert ((samples >= lower) & (samples <= upper)).all()
+    assert probabilities.mean() == pytest.approx(0.5, abs=0.015)
+    assert probabilities.var(correction=1) == pytest.approx(
+        1.0 / 12.0,
+        abs=0.005,
+    )
 
 
 @pytest.mark.parametrize(
@@ -326,12 +446,121 @@ def test_truncated_family_fits_with_rs_and_differentiable_lbfgs(
         )
 
 
+def test_observation_specific_bounds_fit_with_rs_and_lbfgs():
+    observation_count = 120
+    lower = torch.linspace(-0.5, 0.5, observation_count, dtype=torch.float64)
+    upper = lower + 2.5
+    family = TruncatedFamily(Normal(), lower=lower, upper=upper)
+    parameters = {
+        "mu": torch.full_like(lower, 0.8),
+        "sigma": torch.full_like(lower, 0.7),
+    }
+    response = family.sample(
+        parameters,
+        generator=torch.Generator().manual_seed(2032),
+    )
+    designs = {
+        parameter: torch.ones(
+            (observation_count, 1),
+            dtype=torch.float64,
+        )
+        for parameter in family.parameter_names
+    }
+
+    rs_model = GAMLSS(
+        family,
+        {parameter: 1 for parameter in family.parameter_names},
+        dtype=torch.float64,
+    )
+    rs_result = rs_model.fit_rs(
+        response,
+        designs,
+        control=RSControl(
+            outer_tolerance=1e-8,
+            max_outer_iterations=200,
+            inner_tolerance=1e-8,
+            max_inner_iterations=200,
+        ),
+    )
+    lbfgs_model = GAMLSS(
+        family,
+        {parameter: 1 for parameter in family.parameter_names},
+        dtype=torch.float64,
+    )
+    lbfgs_result = lbfgs_model.fit(
+        response,
+        designs,
+        max_iter=300,
+        tolerance_grad=1e-9,
+        tolerance_change=1e-12,
+    )
+
+    assert rs_result.converged
+    assert lbfgs_result.converged
+    assert rs_result.negative_log_likelihood == pytest.approx(
+        lbfgs_result.negative_log_likelihood,
+        rel=1e-7,
+        abs=1e-7,
+    )
+    for parameter in family.parameter_names:
+        torch.testing.assert_close(
+            rs_model.coefficients[parameter],
+            lbfgs_model.coefficients[parameter],
+            rtol=1e-4,
+            atol=1e-4,
+        )
+
+
+def test_observation_specific_bounds_fit_and_predict_from_formula_data():
+    observation_count = 80
+    x = torch.linspace(-1.0, 1.0, observation_count, dtype=torch.float64)
+    lower = -0.5 + 0.2 * x
+    upper = lower + 2.4
+    family = TruncatedFamily(Normal(), lower=lower, upper=upper)
+    response = family.sample(
+        {
+            "mu": 0.7 + 0.3 * x,
+            "sigma": torch.full_like(x, 0.6),
+        },
+        generator=torch.Generator().manual_seed(2033),
+    )
+    data = pd.DataFrame({"x": x.numpy(), "y": response.numpy()})
+    model = GAMLSS.from_formula(
+        family,
+        {"mu": "y ~ x", "sigma": "~ 1"},
+        data,
+    )
+
+    result = model.fit_rs_data(
+        data,
+        control=RSControl(
+            outer_tolerance=1e-8,
+            max_outer_iterations=200,
+            inner_tolerance=1e-8,
+            max_inner_iterations=200,
+        ),
+    )
+    quantiles = model.predict_quantiles_data(
+        data,
+        probabilities=[0.1, 0.5, 0.9],
+    ).quantiles
+
+    assert result.converged
+    assert quantiles.shape == (observation_count, 3)
+    assert (quantiles >= lower.unsqueeze(-1)).all()
+    assert (quantiles <= upper.unsqueeze(-1)).all()
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 def test_truncated_normal_and_poisson_likelihoods_run_on_cuda():
     device = torch.device("cuda")
     cases = (
         (
-            TruncatedFamily(Normal(), lower=0.0),
+            TruncatedFamily(
+                Normal(),
+                lower=torch.tensor([0.0, 0.5]),
+                upper=torch.tensor([2.0, 2.5]),
+            ),
             torch.tensor([0.2, 1.4], device=device),
             {
                 "mu": torch.tensor([-0.3, 0.8], device=device),
@@ -339,7 +568,11 @@ def test_truncated_normal_and_poisson_likelihoods_run_on_cuda():
             },
         ),
         (
-            TruncatedFamily(Poisson(), lower=0, upper=7),
+            TruncatedFamily(
+                Poisson(),
+                lower=torch.tensor([0, 2]),
+                upper=torch.tensor([5, 7]),
+            ),
             torch.tensor([1.0, 5.0], device=device),
             {"mu": torch.tensor([1.2, 4.5], device=device)},
         ),
