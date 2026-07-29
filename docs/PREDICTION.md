@@ -105,9 +105,10 @@ models use `predict_survival()` with design matrices and optional offsets,
 smooth covariates, neural inputs, or a shared input. The result preserves the
 model dtype and device.
 
-The current verified event-time families are Weibull (`WEI`) and log-normal
-(`LOGNO`). See [`CENSORING.md`](CENSORING.md) for parameterizations, censored
-response status codes, and fitting restrictions.
+The verified event-time families are Weibull (`WEI`), log-normal (`LOGNO`),
+inverse-Gaussian (`IG`), and generalized gamma (`GG`). See
+[`CENSORING.md`](CENSORING.md) for parameterizations, censored response status
+codes, and fitting restrictions.
 
 ## Link scale
 

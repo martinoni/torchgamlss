@@ -11,6 +11,8 @@ from torchgamlss.families.censored import (
     Censoring,
 )
 from torchgamlss.families.gamma import Gamma
+from torchgamlss.families.generalized_gamma import GG, GeneralizedGamma
+from torchgamlss.families.inverse_gaussian import IG, InverseGaussian
 from torchgamlss.families.lognormal import LOGNO, LogNormal
 from torchgamlss.families.negative_binomial import NegativeBinomial
 from torchgamlss.families.normal import Normal
@@ -33,6 +35,10 @@ __all__ = [
     "Censoring",
     "Family",
     "Gamma",
+    "GeneralizedGamma",
+    "GG",
+    "IG",
+    "InverseGaussian",
     "LOGNO",
     "LogNormal",
     "NegativeBinomial",

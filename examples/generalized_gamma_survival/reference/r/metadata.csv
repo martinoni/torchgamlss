@@ -1,0 +1,2 @@
+case,implementation,family,algorithm,gamlss_version,gamlss_dist_version,gamlss_cens_version
+generalized_gamma_right_censored_mle,R gamlss,GGcens,RS,5.5.0,6.1.1,5.0.7

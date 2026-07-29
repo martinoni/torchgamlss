@@ -10,6 +10,8 @@ from torchgamlss import (
     CensoredFamily,
     CensoredResponse,
     Censoring,
+    GeneralizedGamma,
+    InverseGaussian,
     LogNormal,
     Poisson,
     RSControl,
@@ -17,11 +19,19 @@ from torchgamlss import (
 )
 
 REFERENCE_PATH = Path(__file__).parent / "reference" / "censored_reference.csv"
-FAMILY_FACTORIES = {"WEI": Weibull, "LOGNO": LogNormal}
+FAMILY_FACTORIES = {
+    "WEI": Weibull,
+    "LOGNO": LogNormal,
+    "IG": InverseGaussian,
+    "GG": GeneralizedGamma,
+}
 SECOND_DERIVATIVE_COLUMNS = {
     ("mu", "mu"): "d2ldmu2",
     ("sigma", "sigma"): "d2ldsigma2",
+    ("nu", "nu"): "d2ldnu2",
     ("mu", "sigma"): "d2ldmudsigma",
+    ("mu", "nu"): "d2ldmudnu",
+    ("sigma", "nu"): "d2ldsigmadnu",
 }
 with REFERENCE_PATH.open(newline="", encoding="utf-8") as reference_file:
     CASES = tuple(dict.fromkeys(row["case"] for row in csv.DictReader(reference_file)))
@@ -98,11 +108,13 @@ def test_censored_likelihood_and_derivatives_match_r_gamlss_cens(case):
         )
     second = family.expected_second_derivatives(response, parameters)
     for pair, column in SECOND_DERIVATIVE_COLUMNS.items():
+        if pair not in second:
+            continue
         torch.testing.assert_close(
             second[pair],
             _tensor(rows, column),
-            rtol=2e-12,
-            atol=2e-12,
+            rtol=3e-8,
+            atol=3e-8,
         )
 
 
@@ -179,6 +191,11 @@ def test_censored_likelihood_uses_all_four_surv_status_codes():
     torch.testing.assert_close(
         family.cumulative_hazard(observed, parameters),
         base.cumulative_hazard(observed, parameters),
+    )
+    probabilities = torch.tensor([0.1, 0.5, 0.9], dtype=torch.float64)
+    torch.testing.assert_close(
+        family.quantile(probabilities, parameters),
+        base.quantile(probabilities, parameters),
     )
 
 

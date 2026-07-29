@@ -230,6 +230,14 @@ class CensoredFamily(Family):
         """Evaluate the base event-time hazard."""
         return self.family.hazard(response, parameters)
 
+    def _quantile(
+        self,
+        probabilities: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate quantiles of the latent event-time distribution."""
+        return self.family._quantile(probabilities, parameters)
+
     def log_prob(
         self,
         response: Tensor,

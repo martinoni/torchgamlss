@@ -117,6 +117,11 @@ jobs:
           python tools/run_parity.py
           examples/bccg_centile_curves/parity.json
           --output-dir work/parity/bccg-centile-curves
+      - name: Run generalized-gamma censored-survival parity
+        run: >-
+          python tools/run_parity.py
+          examples/generalized_gamma_survival/parity.json
+          --output-dir work/parity/generalized-gamma-survival
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -134,4 +139,10 @@ jobs:
         with:
           name: bccg-centile-curves-parity
           path: work/parity/bccg-centile-curves
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: generalized-gamma-survival-parity
+          path: work/parity/generalized-gamma-survival
           if-no-files-found: warn
