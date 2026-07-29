@@ -11,6 +11,7 @@ from torch.distributions import Gamma as TorchGamma
 
 from torchgamlss.families._scipy import scipy_call, scipy_cdf
 from torchgamlss.families.base import Family
+from torchgamlss.families.bcpe import _regularized_gamma_p
 from torchgamlss.links import Link, LogLink
 
 
@@ -66,6 +67,16 @@ class Gamma(Family):
             zeros,
             scale,
         )
+
+    def _differentiable_cdf(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        mu, sigma, response = self._broadcast(response, parameters)
+        shape = sigma.square().reciprocal()
+        scaled_response = response / (mu * sigma.square())
+        return _regularized_gamma_p(shape, scaled_response)
 
     def _quantile(
         self,

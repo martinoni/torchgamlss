@@ -11,6 +11,7 @@ from torch.distributions import Beta as TorchBeta
 
 from torchgamlss.families._scipy import scipy_call, scipy_cdf
 from torchgamlss.families.base import Family
+from torchgamlss.families.bct import _regularized_incomplete_beta
 from torchgamlss.links import Link, LogitLink
 
 
@@ -60,6 +61,21 @@ class Beta(Family):
         return scipy_cdf(
             response,
             scipy_beta.cdf,
+            response,
+            concentration1,
+            concentration0,
+        )
+
+    def _differentiable_cdf(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        mu, sigma, response = self._broadcast(response, parameters)
+        precision = sigma.square().reciprocal() - 1.0
+        concentration1 = mu * precision
+        concentration0 = (1.0 - mu) * precision
+        return _regularized_incomplete_beta(
             response,
             concentration1,
             concentration0,

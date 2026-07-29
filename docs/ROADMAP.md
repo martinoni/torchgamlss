@@ -110,7 +110,7 @@ as supported.
 - [x] Fixed-bound `TruncatedFamily` for discrete responses
 - [x] R parity for truncated Normal and Poisson families
 - [x] Observation-specific truncation bounds compatible with `gamlss.tr`
-- [ ] Extend truncation parity across the translated family catalog
+- [x] Extend truncation parity across the translated family catalog
 
 ## Phase 9 — survival and censoring
 

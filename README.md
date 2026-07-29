@@ -55,7 +55,7 @@ The current implementation contains:
   (`BCPE`) families;
 - scalar- or observation-bound continuous and discrete family truncation
   through `TruncatedFamily`, with `gamlss.tr` parity and on-device gradients
-  verified for Normal and Poisson bases;
+  verified across all ten translated base families;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked

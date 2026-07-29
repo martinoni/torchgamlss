@@ -100,10 +100,11 @@ Use `None` for an absent side:
 
 The log likelihood, CDF, quantiles, sampling, and parameter scores include the
 truncation normalizer. Classical RS/CG working second derivatives are inherited
-from the base family, matching `gamlss.tr`. Normal and Poisson truncations are
-verified against R for left, right, and two-sided cases and run fully on CUDA.
-Other base families remain experimental until their differentiable CDFs and R
-parity fixtures are added.
+from the base family, matching `gamlss.tr`. Truncation is verified against R
+for all ten translated families and their scalar and observation-specific
+definitions. Normal and Poisson cover left, right, and two-sided cases; Gamma,
+NBI, Beta, BCCG, TF, PE, BCT, and BCPE additionally verify scalar and varying
+two-sided cases. Their differentiable likelihoods run fully on CUDA.
 
 Observation-specific tensors are fixed data, never trainable parameters. They
 must be finite, have the same length as the response or prediction rows, and,
@@ -161,8 +162,10 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
 - seeded response simulation, including probability-integral-transform checks
   for BCCG, BCT, BCPE, TF, and PE;
 - response quantiles at seven probabilities for all ten families;
-- scalar- and observation-bound truncated Normal and Poisson density/mass,
-  CDF, quantile, score, sampling, RS/L-BFGS, and CUDA behavior;
+- scalar- and observation-bound truncation across all ten families, including
+  density/mass, CDF, quantile, score, sampling, autograd, and CUDA behavior;
+- truncated Normal RS/L-BFGS and formula-data fitting plus truncated Poisson
+  RS/L-BFGS behavior;
 - weighted RS fits with parameter-specific offsets and formulas;
 - CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, BCPE, TF,
   and PE across central and extreme response quantiles.

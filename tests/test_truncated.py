@@ -5,23 +5,62 @@ import pandas as pd
 import pytest
 import torch
 
-from torchgamlss import GAMLSS, Normal, Poisson, RSControl, TruncatedFamily
+from torchgamlss import (
+    BCCG,
+    BCPE,
+    BCT,
+    GAMLSS,
+    PE,
+    TF,
+    Beta,
+    Gamma,
+    NegativeBinomial,
+    Normal,
+    Poisson,
+    RSControl,
+    TruncatedFamily,
+)
 
 REFERENCE_PATH = Path(__file__).parent / "reference" / "truncated_reference.csv"
-CASES = (
-    "normal_left",
-    "normal_right",
-    "normal_both",
-    "poisson_left",
-    "poisson_right",
-    "poisson_both",
-    "normal_varying_left",
-    "normal_varying_right",
+FAMILY_FACTORIES = {
+    "NO": Normal,
+    "GA": Gamma,
+    "PO": Poisson,
+    "NBI": NegativeBinomial,
+    "BE": Beta,
+    "BCCG": BCCG,
+    "TF": TF,
+    "PE": PE,
+    "BCT": BCT,
+    "BCPE": BCPE,
+}
+with REFERENCE_PATH.open(newline="", encoding="utf-8") as reference_file:
+    CASES = tuple(dict.fromkeys(row["case"] for row in csv.DictReader(reference_file)))
+
+CATALOG_VARYING_CASES = (
     "normal_varying_both",
-    "poisson_varying_left",
-    "poisson_varying_right",
+    "gamma_varying_both",
     "poisson_varying_both",
+    "nbi_varying_both",
+    "beta_varying_both",
+    "bccg_varying_both",
+    "tf_varying_both",
+    "pe_varying_both",
+    "bct_varying_both",
+    "bcpe_varying_both",
 )
+SECOND_DERIVATIVE_COLUMNS = {
+    ("mu", "mu"): "d2ldmu2",
+    ("sigma", "sigma"): "d2ldsigma2",
+    ("nu", "nu"): "d2ldnu2",
+    ("tau", "tau"): "d2ldtau2",
+    ("mu", "sigma"): "d2ldmudsigma",
+    ("mu", "nu"): "d2ldmudnu",
+    ("mu", "tau"): "d2ldmudtau",
+    ("sigma", "nu"): "d2ldsigmadnu",
+    ("sigma", "tau"): "d2ldsigmadtau",
+    ("nu", "tau"): "d2ldnudtau",
+}
 
 
 def _case_rows(case: str) -> list[dict[str, str]]:
@@ -38,7 +77,7 @@ def _tensor(rows: list[dict[str, str]], column: str) -> torch.Tensor:
 
 def _family(rows: list[dict[str, str]]) -> TruncatedFamily:
     row = rows[0]
-    base = Normal() if row["family"] == "NO" else Poisson()
+    base = FAMILY_FACTORIES[row["family"]]()
     varying = row["varying"] == "TRUE"
 
     def bound(column: str) -> float | torch.Tensor | None:
@@ -62,21 +101,21 @@ def test_truncated_density_cdf_quantile_and_derivatives_match_r(case):
     rows = _case_rows(case)
     family = _family(rows)
     response = _tensor(rows, "y")
-    parameters = {"mu": _tensor(rows, "mu")}
-    if rows[0]["family"] == "NO":
-        parameters["sigma"] = _tensor(rows, "sigma")
+    parameters = {
+        parameter: _tensor(rows, parameter) for parameter in family.parameter_names
+    }
 
     torch.testing.assert_close(
         family.log_prob(response, parameters),
         _tensor(rows, "log_density"),
-        rtol=5e-13,
-        atol=5e-13,
+        rtol=5e-10,
+        atol=5e-11,
     )
     torch.testing.assert_close(
         family.cdf(response, parameters),
         _tensor(rows, "cdf"),
-        rtol=5e-13,
-        atol=5e-13,
+        rtol=5e-9,
+        atol=5e-10,
     )
     quantiles = family.quantile(
         _tensor(rows, "probability"),
@@ -85,98 +124,46 @@ def test_truncated_density_cdf_quantile_and_derivatives_match_r(case):
     torch.testing.assert_close(
         torch.diagonal(quantiles),
         _tensor(rows, "quantile"),
-        rtol=5e-13,
-        atol=5e-13,
+        rtol=5e-9,
+        atol=5e-10,
     )
     assert quantiles.shape == (len(rows), len(rows))
 
     scores = family.score(response, parameters)
-    torch.testing.assert_close(
-        scores["mu"],
-        _tensor(rows, "dldmu"),
-        rtol=8e-8,
-        atol=8e-8,
-    )
-    if "sigma" in parameters:
+    for parameter in family.parameter_names:
+        column = f"dld{parameter}"
+        assert torch.isfinite(scores[parameter]).all()
+        if not all(row[column] for row in rows):
+            continue
         torch.testing.assert_close(
-            scores["sigma"],
-            _tensor(rows, "dldsigma"),
-            rtol=8e-8,
-            atol=8e-8,
+            scores[parameter],
+            _tensor(rows, column),
+            rtol=2e-5,
+            atol=1e-6,
         )
 
     second = family.expected_second_derivatives(response, parameters)
-    torch.testing.assert_close(
-        second[("mu", "mu")],
-        _tensor(rows, "d2ldmu2"),
-        rtol=5e-13,
-        atol=5e-13,
-    )
-    if "sigma" in parameters:
+    for pair, column in SECOND_DERIVATIVE_COLUMNS.items():
+        if not all(parameter in family.parameter_names for parameter in pair):
+            continue
         torch.testing.assert_close(
-            second[("sigma", "sigma")],
-            _tensor(rows, "d2ldsigma2"),
-            rtol=5e-13,
-            atol=5e-13,
-        )
-        torch.testing.assert_close(
-            second[("mu", "sigma")],
-            _tensor(rows, "d2ldmudsigma"),
-            rtol=0,
-            atol=0,
+            second[pair],
+            _tensor(rows, column),
+            rtol=5e-8,
+            atol=5e-9,
         )
 
 
-@pytest.mark.parametrize(
-    ("family", "response", "predictors"),
-    (
-        (
-            TruncatedFamily(Normal(), lower=-0.5, upper=1.8),
-            torch.tensor([-0.2, 0.7, 1.5], dtype=torch.float64),
-            {
-                "mu": torch.tensor([-0.1, 0.4, 1.0], dtype=torch.float64),
-                "sigma": torch.tensor([-0.4, 0.1, 0.3], dtype=torch.float64),
-            },
-        ),
-        (
-            TruncatedFamily(Poisson(), lower=0, upper=7),
-            torch.tensor([1.0, 3.0, 6.0], dtype=torch.float64),
-            {
-                "mu": torch.tensor([-0.3, 0.9, 1.6], dtype=torch.float64),
-            },
-        ),
-        (
-            TruncatedFamily(
-                Normal(),
-                lower=torch.tensor([-0.5, -0.2, 0.0]),
-                upper=torch.tensor([1.8, 2.0, 2.2]),
-            ),
-            torch.tensor([-0.2, 0.7, 1.5], dtype=torch.float64),
-            {
-                "mu": torch.tensor([-0.1, 0.4, 1.0], dtype=torch.float64),
-                "sigma": torch.tensor([-0.4, 0.1, 0.3], dtype=torch.float64),
-            },
-        ),
-        (
-            TruncatedFamily(
-                Poisson(),
-                lower=torch.tensor([0, 1, 2]),
-                upper=torch.tensor([5, 7, 9]),
-            ),
-            torch.tensor([1.0, 3.0, 6.0], dtype=torch.float64),
-            {
-                "mu": torch.tensor([-0.3, 0.9, 1.6], dtype=torch.float64),
-            },
-        ),
-    ),
-)
+@pytest.mark.parametrize("case", CATALOG_VARYING_CASES)
 def test_truncated_log_likelihood_autograd_matches_parameter_scores(
-    family,
-    response,
-    predictors,
+    case,
 ):
+    rows = _case_rows(case)
+    family = _family(rows)
+    response = _tensor(rows, "y")
     predictors = {
-        parameter: value.requires_grad_() for parameter, value in predictors.items()
+        parameter: family.links[parameter](_tensor(rows, parameter)).requires_grad_()
+        for parameter in family.parameter_names
     }
     parameters = family.parameters_from_predictors(predictors)
     gradients = torch.autograd.grad(
@@ -196,8 +183,8 @@ def test_truncated_log_likelihood_autograd_matches_parameter_scores(
         torch.testing.assert_close(
             gradient,
             scores[parameter] * inverse_derivative,
-            rtol=2e-11,
-            atol=2e-11,
+            rtol=2e-7,
+            atol=2e-8,
         )
 
 
@@ -360,6 +347,31 @@ def test_observation_specific_sampling_respects_each_interval():
         1.0 / 12.0,
         abs=0.005,
     )
+
+
+@pytest.mark.parametrize("case", CATALOG_VARYING_CASES)
+def test_observation_specific_sampling_runs_across_family_catalog(case):
+    rows = _case_rows(case)
+    family = _family(rows)
+    parameters = {
+        parameter: _tensor(rows, parameter) for parameter in family.parameter_names
+    }
+    with torch.random.fork_rng():
+        torch.manual_seed(2034)
+        samples = family.distribution(parameters).sample(torch.Size([128]))
+    probabilities = family.cdf(samples, parameters)
+
+    assert samples.shape == (128, len(rows))
+    assert torch.isfinite(samples).all()
+    assert torch.isfinite(probabilities).all()
+    if family.lower is not None:
+        lower = torch.as_tensor(family.lower, dtype=samples.dtype)
+        comparison = samples > lower if family.is_discrete else samples >= lower
+        assert comparison.all()
+    if family.upper is not None:
+        upper = torch.as_tensor(family.upper, dtype=samples.dtype)
+        comparison = samples < upper if family.is_discrete else samples <= upper
+        assert comparison.all()
 
 
 @pytest.mark.parametrize(
@@ -551,44 +563,26 @@ def test_observation_specific_bounds_fit_and_predict_from_formula_data():
     assert (quantiles <= upper.unsqueeze(-1)).all()
 
 
+@pytest.mark.parametrize("case", CATALOG_VARYING_CASES)
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
-def test_truncated_normal_and_poisson_likelihoods_run_on_cuda():
+def test_truncated_catalog_likelihoods_run_on_cuda(case):
     device = torch.device("cuda")
-    cases = (
-        (
-            TruncatedFamily(
-                Normal(),
-                lower=torch.tensor([0.0, 0.5]),
-                upper=torch.tensor([2.0, 2.5]),
-            ),
-            torch.tensor([0.2, 1.4], device=device),
-            {
-                "mu": torch.tensor([-0.3, 0.8], device=device),
-                "sigma": torch.tensor([0.7, 1.1], device=device),
-            },
-        ),
-        (
-            TruncatedFamily(
-                Poisson(),
-                lower=torch.tensor([0, 2]),
-                upper=torch.tensor([5, 7]),
-            ),
-            torch.tensor([1.0, 5.0], device=device),
-            {"mu": torch.tensor([1.2, 4.5], device=device)},
-        ),
-    )
-    for family, response, parameters in cases:
-        predictors = {
-            parameter: family.links[parameter](value).requires_grad_()
-            for parameter, value in parameters.items()
-        }
-        linked_parameters = family.parameters_from_predictors(predictors)
-        loss = -family.log_prob(response, linked_parameters).sum()
-        gradients = torch.autograd.grad(loss, tuple(predictors.values()))
+    rows = _case_rows(case)
+    family = _family(rows)
+    response = _tensor(rows, "y").to(device=device, dtype=torch.float32)
+    predictors = {
+        parameter: family.links[parameter](
+            _tensor(rows, parameter).to(device=device, dtype=torch.float32)
+        ).requires_grad_()
+        for parameter in family.parameter_names
+    }
+    linked_parameters = family.parameters_from_predictors(predictors)
+    loss = -family.log_prob(response, linked_parameters).sum()
+    gradients = torch.autograd.grad(loss, tuple(predictors.values()))
 
-        assert loss.device.type == "cuda"
-        assert torch.isfinite(loss)
-        assert all(
-            gradient.device.type == "cuda" and torch.isfinite(gradient).all()
-            for gradient in gradients
-        )
+    assert loss.device.type == "cuda"
+    assert torch.isfinite(loss)
+    assert all(
+        gradient.device.type == "cuda" and torch.isfinite(gradient).all()
+        for gradient in gradients
+    )

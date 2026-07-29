@@ -14,6 +14,9 @@ Development cycle toward the third alpha release.
 - Observation-specific continuous and discrete truncation bounds through fixed
   one-dimensional tensors, with `gamlss.tr` `varying=TRUE` parity plus formula
   fitting, sampling, quantile, autograd, and CUDA coverage.
+- Scalar and observation-specific truncation parity across the complete
+  translated family catalog, including differentiable Torch CDFs for Gamma,
+  Beta, and NBI normalizers and finite BCPE shape gradients at `nu=0`.
 
 ## [0.1.0a2] - 2026-07-28
 

@@ -136,12 +136,24 @@ def _power_exponential_log_prob(value: Tensor, tau: Tensor) -> Tensor:
 def _power_exponential_cdf(value: Tensor, tau: Tensor) -> Tensor:
     value, tau = torch.broadcast_tensors(value, tau)
     log_scale = _log_scale(tau)
-    gamma_argument = 0.5 * (value.abs() * torch.exp(-log_scale)).pow(tau)
+    infinite = torch.isinf(value)
+    finite_value = torch.where(infinite, torch.zeros_like(value), value)
+    gamma_argument = 0.5 * (finite_value.abs() * torch.exp(-log_scale)).pow(tau)
     gamma_probability = _regularized_gamma_p(
         1.0 / tau,
         gamma_argument,
     )
-    return 0.5 * (1.0 + gamma_probability * value.sign())
+    probability = 0.5 * (1.0 + gamma_probability * finite_value.sign())
+    probability = torch.where(
+        torch.isneginf(value),
+        torch.zeros_like(probability),
+        probability,
+    )
+    return torch.where(
+        torch.isposinf(value),
+        torch.ones_like(probability),
+        probability,
+    )
 
 
 def _power_exponential_icdf(probability: Tensor, tau: Tensor) -> Tensor:
@@ -153,9 +165,8 @@ def _power_exponential_icdf(probability: Tensor, tau: Tensor) -> Tensor:
         tau.reciprocal(),
         gamma_probability,
     )
-    magnitude = (
-        torch.exp(_log_scale(tau))
-        * (2.0 * gamma_quantile).pow(tau.reciprocal())
+    magnitude = torch.exp(_log_scale(tau)) * (2.0 * gamma_quantile).pow(
+        tau.reciprocal()
     )
     return torch.where(
         probability < 0.5,
