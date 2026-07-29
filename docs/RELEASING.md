@@ -118,10 +118,11 @@ these exact values:
 TestPyPI accounts are separate from PyPI accounts. No repository secret or
 API token should be created for this workflow.
 
-Once the pending publisher exists, publish an annotated tag with:
+Once the trusted publisher exists, publish an annotated tag with:
 
 ```powershell
-gh workflow run release.yml --ref main -f tag=v0.1.0a1
+$tag = "v0.1.0a2"
+gh workflow run release.yml --ref main -f tag=$tag
 $runId = gh run list --workflow release.yml --limit 1 `
   --json databaseId --jq '.[0].databaseId'
 gh run watch $runId --exit-status
@@ -132,7 +133,7 @@ digest against the release asset, and install the local wheel. This avoids
 using a secondary package index to resolve dependencies:
 
 ```powershell
-$version = "0.1.0a1"
+$version = "0.1.0a2"
 $download = "work/testpypi-download"
 python -m venv work/testpypi-smoke
 python -m pip download --no-deps `

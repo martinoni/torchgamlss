@@ -13,9 +13,8 @@ The project aims to combine numerical compatibility with the R packages
 and optional GPU execution.
 
 > [!WARNING]
-> TorchGAMLSS is alpha software. The latest GitHub pre-release is 0.1.0a1;
-> the main development line is 0.1.0a2.dev0. It is not yet suitable for
-> production or high-stakes statistical use without independent validation.
+> TorchGAMLSS 0.1.0a2 is alpha software. It is not yet suitable for production
+> or high-stakes statistical use without independent validation.
 
 ## Project scope
 
@@ -125,16 +124,16 @@ parameters.
 ## Installation
 
 The current alpha is published on
-[TestPyPI](https://test.pypi.org/project/torchgamlss/0.1.0a1/) and attached to
-the [`v0.1.0a1` GitHub pre-release](https://github.com/martinoni/torchgamlss/releases/tag/v0.1.0a1).
+[TestPyPI](https://test.pypi.org/project/torchgamlss/0.1.0a2/) and attached to
+the [`v0.1.0a2` GitHub pre-release](https://github.com/martinoni/torchgamlss/releases/tag/v0.1.0a2).
 Download only TorchGAMLSS from TestPyPI, then install the local wheel so its
 runtime dependencies are resolved from the production PyPI index:
 
 ```bash
 python -m pip download --no-deps \
   --index-url https://test.pypi.org/simple/ \
-  torchgamlss==0.1.0a1
-python -m pip install torchgamlss-0.1.0a1-py3-none-any.whl
+  torchgamlss==0.1.0a2
+python -m pip install torchgamlss-0.1.0a2-py3-none-any.whl
 ```
 
 TorchGAMLSS supports Python 3.10 through 3.13 on Linux and Windows. PyTorch
