@@ -4,6 +4,9 @@ TorchGAMLSS will grow in verified vertical slices. Each slice must include
 automated comparisons with the reference R implementation before it is treated
 as supported.
 
+The current implementation state, accepted architectural decisions, and
+next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
+
 ## Phase 0 — foundation
 
 - [x] Package skeleton and GPL-3.0-only licensing
