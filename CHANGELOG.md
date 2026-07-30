@@ -15,6 +15,25 @@ Development cycle toward the third alpha release.
   fixed coefficient-space penalties, linear constraints through null-space
   reparameterization, effective degrees of freedom, rank diagnostics, and
   CPU/CUDA execution while preserving the classical `pb()` fitting path.
+- Full tensor-product smooths and highest-order ANOVA tensor interactions with
+  row-wise Kronecker designs, one fixed penalty per marginal direction,
+  explicit centering transforms, prediction-state round trips, CPU/CUDA
+  execution, and exact algebraic checks against `mgcv`.
+- Fixed-lambda `te()` and `ti()` formula terms with per-margin basis options,
+  exact absorbed identifiability constraints, stored prediction transforms,
+  RS/CG backfitting through the generic constrained solver, full-batch
+  L-BFGS, mini-batch Adam, and CUDA execution.
+- Conditional and joint analytic tensor inference with combined
+  multiple-penalty information, constrained coefficient covariance, new-grid
+  prediction, multivariate tables, and simultaneous Gaussian bands.
+- RS/CG parametric smooth bootstrap for multiply penalized tensor terms, with
+  backward-compatible scalar results, one replicate column per tensor
+  penalty, penalty-level joint labels and slices, and multivariate tables.
+- Dense whole-model LAML for additive Normal location-scale models, with
+  formula and tensor-level `fit_laml` APIs, jointly selected scalar and tensor
+  log lambdas, structural null-space constraints, model-state updates,
+  penalty-level result labels, CPU/CUDA execution, and direct
+  `mgcv::gaulss(method="REML")` tensor-product parity.
 - Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
   `gamlss.dist` parity for density, CDF, quantiles, survival functions,
   hazards, moments, scores, working derivatives, and starting values.

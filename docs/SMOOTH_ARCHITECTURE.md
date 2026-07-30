@@ -75,8 +75,9 @@ The implementation is separated into five layers.
    coefficient-space penalties, and constraints.
 3. **Smoothness selection** treats `rho_j = log(lambda_j)` as a whole-model
    vector rather than updating one working smoother in isolation.
-4. **Formula construction** maps `pb()`, future `s()`, `te()`, `ti()`, and
-   random-effect syntax to term objects.
+4. **Formula construction** maps current `pb()`, `te()`, and `ti()` syntax,
+   plus future generic `s()` and additional term constructors, to term
+   objects.
 5. **Execution backends** choose dense, chunked, discretized, CPU, or CUDA
    operations without changing the statistical model.
 
@@ -104,8 +105,9 @@ Implementation status: complete on `agent/generic-penalized-solver`.
 
 ### 12C — whole-model LAML prototype
 
-The first prototype will use existing one-dimensional P-splines and a
-comparable Gaussian location-scale model. For a trial vector `rho`, it will:
+The first prototype is complete locally on `agent/laml-prototype`. It uses
+existing one-dimensional P-splines and a comparable Gaussian location-scale
+model. For a trial vector `rho`, it does the following:
 
 1. converge the penalized coefficient fit;
 2. form the joint observed information across all distribution parameters;
@@ -116,18 +118,27 @@ comparable Gaussian location-scale model. For a trial vector `rho`, it will:
 
 Autograd can supply likelihood derivatives, but it is not a substitute for a
 stable outer algorithm. Differentiating through an arbitrary number of RS/CG
-iterations is not the primary implementation route. The prototype must compare
-against `mgcv` for an overlapping model and against the current GAMLSS path for
-fixed lambdas.
+iterations is not the primary implementation route. The prototype matches
+`mgcv` for an overlapping model and the current GAMLSS path for fixed lambdas.
+The tensor branch now connects this kernel to `GAMLSS.fit_laml()` and formula
+`fit_laml_data()`, assembles scalar and tensor penalties automatically, and
+matches a direct two-penalty `mgcv::te()` REML fixture.
 
 `LAML` is the generic name in the implementation. A `REML` alias should only be
 advertised where its fixed-effect and scale interpretation is well defined.
 
 ### 12D — richer terms
 
-- tensor-product smooth with one penalty per marginal direction;
-- tensor interaction with explicit main-effect separation;
-- random intercept and slope terms with full-rank ridge penalties;
+Implementation status: tensor-product and random-effect portions are complete
+in their separate sibling worktrees; remaining term families are pending.
+
+- [x] tensor-product smooth with one penalty per marginal direction;
+- [x] tensor interaction with explicit main-effect separation;
+- [x] fixed-lambda formula construction plus L-BFGS/mini-batch execution;
+- [x] classical RS/CG integration for fixed multiply penalized terms;
+- [x] whole-model LAML selection for each tensor marginal penalty;
+- [x] random intercept and slope terms with full-rank ridge penalties,
+  complete in the sibling `agent/random-effect-terms` worktree;
 - sum-to-zero constraints and shrinkage/double penalties.
 
 ### 12E — structured large-data backend

@@ -86,3 +86,13 @@ Poisson, NBI, and Beta fixtures further exercise one-parameter discrete,
 two-parameter discrete, and bounded continuous responses. Their weighted,
 offset formula fits match the R coefficients, deviances, likelihoods, and
 outer-cycle counts.
+
+Fixed-lambda tensor terms use the same RS outer and inner cycles. During
+backfitting, a term with several coefficient-space penalties is solved by the
+generic constrained penalized least-squares backend; scalar `pb()` terms keep
+the original square-root augmented solver. Tests cover formula `te()` and
+`ti()`, an externally constrained low-level tensor, tuple-valued smoothing
+parameters, effective degrees of freedom without the `pb()` linear-overlap
+adjustment, agreement with CG, and CUDA execution. Automatic selection of the
+several tensor lambdas is available through `fit_laml()`/`fit_laml_data()`;
+RS continues to reject automatic tensor terms explicitly.

@@ -842,6 +842,14 @@ def test_joint_smooth_bootstrap_preserves_cross_term_dependence():
     )
     assert joint.bootstrap_smoothing_parameters.shape == (10, 2)
     assert joint.smoothing_parameters.shape == (2,)
+    assert joint.smoothing_parameter_labels == (
+        ("mu", "x", 0),
+        ("sigma", "z", 0),
+    )
+    assert joint.smoothing_parameter_slices == {
+        ("mu", "x"): slice(0, 1),
+        ("sigma", "z"): slice(1, 2),
+    }
     assert torch.all(joint.bootstrap_smoothing_parameters.std(dim=0) > 0)
     torch.testing.assert_close(
         torch.diagonal(joint.smoothing_parameter_covariance_matrix),

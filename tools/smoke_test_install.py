@@ -26,11 +26,15 @@ from torchgamlss import (
     Gamma,
     GeneralizedGamma,
     InverseGaussian,
+    LAMLControl,
     LogNormal,
     Normal,
+    NormalLAMLResult,
     PenalizedLeastSquaresResult,
     PowerExponential,
+    PSpline,
     StudentT,
+    TensorProductSmooth,
     TruncatedFamily,
     Weibull,
     solve_penalized_least_squares,
@@ -72,12 +76,185 @@ def main() -> None:
     ):
         raise RuntimeError("installed generic penalty constraints are invalid")
 
+    tensor_covariates = torch.tensor(
+        [
+            [-1.0, 0.0],
+            [-0.2, 0.5],
+            [0.4, 1.2],
+            [1.0, 2.0],
+        ],
+        dtype=torch.float64,
+    )
+    tensor_term = TensorProductSmooth(
+        (
+            PSpline(-1.0, 1.0, 2.0, intervals=2, dtype=torch.float64),
+            PSpline(0.0, 2.0, 3.0, intervals=2, dtype=torch.float64),
+        )
+    )
+    if tensor_term.design(tensor_covariates).shape[0] != len(tensor_covariates):
+        raise RuntimeError("installed tensor-product design is invalid")
+    if len(tensor_term.penalty_matrices()) != 2:
+        raise RuntimeError("installed tensor-product penalties are invalid")
+    if tensor_term.constraints(tensor_covariates).shape[0] != 1:
+        raise RuntimeError("installed tensor-product constraint is invalid")
+
     data = pd.DataFrame(
         {
             "x": [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0],
+            "z": [0.2, 0.8, -0.4, 1.1, -0.7, 0.5],
             "y": [-2.4, -0.7, 1.4, 2.7, 5.2, 6.5],
         }
     )
+    tensor_observation_count = 30
+    tensor_x = torch.linspace(
+        -1.0,
+        1.0,
+        tensor_observation_count,
+        dtype=torch.float64,
+    )
+    tensor_z = torch.sin(
+        torch.linspace(
+            0.15,
+            5.6,
+            tensor_observation_count,
+            dtype=torch.float64,
+        )
+    )
+    tensor_y = (
+        0.7
+        + torch.sin(2.0 * tensor_x)
+        + 0.5 * tensor_x * tensor_z
+        + 0.2 * tensor_z.square()
+        + 0.05
+        * torch.cos(
+            torch.arange(tensor_observation_count, dtype=torch.float64)
+        )
+    )
+    tensor_formula_frame = pd.DataFrame(
+        {
+            "x": tensor_x.numpy(),
+            "z": tensor_z.numpy(),
+            "y": tensor_y.numpy(),
+        }
+    )
+    tensor_formula_model = GAMLSS.from_formula(
+        Normal(),
+        {
+            "mu": (
+                "y ~ te(x, z, lambda_=(2, 3), intervals=(2, 2), "
+                "name='surface')"
+            ),
+            "sigma": "~ 1",
+        },
+        tensor_formula_frame,
+    )
+    tensor_formula_fit = tensor_formula_model.fit_rs_data(
+        tensor_formula_frame
+    )
+    tensor_formula_data = tensor_formula_model.prepare_formula_data(
+        tensor_formula_frame
+    )
+    tensor_formula_covariates = tensor_formula_data.smooth_covariates["mu"][
+        "surface"
+    ]
+    tensor_formula_term = tensor_formula_model.smooth_terms["mu"]["surface"]
+    if tensor_formula_model.formula_column_names["mu"] != ("Intercept",):
+        raise RuntimeError("installed te() formula design is invalid")
+    if tensor_formula_covariates.shape != (tensor_observation_count, 2):
+        raise RuntimeError("installed te() formula covariates are invalid")
+    if not torch.allclose(
+        tensor_formula_term.design(tensor_formula_covariates).sum(dim=0),
+        torch.zeros_like(tensor_formula_term.coefficients),
+        atol=1e-10,
+        rtol=0.0,
+    ):
+        raise RuntimeError("installed te() formula constraint is invalid")
+    if not tensor_formula_fit.converged:
+        raise RuntimeError("installed te() RS fit did not converge")
+    if tensor_formula_fit.smoothing_parameters["mu"]["surface"] != (
+        2.0,
+        3.0,
+    ):
+        raise RuntimeError("installed te() RS smoothing parameters are invalid")
+    tensor_formula_inference = tensor_formula_model.smooth_inference_data(
+        tensor_formula_frame
+    )["mu"]["surface"]
+    if tensor_formula_inference.smoothing_parameter != (2.0, 3.0):
+        raise RuntimeError("installed te() inference lambdas are invalid")
+    if not torch.isfinite(tensor_formula_inference.standard_errors).all():
+        raise RuntimeError("installed te() inference is non-finite")
+    if tensor_formula_inference.to_dataframe().columns[:2].tolist() != [
+        "covariate_0",
+        "covariate_1",
+    ]:
+        raise RuntimeError("installed te() inference table is invalid")
+    tensor_formula_bootstrap = (
+        tensor_formula_model.smooth_joint_bootstrap_data(
+            tensor_formula_frame,
+            replicates=10,
+            generator=torch.Generator().manual_seed(2026),
+        )
+    )
+    tensor_surface_bootstrap = tensor_formula_bootstrap["mu"]["surface"]
+    if tensor_surface_bootstrap.bootstrap_smoothing_parameters.shape != (
+        10,
+        2,
+    ):
+        raise RuntimeError("installed te() bootstrap lambda shape is invalid")
+    if tensor_formula_bootstrap.smoothing_parameter_labels != (
+        ("mu", "surface", 0),
+        ("mu", "surface", 1),
+    ):
+        raise RuntimeError("installed te() bootstrap lambda labels are invalid")
+    if not torch.allclose(
+        tensor_surface_bootstrap.bootstrap_smoothing_parameters,
+        torch.tensor([[2.0, 3.0]] * 10, dtype=torch.float64),
+    ):
+        raise RuntimeError("installed te() bootstrap lambdas are invalid")
+    if tensor_surface_bootstrap.to_dataframe().columns[:2].tolist() != [
+        "covariate_0",
+        "covariate_1",
+    ]:
+        raise RuntimeError("installed te() bootstrap table is invalid")
+    tensor_formula_prediction = tensor_formula_model.predict_data(
+        tensor_formula_frame
+    )
+    if not torch.isfinite(tensor_formula_prediction["mu"]).all():
+        raise RuntimeError("installed te() formula prediction is non-finite")
+    tensor_laml_model = GAMLSS.from_formula(
+        Normal(),
+        {
+            "mu": (
+                "y ~ te(x, z, intervals=(2, 2), name='surface')"
+            ),
+            "sigma": "~ 1",
+        },
+        tensor_formula_frame,
+    )
+    tensor_laml_fit = tensor_laml_model.fit_laml_data(
+        tensor_formula_frame,
+        control=LAMLControl(
+            outer_max_iterations=30,
+            outer_gradient_tolerance=5e-5,
+        ),
+    )
+    if not isinstance(tensor_laml_fit, NormalLAMLResult):
+        raise RuntimeError("installed formula LAML result is invalid")
+    if not tensor_laml_fit.outer_converged:
+        raise RuntimeError("installed te() LAML fit did not converge")
+    if tensor_laml_fit.smoothing_parameter_labels != (
+        ("mu", "surface", 0),
+        ("mu", "surface", 1),
+    ):
+        raise RuntimeError("installed te() LAML lambda labels are invalid")
+    if not torch.allclose(
+        tensor_laml_fit.smoothing_parameters,
+        tensor_laml_fit.smoothing_parameters.new_tensor(
+            tensor_laml_model.smooth_terms["mu"]["surface"].smoothing_parameters
+        ),
+    ):
+        raise RuntimeError("installed te() LAML state update is invalid")
+
     model = GAMLSS.from_formula(
         Normal(),
         {"mu": "y ~ x", "sigma": "~ 1"},

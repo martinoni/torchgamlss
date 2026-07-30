@@ -23,7 +23,7 @@ large-data smooth fitting.
 
 ## Current pull requests
 
-All three pull requests are intentionally draft and must not be merged without
+All four pull requests are intentionally draft and must not be merged without
 an explicit decision.
 
 | PR | Scope | Branch | Validation |
@@ -31,11 +31,12 @@ an explicit decision.
 | [#9](https://github.com/martinoni/torchgamlss/pull/9) | Inflated and adjusted distributions | `agent/inflated-adjusted-distributions` | 11/11 CI checks passed |
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
-| [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | Local validation passed; CI tracked in PR |
+| [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
 
-The branches are independent and based on `main`. Their roadmap edits may need
-a small conflict resolution when merged. Do not combine their implementation
-scopes merely to avoid that documentation conflict.
+PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11. The local
+LAML, tensor, and random-effect branches are stacked on #12. Their roadmap
+edits may need a small conflict resolution when merged. Do not combine their
+implementation scopes merely to avoid that documentation conflict.
 
 ## Accepted `mgcv` and `bam` decisions
 
@@ -101,45 +102,116 @@ scopes merely to avoid that documentation conflict.
 - 570 Python tests, all R reference checks, package build, Twine validation,
   and clean wheel smoke test passed.
 
-### Phase 12C — next implementation: first LAML experiment
+### Phase 12C — complete locally on `agent/laml-prototype`
 
-Use current one-dimensional P-splines in an overlapping Gaussian
-location-scale model before adding tensor products.
+The first whole-model LAML experiment is implemented in a sibling worktree
+based on `agent/generic-penalized-solver`; commit, push, and draft-PR creation
+are pending the permitted publication window.
 
-Acceptance criteria:
-
-- jointly optimize free `rho_j = log(lambda_j)`;
-- converge the inner penalized coefficient fit for every accepted outer step;
-- use the joint observed information across distribution parameters;
-- use generalized log determinants for rank-deficient penalties;
-- expose objective, gradient, Hessian/conditioning, boundary, and convergence
+- Normal location-scale fitting with `sigma = sigma_floor + exp(eta_sigma)`;
+- joint free or fixed `rho_j = log(lambda_j)` values across `mu` and `sigma`;
+- safeguarded inner Newton fitting with the joint observed autograd Hessian;
+- generalized log determinants and explicit null-space constraints;
+- bounded outer BFGS with central finite differences of the converged profile;
+- objective, gradient, Hessian conditioning, boundary, EDF, and penalty-DF
   diagnostics;
-- compare fitted values, lambdas, criterion, and effective degrees of freedom
-  with an overlapping `mgcv` model;
-- confirm that fixed-lambda results remain compatible with the current GAMLSS
-  path.
+- exact fixture agreement with an overlapping `mgcv` LAML model and
+  fixed-lambda agreement with the current GAMLSS RS path;
+- 578 Python tests, all R checks, CUDA execution, package build, strict Twine
+  validation, and installed-wheel smoke test passed in that worktree.
+
+The validated LAML module and fixtures are now also present in
+`agent/tensor-product-smooths`, where the high-level model adapter and tensor
+selection were implemented. Preserve `agent/laml-prototype` as the
+independently reviewable scalar foundation; the tensor branch should
+eventually stack on it rather than duplicate it in review.
+
+### Phase 12D — tensor and LAML integration complete locally
+
+The tensor-product slice is implemented on
+`agent/tensor-product-smooths`. Its fixed-lambda core is based on
+`agent/generic-penalized-solver`; automatic selection uses the Phase 12C LAML
+module.
+
+- public row-wise Kronecker design and marginal-penalty embedding helpers;
+- `TensorProductSmooth` with one penalty per marginal direction and an
+  optional global sum-to-zero constraint;
+- `TensorInteractionSmooth` with marginal centering transforms that remove
+  lower-order main-effect directions;
+- fixed or automatic `te()` and `ti()` formula syntax over two or more simple
+  numeric columns, with `initial_lambda_` controlling LAML starts;
+- exact absorption of the formula `te()` sum-to-zero constraint into its
+  coefficient parametrization, retained for prediction;
+- fixed-lambda RS/CG backfitting through the generic constrained solver,
+  without changing the scalar `pb()` numerical path;
+- formula L-BFGS and mini-batch fitting on CPU/CUDA;
+- `fit_laml()`/`fit_laml_data()` whole-model assembly for Normal
+  location-scale models, including automatic scalar/tensor penalties,
+  structural null-space constraints, penalty labels/slices, and model-state
+  updates;
+- conditional and joint analytic fixed-lambda covariance for `te()` and
+  `ti()`, including new grids, simultaneous Gaussian bands, multivariate
+  tables, and exact zero covariance in constrained coefficient directions;
+- reproducible RS/CG parametric bootstrap for `te()` and `ti()`, with one
+  stored lambda column per marginal penalty, penalty-level joint labels, and
+  scalar `pb()` result compatibility;
+- parameter-free copies of marginal basis state, without duplicated trainable
+  coefficients;
+- prediction/state round trips, EDF, penalty nullity, quadratic penalties,
+  autograd, rescaling invariance, and CPU/CUDA generic-solver coverage;
+- exact algebraic reference checks against
+  `mgcv::tensor.prod.model.matrix()` and
+  `mgcv::tensor.prod.penalties()`;
+- direct `mgcv::gaulss(method="REML")` tensor reference checks for the LAML
+  objective, both directional lambdas, EDF, coefficients, fitted location and
+  scale, and outer Hessian;
+- 620 Python tests passed without skips, including formula construction,
+  constrained low-level RS and covariance, `te()`/`ti()` RS--CG agreement,
+  conditional/joint inference, vector-lambda bootstrap, automatic
+  `te()`/`ti()` LAML, L-BFGS, mini-batch, prediction, and local CUDA
+  RS/inference/LAML;
+- all GAMLSS, truncation, survival/censoring, and `mgcv` R checks passed;
+- Ruff, dependency, bytecode, package build, strict Twine, and isolated
+  installed-wheel smoke checks passed.
+
+Automatic tensor-lambda selection is now part of this slice. Classical smooth
+bootstrap still refits RS or CG; adding LAML as a bootstrap refit algorithm is
+the remaining step for propagating automatic tensor-selection variability.
+
+### Phase 12E — random-effect portion complete locally
+
+The random-intercept and random-slope slice is implemented in the sibling
+`agent/random-effect-terms` worktree, also based on
+`agent/generic-penalized-solver`.
+
+- ridge-penalized random intercepts and slopes;
+- fixed lambda, local ML, and target-EDF modes;
+- formula `random(group)` and `random(group, x)` construction;
+- persisted categorical level encodings and zero contribution for unseen
+  prediction groups;
+- exact GAMLSS `random()` fixed/ML/DF references and `mgcv` design/identity
+  penalty algebra checks;
+- RS, CG, L-BFGS, mini-batch, autograd, state, and CUDA coverage;
+- 600 Python tests and the complete R/package validation stack passed.
 
 ### Later slices
 
-1. tensor-product full smooths and tensor interactions;
-2. random intercepts and slopes;
-3. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
-4. discretized marginal bases and structured crossproducts;
-5. unconditional inference and smoothing-uncertainty-aware information
+1. LAML bootstrap refits and LAML generalization beyond Normal;
+2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
+3. discretized marginal bases and structured crossproducts;
+4. unconditional inference and smoothing-uncertainty-aware information
    criteria;
-6. basis-dimension, concurvity, rank, and conditioning diagnostics.
+5. basis-dimension, concurvity, rank, and conditioning diagnostics.
 
 ## Open design decisions
 
-- Final formula syntax for generic `s()`, `te()`, `ti()`, and random effects.
-- Whether the first LAML optimizer uses safeguarded Newton, BFGS, or an
-  extended Fellner--Schall prototype.
+- Final formula syntax for generic `s()` and future smooth classes; `te()`,
+  `ti()`, and random-effect syntax now have implemented first slices.
 - How smoothing parameters can be shared across terms or distribution
   parameters.
 - Dense versus sparse storage thresholds for random effects and GMRF
   penalties.
-- Fit-result shape for estimated lambdas, outer-iteration diagnostics, and
-  penalty-level effective degrees of freedom.
+- Sharing or tying selected smoothing parameters across terms.
 - Naming of the structured large-data execution mode; avoid promising complete
   `bam` compatibility prematurely.
 
@@ -158,9 +230,9 @@ whose internal representation is already available.
 
 ## Resume point
 
-After PR #12 is accepted or while it remains under review, start Phase 12C in a
-separate branch based on
-`agent/generic-penalized-solver`. Rebase that branch onto `main` after its
-dependencies merge. Do not add LAML to the solver PR; keep the coefficient
-system and smoothing-selection algorithm reviewable as separate vertical
-slices.
+During the next permitted publication window, commit and push the
+independently reviewable LAML and random-effect branches. Publish the tensor
+branch as a draft stacked on the LAML branch so its review contains only the
+tensor and high-level integration delta. Rebase onto `main` only after
+dependencies merge. Do not merge any existing draft PR without explicit user
+authorization.

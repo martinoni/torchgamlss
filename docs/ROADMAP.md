@@ -146,10 +146,20 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   layered over the GAMLSS-compatible `PSpline`
 - [x] Coefficient-space penalty representation with multiple fixed lambdas
 - [x] Null-space reparameterization for sum-to-zero and point constraints
-- [ ] Whole-model LAML smoothing selection, initially for fixed family
-  parameters and current one-dimensional P-splines
-- [ ] Tensor-product full smooths and ANOVA-style tensor interactions
-- [ ] Random intercepts and slopes represented as ridge-penalized terms
+- [x] First whole-model LAML prototype for Normal location-scale models and
+  current one-dimensional P-splines
+- [ ] Generalize whole-model LAML beyond the first Normal prototype
+- [x] Fixed-lambda tensor-product full smooths and ANOVA-style tensor
+  interactions through the generic dense solver
+- [x] Fixed-lambda `te()`/`ti()` formula construction, prediction, L-BFGS,
+  mini-batch, and CUDA execution
+- [x] RS/CG integration for fixed-lambda multiply penalized tensor terms
+- [x] Conditional and joint analytic fixed-lambda inference for tensor terms
+- [x] RS/CG smooth bootstrap with penalty-level vector-lambda storage for
+  tensor terms
+- [x] Whole-model LAML selection for tensor smoothing parameters, including
+  formula integration and direct `mgcv::te()` REML reference checks
+- [x] Random intercepts and slopes represented as ridge-penalized terms
 - [ ] Thin-plate, cyclic, shrinkage, adaptive, spatial, and GMRF smooths
 - [ ] Discretized marginal bases and structured crossproducts for large data
 - [ ] Unconditional covariance including log-smoothing-parameter uncertainty

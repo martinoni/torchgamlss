@@ -2,11 +2,121 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 import torch
 from torch import Tensor, nn
+
+
+def row_tensor_product(marginal_designs: Sequence[Tensor]) -> Tensor:
+    """Return the row-wise Kronecker product of marginal model matrices."""
+    if isinstance(marginal_designs, Tensor):
+        raise ValueError("marginal_designs must be a sequence of tensors")
+    designs = tuple(marginal_designs)
+    if not designs:
+        raise ValueError("at least one marginal design is required")
+    reference = designs[0]
+    if (
+        not isinstance(reference, Tensor)
+        or reference.ndim != 2
+        or reference.shape[0] < 1
+        or reference.shape[1] < 1
+    ):
+        raise ValueError("marginal design 0 must be a non-empty matrix")
+    if not reference.is_floating_point() or not torch.isfinite(reference).all():
+        raise ValueError("marginal design 0 must be finite and floating-point")
+    for index, design in enumerate(designs[1:], start=1):
+        if (
+            not isinstance(design, Tensor)
+            or design.ndim != 2
+            or design.shape[0] != reference.shape[0]
+            or design.shape[1] < 1
+        ):
+            raise ValueError(
+                f"marginal design {index} must have one row per observation"
+            )
+        if design.dtype != reference.dtype or design.device != reference.device:
+            raise ValueError(
+                f"marginal design {index} must match dtype and device"
+            )
+        if not torch.isfinite(design).all():
+            raise ValueError(f"marginal design {index} must be finite")
+
+    product = reference
+    for design in designs[1:]:
+        product = torch.einsum(
+            "ni,nj->nij",
+            product,
+            design,
+        ).reshape(reference.shape[0], -1)
+    return product
+
+
+def tensor_product_penalties(
+    marginal_penalties: Sequence[Tensor],
+) -> tuple[Tensor, ...]:
+    """Embed one coefficient-space penalty for each tensor margin."""
+    if isinstance(marginal_penalties, Tensor):
+        raise ValueError("marginal_penalties must be a sequence of tensors")
+    penalties = tuple(marginal_penalties)
+    if not penalties:
+        raise ValueError("at least one marginal penalty is required")
+    reference = penalties[0]
+    sizes: list[int] = []
+    for index, penalty in enumerate(penalties):
+        if (
+            not isinstance(penalty, Tensor)
+            or penalty.ndim != 2
+            or penalty.shape[0] < 1
+            or penalty.shape[0] != penalty.shape[1]
+        ):
+            raise ValueError(f"marginal penalty {index} must be square")
+        if not penalty.is_floating_point() or not torch.isfinite(penalty).all():
+            raise ValueError(
+                f"marginal penalty {index} must be finite and floating-point"
+            )
+        if penalty.dtype != reference.dtype or penalty.device != reference.device:
+            raise ValueError(
+                f"marginal penalty {index} must match dtype and device"
+            )
+        tolerance = (
+            100.0
+            * torch.finfo(penalty.dtype).eps
+            * max(penalty.shape)
+            * max(float(penalty.detach().abs().max()), 1.0)
+        )
+        if float((penalty - penalty.mT).detach().abs().max()) > tolerance:
+            raise ValueError(f"marginal penalty {index} must be symmetric")
+        sizes.append(penalty.shape[0])
+
+    embedded: list[Tensor] = []
+    for index, penalty in enumerate(penalties):
+        left_size = math.prod(sizes[:index])
+        right_size = math.prod(sizes[index + 1 :])
+        value = penalty
+        if left_size > 1:
+            value = torch.kron(
+                torch.eye(
+                    left_size,
+                    dtype=reference.dtype,
+                    device=reference.device,
+                ),
+                value,
+            )
+        if right_size > 1:
+            value = torch.kron(
+                value,
+                torch.eye(
+                    right_size,
+                    dtype=reference.dtype,
+                    device=reference.device,
+                ),
+            )
+        embedded.append(0.5 * (value + value.mT))
+    return tuple(embedded)
 
 
 class SmoothTerm(nn.Module, ABC):
@@ -85,6 +195,11 @@ class SmoothTerm(nn.Module, ABC):
         """Return one smoothing parameter for each coefficient penalty."""
         return (self.smoothing_parameter,)
 
+    @property
+    def estimated_smoothing_parameters(self) -> tuple[bool, ...]:
+        """Return one LAML-selection flag for each coefficient penalty."""
+        return (self.estimates_smoothing_parameter,)
+
     def constraints(self, covariates: Tensor) -> Tensor:
         """Return coefficient constraints ``C`` for ``C @ beta = 0``.
 
@@ -104,6 +219,18 @@ class SmoothTerm(nn.Module, ABC):
     def _set_fitted_smoothing_parameter(self, value: float) -> None:
         if value != self.smoothing_parameter:
             raise RuntimeError("This smooth term has a fixed smoothing parameter")
+
+    def _set_fitted_smoothing_parameters(
+        self,
+        values: Sequence[float],
+    ) -> None:
+        """Store smoothing parameters selected by a whole-model method."""
+        normalized = tuple(values)
+        if len(normalized) != 1:
+            raise ValueError(
+                "single-penalty smooth requires one smoothing parameter"
+            )
+        self._set_fitted_smoothing_parameter(float(normalized[0]))
 
     def forward(self, covariate: Tensor) -> Tensor:
         return self.design(covariate) @ self.coefficients
@@ -346,3 +473,487 @@ class PSpline(SmoothTerm):
 
     def penalty_matrix(self) -> Tensor:
         return self._penalty
+
+
+class _MarginalSmoothBasis(nn.Module):
+    """Parameter-free copy of a marginal smooth's basis and penalty state."""
+
+    def __init__(self, term: SmoothTerm) -> None:
+        super().__init__()
+        self.coefficient_count = term.coefficients.numel()
+        self.term = copy.deepcopy(term)
+        coefficients = self.term.coefficients.detach().clone()
+        del self.term.coefficients
+        self.term.register_buffer(
+            "coefficients",
+            coefficients,
+            persistent=False,
+        )
+
+    def design(self, covariate: Tensor) -> Tensor:
+        return self.term.design(covariate)
+
+    def predict_design(self, covariate: Tensor) -> Tensor:
+        return self.term.predict_design(covariate)
+
+    def penalty(self) -> Tensor:
+        return self.term.penalty_matrices()[0]
+
+
+class TensorProductSmooth(SmoothTerm):
+    """Tensor product of single-penalty marginal smooth bases.
+
+    The design is the row-wise Kronecker product of the marginal designs.
+    There is one embedded coefficient-space penalty per margin. With
+    ``center=True``, the term exposes the global sum-to-zero constraint used
+    to separate a full tensor smooth from the model intercept. Supplying
+    ``training_covariates`` absorbs that constraint into the coefficient
+    parametrization and stores the resulting prediction mapping.
+    """
+
+    def __init__(
+        self,
+        marginals: Sequence[SmoothTerm],
+        *,
+        smoothing_parameters: Sequence[float] | None = None,
+        estimate_smoothing: Sequence[bool] | bool = False,
+        center: bool = True,
+        training_covariates: Tensor | None = None,
+        _interaction_covariates: Tensor | None = None,
+    ) -> None:
+        super().__init__()
+        if isinstance(marginals, SmoothTerm):
+            raise ValueError("marginals must be a sequence of smooth terms")
+        marginal_terms = tuple(marginals)
+        if len(marginal_terms) < 2:
+            raise ValueError("a tensor product requires at least two marginals")
+        if any(not isinstance(term, SmoothTerm) for term in marginal_terms):
+            raise ValueError("every marginal must be a SmoothTerm")
+        if not isinstance(center, bool):
+            raise ValueError("center must be a boolean")
+        reference = marginal_terms[0].coefficients
+        marginal_penalties: list[Tensor] = []
+        default_smoothing_parameters: list[float] = []
+        coefficient_counts: list[int] = []
+        for index, term in enumerate(marginal_terms):
+            if (
+                term.coefficients.dtype != reference.dtype
+                or term.coefficients.device != reference.device
+            ):
+                raise ValueError(
+                    f"marginal {index} must match the first dtype and device"
+                )
+            penalties = term.penalty_matrices()
+            if len(penalties) != 1:
+                raise ValueError(
+                    "tensor marginals must each expose exactly one penalty"
+                )
+            penalty = penalties[0]
+            coefficient_count = term.coefficients.numel()
+            if penalty.shape != (coefficient_count, coefficient_count):
+                raise ValueError(
+                    f"marginal {index} penalty has an invalid shape"
+                )
+            marginal_penalties.append(penalty.detach().clone())
+            default_smoothing_parameters.append(term.smoothing_parameters[0])
+            coefficient_counts.append(coefficient_count)
+
+        values = (
+            tuple(default_smoothing_parameters)
+            if smoothing_parameters is None
+            else tuple(smoothing_parameters)
+        )
+        if len(values) != len(marginal_terms):
+            raise ValueError(
+                "smoothing_parameters must have one value per margin"
+            )
+        normalized_values: list[float] = []
+        for index, value in enumerate(values):
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"smoothing parameter {index} must be scalar"
+                ) from error
+            if not math.isfinite(numeric_value) or numeric_value < 0:
+                raise ValueError(
+                    f"smoothing parameter {index} must be finite and non-negative"
+                )
+            normalized_values.append(numeric_value)
+        if isinstance(estimate_smoothing, bool):
+            estimated_smoothing = (estimate_smoothing,) * len(values)
+        else:
+            estimated_smoothing = tuple(estimate_smoothing)
+            if (
+                len(estimated_smoothing) != len(values)
+                or any(
+                    not isinstance(value, bool)
+                    for value in estimated_smoothing
+                )
+            ):
+                raise ValueError(
+                    "estimate_smoothing must contain one boolean per margin"
+                )
+        if any(
+            estimated and value <= 0
+            for estimated, value in zip(
+                estimated_smoothing,
+                normalized_values,
+                strict=True,
+            )
+        ):
+            raise ValueError(
+                "estimated smoothing parameters must start from positive values"
+            )
+
+        self.marginals = nn.ModuleList(
+            _MarginalSmoothBasis(term) for term in marginal_terms
+        )
+        self.marginal_coefficient_counts = tuple(coefficient_counts)
+        self.center = center
+        self.interaction = _interaction_covariates is not None
+        transforms = self._build_marginal_transforms(
+            _interaction_covariates,
+            marginal_penalties,
+            reference,
+        )
+        self._transform_names: list[str] = []
+        for index, transform in enumerate(transforms):
+            name = f"_marginal_transform_{index}"
+            self.register_buffer(name, transform)
+            self._transform_names.append(name)
+        reduced_counts = tuple(transform.shape[1] for transform in transforms)
+        self.coefficient_shape = reduced_counts
+        raw_coefficient_count = math.prod(reduced_counts)
+        coefficient_transform = torch.eye(
+            raw_coefficient_count,
+            dtype=reference.dtype,
+            device=reference.device,
+        )
+        self.constraint_absorbed = training_covariates is not None and center
+        if training_covariates is not None:
+            _validate_tensor_covariates(
+                training_covariates,
+                len(marginal_terms),
+                reference,
+            )
+            if center:
+                training_design = row_tensor_product(
+                    tuple(
+                        marginal.design(training_covariates[:, index])
+                        @ transforms[index]
+                        for index, marginal in enumerate(self.marginals)
+                    )
+                )
+                coefficient_transform = _right_null_space(
+                    training_design.sum(dim=0, keepdim=True)
+                )
+        self.register_buffer(
+            "_coefficient_transform",
+            coefficient_transform,
+        )
+        self.coefficients = nn.Parameter(
+            torch.zeros(
+                coefficient_transform.shape[1],
+                dtype=reference.dtype,
+                device=reference.device,
+            )
+        )
+        self.register_buffer(
+            "_smoothing_parameter_values",
+            torch.tensor(
+                normalized_values,
+                dtype=reference.dtype,
+                device=reference.device,
+            ),
+        )
+        self._estimated_smoothing_parameters = estimated_smoothing
+
+    def _build_marginal_transforms(
+        self,
+        covariates: Tensor | None,
+        penalties: Sequence[Tensor],
+        reference: Tensor,
+    ) -> tuple[Tensor, ...]:
+        if covariates is None:
+            return tuple(
+                torch.eye(
+                    penalty.shape[0],
+                    dtype=reference.dtype,
+                    device=reference.device,
+                )
+                for penalty in penalties
+            )
+        _validate_tensor_covariates(
+            covariates,
+            len(penalties),
+            reference,
+        )
+        transforms = []
+        for index, marginal in enumerate(self.marginals):
+            design = marginal.design(covariates[:, index])
+            constraint = design.sum(dim=0, keepdim=True)
+            transforms.append(_right_null_space(constraint))
+        return tuple(transforms)
+
+    def _marginal_transform(self, index: int) -> Tensor:
+        return getattr(self, self._transform_names[index])
+
+    def marginal_designs(
+        self,
+        covariates: Tensor,
+        *,
+        prediction: bool = False,
+    ) -> tuple[Tensor, ...]:
+        """Return transformed marginal designs used by this tensor term."""
+        _validate_tensor_covariates(
+            covariates,
+            len(self.marginals),
+            self.coefficients,
+        )
+        designs = []
+        for index, marginal in enumerate(self.marginals):
+            covariate = covariates[:, index]
+            design = (
+                marginal.predict_design(covariate)
+                if prediction
+                else marginal.design(covariate)
+            )
+            designs.append(design @ self._marginal_transform(index))
+        return tuple(designs)
+
+    def basis(self, covariate: Tensor) -> Tensor:
+        return self.design(covariate)
+
+    def design(self, covariates: Tensor) -> Tensor:
+        return (
+            row_tensor_product(self.marginal_designs(covariates))
+            @ self._coefficient_transform
+        )
+
+    def predict_design(self, new_covariates: Tensor) -> Tensor:
+        return (
+            row_tensor_product(
+                self.marginal_designs(new_covariates, prediction=True)
+            )
+            @ self._coefficient_transform
+        )
+
+    def penalty_matrix(self) -> Tensor:
+        raise RuntimeError(
+            "tensor smooths have multiple penalties; use penalty_matrices()"
+        )
+
+    def penalty_matrices(self) -> tuple[Tensor, ...]:
+        marginal_penalties = tuple(
+            self._marginal_transform(index).mT
+            @ marginal.penalty()
+            @ self._marginal_transform(index)
+            for index, marginal in enumerate(self.marginals)
+        )
+        return tuple(
+            self._coefficient_transform.mT
+            @ penalty
+            @ self._coefficient_transform
+            for penalty in tensor_product_penalties(marginal_penalties)
+        )
+
+    @property
+    def smoothing_parameter(self) -> float:
+        raise RuntimeError(
+            "tensor smooths have multiple penalties and smoothing parameters; "
+            "use smoothing_parameters"
+        )
+
+    @property
+    def smoothing_parameters(self) -> tuple[float, ...]:
+        return tuple(float(value) for value in self._smoothing_parameter_values)
+
+    @property
+    def estimates_smoothing_parameter(self) -> bool:
+        return any(self._estimated_smoothing_parameters)
+
+    @property
+    def estimated_smoothing_parameters(self) -> tuple[bool, ...]:
+        return self._estimated_smoothing_parameters
+
+    def _set_fitted_smoothing_parameters(
+        self,
+        values: Sequence[float],
+    ) -> None:
+        normalized = tuple(float(value) for value in values)
+        if len(normalized) != len(self.smoothing_parameters):
+            raise ValueError(
+                "tensor smooth requires one smoothing parameter per penalty"
+            )
+        for index, (value, estimated, current) in enumerate(
+            zip(
+                normalized,
+                self.estimated_smoothing_parameters,
+                self.smoothing_parameters,
+                strict=True,
+            )
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(
+                    f"smoothing parameter {index} must be finite and positive"
+                )
+            if not estimated and not math.isclose(
+                value,
+                current,
+                rel_tol=1e-12,
+                abs_tol=1e-14,
+            ):
+                raise RuntimeError(
+                    f"tensor smoothing parameter {index} is fixed"
+                )
+        self._smoothing_parameter_values.copy_(
+            self._smoothing_parameter_values.new_tensor(normalized)
+        )
+
+    @property
+    def penalty_nullity(self) -> int:
+        combined = sum(
+            self.penalty_matrices(),
+            torch.zeros(
+                (self.coefficients.numel(), self.coefficients.numel()),
+                dtype=self.coefficients.dtype,
+                device=self.coefficients.device,
+            ),
+        )
+        rank = int(torch.linalg.matrix_rank(combined).detach())
+        return self.coefficients.numel() - rank
+
+    def constraints(self, covariates: Tensor) -> Tensor:
+        design = self.design(covariates)
+        if self.interaction or not self.center or self.constraint_absorbed:
+            return design.new_empty((0, design.shape[1]))
+        return design.sum(dim=0, keepdim=True)
+
+    def quadratic_penalty(self) -> Tensor:
+        return sum(
+            (
+                smoothing_parameter
+                * (
+                    self.coefficients
+                    @ penalty
+                    @ self.coefficients
+                )
+                for smoothing_parameter, penalty in zip(
+                    self._smoothing_parameter_values,
+                    self.penalty_matrices(),
+                    strict=True,
+                )
+            ),
+            self.coefficients.new_zeros(()),
+        )
+
+    def effective_degrees_of_freedom(
+        self,
+        covariate: Tensor,
+        weights: Tensor,
+    ) -> Tensor:
+        design = self.design(covariate)
+        if weights.ndim != 1 or weights.shape[0] != design.shape[0]:
+            raise ValueError("weights must have one value per tensor row")
+        if weights.dtype != design.dtype or weights.device != design.device:
+            raise ValueError("weights must match tensor smooth dtype and device")
+        if not torch.isfinite(weights).all() or (weights < 0).any():
+            raise ValueError("weights must be finite and non-negative")
+        if weights.sum() <= 0:
+            raise ValueError("at least one tensor smooth weight must be positive")
+        transform = _right_null_space(
+            self.constraints(covariate),
+            allow_empty=True,
+        )
+        reduced_design = design @ transform
+        gram = reduced_design.mT @ (
+            weights.unsqueeze(-1) * reduced_design
+        )
+        combined_penalty = sum(
+            (
+                smoothing_parameter
+                * (transform.mT @ penalty @ transform)
+                for smoothing_parameter, penalty in zip(
+                    self._smoothing_parameter_values,
+                    self.penalty_matrices(),
+                    strict=True,
+                )
+            ),
+            torch.zeros_like(gram),
+        )
+        system = 0.5 * (
+            gram + combined_penalty + (gram + combined_penalty).mT
+        )
+        return torch.trace(torch.linalg.pinv(system) @ gram)
+
+
+class TensorInteractionSmooth(TensorProductSmooth):
+    """Highest-order tensor interaction with marginal main effects removed."""
+
+    def __init__(
+        self,
+        marginals: Sequence[SmoothTerm],
+        training_covariates: Tensor,
+        *,
+        smoothing_parameters: Sequence[float] | None = None,
+        estimate_smoothing: Sequence[bool] | bool = False,
+    ) -> None:
+        super().__init__(
+            marginals,
+            smoothing_parameters=smoothing_parameters,
+            estimate_smoothing=estimate_smoothing,
+            center=False,
+            _interaction_covariates=training_covariates,
+        )
+
+
+def _validate_tensor_covariates(
+    covariates: Tensor,
+    marginal_count: int,
+    reference: Tensor,
+) -> None:
+    if (
+        covariates.ndim != 2
+        or covariates.shape[0] < 1
+        or covariates.shape[1] != marginal_count
+    ):
+        raise ValueError(
+            f"tensor covariates must have shape (n, {marginal_count})"
+        )
+    if covariates.dtype != reference.dtype or covariates.device != reference.device:
+        raise ValueError(
+            "tensor covariates must match the smooth dtype and device"
+        )
+    if not torch.isfinite(covariates).all():
+        raise ValueError("tensor covariates must be finite")
+
+
+def _right_null_space(
+    constraints: Tensor,
+    *,
+    allow_empty: bool = False,
+) -> Tensor:
+    coefficient_count = constraints.shape[1]
+    if constraints.shape[0] == 0:
+        if not allow_empty:
+            raise ValueError("a marginal interaction constraint is empty")
+        return torch.eye(
+            coefficient_count,
+            dtype=constraints.dtype,
+            device=constraints.device,
+        )
+    _, singular_values, right_vectors = torch.linalg.svd(
+        constraints,
+        full_matrices=True,
+    )
+    largest = float(singular_values.detach().max())
+    tolerance = (
+        max(constraints.shape)
+        * torch.finfo(constraints.dtype).eps
+        * largest
+    )
+    rank = int((singular_values.detach() > tolerance).sum())
+    if rank >= coefficient_count:
+        raise ValueError("constraints leave no tensor coefficients")
+    return right_vectors[rank:].mT

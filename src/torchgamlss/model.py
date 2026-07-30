@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -32,7 +33,7 @@ from torchgamlss.fitting import (
     fit_cg,
     fit_rs,
 )
-from torchgamlss.formula import FormulaData, FormulaEncoder
+from torchgamlss.formula import FormulaData, FormulaEncoder, TensorFormulaSpec
 from torchgamlss.inference import (
     InferenceResult,
     SmoothBootstrapResult,
@@ -43,6 +44,11 @@ from torchgamlss.inference import (
     smooth_joint_inference,
     smooth_term_bootstrap,
     smooth_term_inference,
+)
+from torchgamlss.laml import (
+    LAMLControl,
+    NormalLAMLResult,
+    fit_normal_gamlss_laml,
 )
 from torchgamlss.optimization import (
     MiniBatchControl,
@@ -61,7 +67,12 @@ from torchgamlss.quantiles import (
 from torchgamlss.quantiles import (
     quantile_bootstrap as run_quantile_bootstrap,
 )
-from torchgamlss.smooths import PSpline, SmoothTerm
+from torchgamlss.smooths import (
+    PSpline,
+    SmoothTerm,
+    TensorInteractionSmooth,
+    TensorProductSmooth,
+)
 from torchgamlss.survival import SurvivalPrediction, survival_prediction
 
 
@@ -97,6 +108,104 @@ class TermContributions:
         if self.shared is not None:
             total = total + self.shared
         return total + self.offset
+
+
+def _tensor_smooth_from_formula(
+    spec: TensorFormulaSpec,
+    covariates: Tensor,
+) -> SmoothTerm:
+    function_name = "ti" if spec.interaction else "te"
+    marginal_count = len(spec.covariates)
+    options = dict(spec.options)
+    raw_smoothing_parameters = tuple(options.pop("smoothing_parameters"))
+    estimate_smoothing = options.pop("estimate_smoothing", False)
+    smoothing_parameters: list[float] = []
+    for index, value in enumerate(raw_smoothing_parameters):
+        if isinstance(value, bool):
+            raise ValueError(
+                f"{function_name}() smoothing parameter {index} must be numeric"
+            )
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"{function_name}() smoothing parameter {index} must be numeric"
+            ) from error
+        if not math.isfinite(numeric_value) or numeric_value < 0:
+            raise ValueError(
+                f"{function_name}() smoothing parameter {index} must be "
+                "finite and non-negative"
+            )
+        smoothing_parameters.append(numeric_value)
+
+    marginal_options: dict[str, tuple[int, ...]] = {}
+    for name, default in (
+        ("intervals", 10),
+        ("degree", 3),
+        ("penalty_order", 2),
+    ):
+        raw_value = options.pop(name, default)
+        marginal_options[name] = tuple(
+            _formula_marginal_option(
+                raw_value,
+                name=name,
+                index=index,
+                marginal_count=marginal_count,
+                function_name=function_name,
+            )
+            for index in range(marginal_count)
+        )
+    center = options.pop("center", True)
+    assert not options
+    marginals = tuple(
+        PSpline(
+            float(covariates[:, index].min()),
+            float(covariates[:, index].max()),
+            smoothing_parameters[index],
+            intervals=marginal_options["intervals"][index],
+            degree=marginal_options["degree"][index],
+            penalty_order=marginal_options["penalty_order"][index],
+            dtype=covariates.dtype,
+            device=covariates.device,
+        )
+        for index in range(marginal_count)
+    )
+    if spec.interaction:
+        return TensorInteractionSmooth(
+            marginals,
+            covariates,
+            smoothing_parameters=smoothing_parameters,
+            estimate_smoothing=estimate_smoothing,
+        )
+    return TensorProductSmooth(
+        marginals,
+        smoothing_parameters=smoothing_parameters,
+        estimate_smoothing=estimate_smoothing,
+        center=center,
+        training_covariates=covariates if center else None,
+    )
+
+
+def _formula_marginal_option(
+    value: Any,
+    *,
+    name: str,
+    index: int,
+    marginal_count: int,
+    function_name: str,
+) -> int:
+    if isinstance(value, (list, tuple)):
+        if len(value) != marginal_count:
+            raise ValueError(
+                f"{function_name}() {name} must be scalar or contain one "
+                "value per marginal covariate"
+            )
+        value = value[index]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"{function_name}() {name} values must be integers"
+        )
+    return value
 
 
 class GAMLSS(nn.Module):
@@ -257,16 +366,25 @@ class GAMLSS(nn.Module):
             device=device,
             include_response=True,
         )
-        smooth_terms = {
-            parameter: {
+        smooth_terms: dict[str, dict[str, SmoothTerm]] = {}
+        for parameter in family.parameter_names:
+            parameter_terms: dict[str, SmoothTerm] = {
                 spec.name: PSpline.from_data(
                     prepared.smooth_covariates[parameter][spec.name],
                     **dict(spec.options),
                 )
                 for spec in encoder.smooth_specs[parameter]
             }
-            for parameter in family.parameter_names
-        }
+            parameter_terms.update(
+                {
+                    spec.name: _tensor_smooth_from_formula(
+                        spec,
+                        prepared.smooth_covariates[parameter][spec.name],
+                    )
+                    for spec in encoder.tensor_specs[parameter]
+                }
+            )
+            smooth_terms[parameter] = parameter_terms
         model = cls(
             family,
             {
@@ -351,6 +469,26 @@ class GAMLSS(nn.Module):
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             initial_parameters=parameter_starts,
+            control=control,
+        )
+
+    def fit_laml_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        control: LAMLControl | None = None,
+    ) -> NormalLAMLResult:
+        """Fit a formula Normal model with whole-model LAML selection."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        return self.fit_laml(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
             control=control,
         )
 
@@ -1537,6 +1675,28 @@ class GAMLSS(nn.Module):
             control=control,
         )
 
+    def fit_laml(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        control: LAMLControl | None = None,
+    ) -> NormalLAMLResult:
+        """Fit a complete additive Normal model by nested LAML."""
+        self._require_no_neural_predictors("fit_laml()")
+        return fit_normal_gamlss_laml(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            control=control,
+        )
+
     def inference(
         self,
         response: Tensor,
@@ -1967,10 +2127,10 @@ class GAMLSS(nn.Module):
                 f"extra={sorted(supplied_terms - expected_terms)}"
             )
         for term_name, covariate in supplied.items():
-            if covariate.shape != predictor.shape:
+            if covariate.ndim < 1 or covariate.shape[0] != predictor.numel():
                 raise ValueError(
                     f"smooth covariate {term_name!r} for {parameter!r} "
-                    "must have one value per predictor"
+                    "must have one row per predictor"
                 )
         return supplied
 

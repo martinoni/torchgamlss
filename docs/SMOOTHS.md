@@ -185,11 +185,16 @@ joint = model.smooth_joint_bootstrap(
 
 cross_covariance = joint.covariance_block(("mu", "x"), ("sigma", "z"))
 lambda_covariance = joint.smoothing_parameter_covariance_matrix
+lambda_labels = joint.smoothing_parameter_labels
 joint_bands = joint.simultaneous_confidence_bands()
 ```
 
 The full `covariance_matrix` follows `term_order` and `term_slices`.
 Joint bands use one max-|t| critical value over every selected curve point.
+Smoothing-parameter arrays use one column per penalty:
+`smoothing_parameter_labels` identifies each
+`(parameter, term, penalty_index)`, and `smoothing_parameter_slices` maps
+terms to their penalty columns. Scalar-only models retain one column per term.
 
 Aligned refits can also be transformed without rerunning the bootstrap:
 
@@ -314,19 +319,54 @@ compatibility. A `PSpline` can nevertheless be passed explicitly through the
 generic contract with `term.design(x)`, `term.penalty_matrices()`,
 `term.smoothing_parameters`, and `term.constraints(x)`.
 
+## Tensor-product terms
+
+`TensorProductSmooth` constructs a multidimensional smooth from two or more
+single-penalty marginal `SmoothTerm` bases. Its design is the row-wise
+Kronecker product of the marginal designs and it embeds one coefficient-space
+penalty per marginal direction. `TensorInteractionSmooth` first centers each
+marginal basis, excluding its main-effect direction before constructing the
+highest-order interaction.
+
+Both terms store only their product coefficients as trainable parameters.
+Marginal basis state, interaction transforms, smoothing parameters, and
+prediction mappings participate in normal Torch state serialization and
+device/dtype movement. Their design, penalty, constraint, EDF, and quadratic
+penalty paths work with autograd and the generic dense solver on CPU or CUDA.
+Formula `te()` absorbs the full tensor's global sum-to-zero constraint into
+its coefficient mapping; formula `ti()` stores its marginal interaction
+transforms. Both therefore retain identifiability when fitted with fixed
+lambdas through RS, CG, L-BFGS, or mini-batch Adam and when predicting new
+data. RS and CG delegate each multiply penalized partial-residual update to
+the generic constrained solver while retaining the original scalar
+square-root path for exact `pb()` compatibility.
+
+Formula `te()`/`ti()` without `lambda_=` instead marks every marginal
+parameter for joint selection. `fit_laml_data()` assembles all scalar and
+tensor penalties in one Normal location-scale objective, selects the free log
+lambdas together, and writes the result back to the model. Use
+`initial_lambda_=` for LAML starting values. The result exposes flat
+`(parameter, term, penalty_index)` labels and term slices.
+
+See [`TENSOR_SMOOTHS.md`](TENSOR_SMOOTHS.md) for equations and examples. The
+low-level row-product and penalty embedding are checked against
+`mgcv::tensor.prod.model.matrix()` and
+`mgcv::tensor.prod.penalties()`.
+
 ## Current limitations
 
-- Only one-dimensional, equally spaced P-spline bases are available.
-- Generic multiple-penalty systems currently use the dense low-level solver;
-  formula construction and automatic multi-lambda selection are not yet
-  available.
+- Only equally spaced P-splines are available as tensor marginal bases.
+- Generic multiple-penalty systems currently use the dense low-level solver
+  directly, through fixed-lambda formula RS/CG/L-BFGS/mini-batch fitting, or
+  through dense whole-model LAML for Normal location-scale models.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
-  additive models. Analytic fixed-lambda inference provides joint covariance
-  across linear coefficients, spline coefficients, smooth terms, and
-  distribution parameters. Parametric-bootstrap refits additionally propagate
-  lambda-selection uncertainty and provide empirical covariance and
-  simultaneous bands across several curves.
+  additive models, including fixed-lambda tensor terms. Analytic inference
+  provides joint covariance across linear coefficients, smooth coefficients,
+  smooth terms, and distribution parameters. Parametric smooth-bootstrap
+  summaries support scalar- and vector-lambda terms through RS or CG, with
+  one stored bootstrap column per penalty. Repeating LAML selection within
+  each bootstrap replicate remains future work.
 - Automatic smoothing selection is available through `fit_rs()` and
   `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

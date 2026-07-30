@@ -23,6 +23,10 @@ if TYPE_CHECKING:
         SmoothExtremumBootstrapResult,
     )
     from torchgamlss.model import GAMLSS
+    from torchgamlss.smooths import SmoothTerm
+
+
+SmoothingParameterValue = float | tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -97,16 +101,22 @@ class SmoothSimultaneousBand:
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return covariates, estimates, and limits as a pandas DataFrame."""
+        covariates, covariate_columns = _covariate_frame_values(self.covariate)
         values = torch.column_stack(
             (
-                self.covariate,
+                covariates,
                 self.estimates,
                 self.confidence_intervals,
             )
         )
         return pd.DataFrame(
             values.detach().cpu().numpy(),
-            columns=["covariate", "estimate", "ci_lower", "ci_upper"],
+            columns=[
+                *covariate_columns,
+                "estimate",
+                "ci_lower",
+                "ci_upper",
+            ],
         )
 
 
@@ -121,7 +131,7 @@ class SmoothInferenceResult:
     _covariance_root: Tensor = field(repr=False)
     standard_errors: Tensor
     confidence_intervals: Tensor
-    smoothing_parameter: float
+    smoothing_parameter: SmoothingParameterValue
     effective_degrees_of_freedom: float
     confidence_level: float
 
@@ -220,9 +230,10 @@ class SmoothInferenceResult:
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return covariates, fitted contributions, and pointwise intervals."""
+        covariates, covariate_columns = _covariate_frame_values(self.covariate)
         values = torch.column_stack(
             (
-                self.covariate,
+                covariates,
                 self.estimates,
                 self.standard_errors,
                 self.confidence_intervals,
@@ -231,7 +242,7 @@ class SmoothInferenceResult:
         return pd.DataFrame(
             values.detach().cpu().numpy(),
             columns=[
-                "covariate",
+                *covariate_columns,
                 "estimate",
                 "standard_error",
                 "ci_lower",
@@ -251,7 +262,7 @@ class SmoothBootstrapResult:
     bootstrap_estimates: Tensor = field(repr=False)
     standard_errors: Tensor
     confidence_intervals: Tensor
-    smoothing_parameter: float
+    smoothing_parameter: SmoothingParameterValue
     bootstrap_smoothing_parameters: Tensor = field(repr=False)
     confidence_level: float
     replicates: int
@@ -276,19 +287,46 @@ class SmoothBootstrapResult:
         return centered.mT @ centered / (self.replicates - 1)
 
     @property
-    def smoothing_parameter_standard_error(self) -> float:
-        """Return the bootstrap standard error of the smoothing parameter."""
-        return float(self.bootstrap_smoothing_parameters.std(correction=1))
+    def smoothing_parameter_count(self) -> int:
+        """Return the number of penalties represented by this smooth term."""
+        if isinstance(self.smoothing_parameter, tuple):
+            return len(self.smoothing_parameter)
+        return 1
 
     @property
-    def smoothing_parameter_bootstrap_mean(self) -> float:
-        """Return the mean smoothing parameter across successful refits."""
-        return float(self.bootstrap_smoothing_parameters.mean())
+    def smoothing_parameter_standard_error(self) -> float | Tensor:
+        """Return bootstrap standard errors for the smoothing parameters."""
+        standard_errors = self.bootstrap_smoothing_parameters.std(
+            dim=0,
+            correction=1,
+        )
+        if self.smoothing_parameter_count == 1:
+            return float(standard_errors)
+        return standard_errors
 
     @property
-    def smoothing_parameter_bias(self) -> float:
-        """Return bootstrap mean lambda minus the original fitted lambda."""
-        return self.smoothing_parameter_bootstrap_mean - self.smoothing_parameter
+    def smoothing_parameter_bootstrap_mean(self) -> float | Tensor:
+        """Return mean smoothing parameters across successful refits."""
+        means = self.bootstrap_smoothing_parameters.mean(dim=0)
+        if self.smoothing_parameter_count == 1:
+            return float(means)
+        return means
+
+    @property
+    def smoothing_parameter_bias(self) -> float | Tensor:
+        """Return bootstrap mean lambdas minus the original fitted lambdas."""
+        bootstrap_mean = self.smoothing_parameter_bootstrap_mean
+        if self.smoothing_parameter_count == 1:
+            original = _smoothing_parameter_tensor(
+                self.smoothing_parameter,
+                reference=self.bootstrap_smoothing_parameters,
+            )
+            return float(bootstrap_mean) - float(original[0])
+        reference = _smoothing_parameter_tensor(
+            self.smoothing_parameter,
+            reference=self.bootstrap_smoothing_parameters,
+        )
+        return bootstrap_mean - reference
 
     @property
     def smoothing_parameter_confidence_interval(self) -> Tensor:
@@ -299,7 +337,14 @@ class SmoothBootstrapResult:
             dtype=self.bootstrap_smoothing_parameters.dtype,
             device=self.bootstrap_smoothing_parameters.device,
         )
-        return torch.quantile(self.bootstrap_smoothing_parameters, probabilities)
+        intervals = torch.quantile(
+            self.bootstrap_smoothing_parameters,
+            probabilities,
+            dim=0,
+        )
+        if self.smoothing_parameter_count == 1:
+            return intervals
+        return intervals.mT
 
     @property
     def failure_rate(self) -> float:
@@ -342,9 +387,10 @@ class SmoothBootstrapResult:
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return curve estimates and pointwise bootstrap inference."""
+        covariates, covariate_columns = _covariate_frame_values(self.covariate)
         values = torch.column_stack(
             (
-                self.covariate,
+                covariates,
                 self.estimates,
                 self.bootstrap_mean,
                 self.bias,
@@ -355,7 +401,7 @@ class SmoothBootstrapResult:
         return pd.DataFrame(
             values.detach().cpu().numpy(),
             columns=[
-                "covariate",
+                *covariate_columns,
                 "estimate",
                 "bootstrap_mean",
                 "bias",
@@ -728,6 +774,28 @@ class SmoothJointBootstrapResult:
         )
 
     @property
+    def smoothing_parameter_slices(self) -> dict[tuple[str, str], slice]:
+        """Return slices locating each term in penalty-level results."""
+        result = {}
+        start = 0
+        for key in self.term_order:
+            stop = start + self._curve(key).smoothing_parameter_count
+            result[key] = slice(start, stop)
+            start = stop
+        return result
+
+    @property
+    def smoothing_parameter_labels(self) -> tuple[tuple[str, str, int], ...]:
+        """Return parameter, term, and penalty-index labels for lambdas."""
+        return tuple(
+            (parameter, term, penalty_index)
+            for parameter, term in self.term_order
+            for penalty_index in range(
+                self.curves[parameter][term].smoothing_parameter_count
+            )
+        )
+
+    @property
     def estimates(self) -> Tensor:
         """Return original curves concatenated in ``term_order``."""
         return torch.cat([self._curve(key).estimates for key in self.term_order])
@@ -770,25 +838,27 @@ class SmoothJointBootstrapResult:
 
     @property
     def smoothing_parameters(self) -> Tensor:
-        """Return fitted smoothing parameters in ``term_order``."""
+        """Return fitted lambdas flattened by term and penalty index."""
         reference = self._curve(self.term_order[0]).bootstrap_smoothing_parameters
-        return torch.tensor(
+        return torch.cat(
             [
-                self._curve(key).smoothing_parameter
+                _smoothing_parameter_tensor(
+                    self._curve(key).smoothing_parameter,
+                    reference=reference,
+                )
                 for key in self.term_order
-            ],
-            dtype=reference.dtype,
-            device=reference.device,
+            ]
         )
 
     @property
     def bootstrap_smoothing_parameters(self) -> Tensor:
-        """Return aligned smoothing parameters as replicates by terms."""
-        return torch.column_stack(
+        """Return aligned lambdas as replicates by flattened penalties."""
+        return torch.cat(
             [
-                self._curve(key).bootstrap_smoothing_parameters
+                _bootstrap_smoothing_parameter_matrix(self._curve(key))
                 for key in self.term_order
-            ]
+            ],
+            dim=1,
         )
 
     @property
@@ -1205,35 +1275,62 @@ def smooth_term_inference(
         for term_name, term in parameter_terms.items():
             training_covariate = smooth_covariates[parameter][term_name].detach()
             evaluation_covariate = evaluation_covariates[parameter][term_name].detach()
-            training_basis = term.basis(training_covariate)
-            evaluation_basis = term.basis(evaluation_covariate)
-            penalty = term.penalty_matrix()
-            system = training_basis.mT @ (
-                combined_weights.unsqueeze(-1) * training_basis
-            ) + term.smoothing_parameter * (penalty.mT @ penalty)
-            system_inverse = torch.linalg.pinv(system, hermitian=True)
-            coefficient_covariance = system_inverse
+            training_basis = term.design(training_covariate)
+            evaluation_basis = term.predict_design(evaluation_covariate)
+            penalties = term.penalty_matrices()
+            if len(penalties) == 1:
+                penalty = term.penalty_matrix()
+                system = training_basis.mT @ (
+                    combined_weights.unsqueeze(-1) * training_basis
+                ) + term.smoothing_parameter * (penalty.mT @ penalty)
+                coefficient_covariance = torch.linalg.pinv(
+                    system,
+                    hermitian=True,
+                )
 
-            nullity = term.penalty_nullity
-            if nullity:
-                powers = torch.arange(
-                    nullity,
-                    dtype=training_covariate.dtype,
-                    device=training_covariate.device,
+                nullity = term.penalty_nullity
+                if nullity:
+                    powers = torch.arange(
+                        nullity,
+                        dtype=training_covariate.dtype,
+                        device=training_covariate.device,
+                    )
+                    training_null_basis = training_covariate.unsqueeze(-1).pow(
+                        powers
+                    )
+                    null_system = training_null_basis.mT @ (
+                        combined_weights.unsqueeze(-1) * training_null_basis
+                    )
+                    null_inverse = torch.linalg.pinv(
+                        null_system,
+                        hermitian=True,
+                    )
+                    null_basis_coefficients = torch.linalg.lstsq(
+                        training_basis,
+                        training_null_basis,
+                    ).solution
+                    coefficient_covariance = coefficient_covariance - (
+                        null_basis_coefficients
+                        @ null_inverse
+                        @ null_basis_coefficients.mT
+                    )
+            else:
+                transform = _term_constraint_transform(
+                    term,
+                    training_covariate,
+                    context=f"constraints for {parameter!r}.{term_name}",
                 )
-                training_null_basis = training_covariate.unsqueeze(-1).pow(powers)
-                null_system = training_null_basis.mT @ (
-                    combined_weights.unsqueeze(-1) * training_null_basis
+                reduced_basis = training_basis @ transform
+                combined_penalty = _combined_term_penalty(term)
+                reduced_system = reduced_basis.mT @ (
+                    combined_weights.unsqueeze(-1) * reduced_basis
+                ) + transform.mT @ combined_penalty @ transform
+                reduced_covariance = torch.linalg.pinv(
+                    reduced_system,
+                    hermitian=True,
                 )
-                null_inverse = torch.linalg.pinv(null_system, hermitian=True)
-                null_basis_coefficients = torch.linalg.lstsq(
-                    training_basis,
-                    training_null_basis,
-                ).solution
-                coefficient_covariance = coefficient_covariance - (
-                    null_basis_coefficients
-                    @ null_inverse
-                    @ null_basis_coefficients.mT
+                coefficient_covariance = (
+                    transform @ reduced_covariance @ transform.mT
                 )
             coefficient_covariance = (
                 coefficient_covariance + coefficient_covariance.mT
@@ -1278,7 +1375,7 @@ def smooth_term_inference(
                 _covariance_root=covariance_root.detach(),
                 standard_errors=standard_errors.detach(),
                 confidence_intervals=confidence_intervals.detach(),
-                smoothing_parameter=term.smoothing_parameter,
+                smoothing_parameter=_term_smoothing_parameter_value(term),
                 effective_degrees_of_freedom=effective_degrees_of_freedom,
                 confidence_level=confidence_level,
             )
@@ -1407,39 +1504,48 @@ def smooth_joint_inference(
         for term_name, term in model.smooth_terms[parameter].items():
             key = (parameter, term_name)
             training_covariate = smooth_covariates[parameter][term_name].detach()
-            basis = term.basis(training_covariate)
-            penalty = term.penalty_matrix()
-            nullity = term.penalty_nullity
+            basis = term.design(training_covariate)
+            penalties = term.penalty_matrices()
             coefficient_count = term.coefficients.numel()
-            if (
-                penalty.ndim != 2
-                or penalty.shape[1] != coefficient_count
-                or nullity < 0
-            ):
-                raise RuntimeError(
-                    f"invalid penalty structure for {parameter!r}.{term_name}"
+            if len(penalties) == 1:
+                penalty = term.penalty_matrix()
+                nullity = term.penalty_nullity
+                if (
+                    penalty.ndim != 2
+                    or penalty.shape[1] != coefficient_count
+                    or nullity < 0
+                ):
+                    raise RuntimeError(
+                        f"invalid penalty structure for "
+                        f"{parameter!r}.{term_name}"
+                    )
+                penalty_null_space = _right_null_space(
+                    penalty,
+                    expected_nullity=nullity,
+                    context=f"penalty for {parameter!r}.{term_name}",
                 )
-            penalty_null_space = _right_null_space(
-                penalty,
-                expected_nullity=nullity,
-                context=f"penalty for {parameter!r}.{term_name}",
-            )
-            if nullity:
-                null_functions = basis @ penalty_null_space
-                constraints = null_functions.mT @ (
-                    combined_weights.unsqueeze(-1) * basis
-                )
-                transform = _right_null_space(
-                    constraints,
-                    expected_nullity=coefficient_count - nullity,
-                    context=f"identifiability constraints for "
-                    f"{parameter!r}.{term_name}",
-                )
+                if nullity:
+                    null_functions = basis @ penalty_null_space
+                    constraints = null_functions.mT @ (
+                        combined_weights.unsqueeze(-1) * basis
+                    )
+                    transform = _right_null_space(
+                        constraints,
+                        expected_nullity=coefficient_count - nullity,
+                        context=f"identifiability constraints for "
+                        f"{parameter!r}.{term_name}",
+                    )
+                else:
+                    transform = torch.eye(
+                        coefficient_count,
+                        dtype=response.dtype,
+                        device=response.device,
+                    )
             else:
-                transform = torch.eye(
-                    coefficient_count,
-                    dtype=response.dtype,
-                    device=response.device,
+                transform = _term_constraint_transform(
+                    term,
+                    training_covariate,
+                    context=f"constraints for {parameter!r}.{term_name}",
                 )
 
             reduced_count = transform.shape[1]
@@ -1510,13 +1616,9 @@ def smooth_joint_inference(
         parameter, term_name = key
         term = model.smooth_terms[parameter][term_name]
         transform = smooth_transforms[key]
-        penalty = term.penalty_matrix()
+        combined_penalty = _combined_term_penalty(term)
         information[reduced_slice, reduced_slice] += (
-            term.smoothing_parameter
-            * transform.mT
-            @ penalty.mT
-            @ penalty
-            @ transform
+            transform.mT @ combined_penalty @ transform
         )
 
     information = (information + information.mT) / 2.0
@@ -1557,7 +1659,7 @@ def smooth_joint_inference(
             evaluation_covariate = evaluation_covariates[parameter][
                 term_name
             ].detach()
-            evaluation_basis = term.basis(evaluation_covariate)
+            evaluation_basis = term.predict_design(evaluation_covariate)
             curve_root = (
                 evaluation_basis
                 @ coefficient_covariance_root[smooth_full_slices[key]]
@@ -1584,7 +1686,7 @@ def smooth_joint_inference(
                 _covariance_root=curve_root.detach(),
                 standard_errors=standard_errors.detach(),
                 confidence_intervals=confidence_intervals.detach(),
-                smoothing_parameter=term.smoothing_parameter,
+                smoothing_parameter=_term_smoothing_parameter_value(term),
                 effective_degrees_of_freedom=effective_degrees_of_freedom,
                 confidence_level=confidence_level,
             )
@@ -1645,7 +1747,6 @@ def smooth_term_bootstrap(
         model.smooth_terms[parameter] for parameter in model.family.parameter_names
     ):
         raise ValueError("smooth bootstrap requires at least one smooth term")
-
     from torchgamlss.fitting import CGControl, RSControl
 
     expected_control = RSControl if algorithm == "rs" else CGControl
@@ -1697,7 +1798,10 @@ def smooth_term_bootstrap(
     }
 
     original_estimates: dict[str, dict[str, Tensor]] = {}
-    original_smoothing_parameters: dict[str, dict[str, float]] = {}
+    original_smoothing_parameters: dict[
+        str,
+        dict[str, SmoothingParameterValue],
+    ] = {}
     bootstrap_estimates: dict[str, dict[str, Tensor]] = {}
     bootstrap_smoothing_parameters: dict[str, dict[str, Tensor]] = {}
     for parameter in model.family.parameter_names:
@@ -1709,16 +1813,23 @@ def smooth_term_bootstrap(
             evaluation_covariate = evaluation_covariates[parameter][term_name]
             estimate = term(evaluation_covariate).detach()
             original_estimates[parameter][term_name] = estimate.clone()
+            smoothing_parameter = _term_smoothing_parameter_value(term)
             original_smoothing_parameters[parameter][
                 term_name
-            ] = term.smoothing_parameter
+            ] = smoothing_parameter
             bootstrap_estimates[parameter][term_name] = torch.empty(
                 (replicates, estimate.numel()),
                 dtype=estimate.dtype,
                 device=estimate.device,
             )
+            smoothing_parameter_count = len(term.smoothing_parameters)
+            smoothing_parameter_shape = (
+                (replicates,)
+                if smoothing_parameter_count == 1
+                else (replicates, smoothing_parameter_count)
+            )
             bootstrap_smoothing_parameters[parameter][term_name] = torch.empty(
-                replicates,
+                smoothing_parameter_shape,
                 dtype=estimate.dtype,
                 device=estimate.device,
             )
@@ -1789,9 +1900,20 @@ def smooth_term_bootstrap(
                     ].copy_(
                         term(evaluation_covariates[parameter][term_name])
                     )
-                    bootstrap_smoothing_parameters[parameter][term_name][
-                        successful_replicates
-                    ] = term.smoothing_parameter
+                    smoothing_parameter = _term_smoothing_parameter_value(term)
+                    target = bootstrap_smoothing_parameters[parameter][
+                        term_name
+                    ][successful_replicates]
+                    if isinstance(smoothing_parameter, tuple):
+                        target.copy_(
+                            torch.tensor(
+                                smoothing_parameter,
+                                dtype=target.dtype,
+                                device=target.device,
+                            )
+                        )
+                    else:
+                        target.copy_(target.new_tensor(smoothing_parameter))
         successful_replicates += 1
 
     if successful_replicates < replicates:
@@ -1842,6 +1964,119 @@ def smooth_term_bootstrap(
             )
 
     return results
+
+
+def _term_smoothing_parameter_value(
+    term: SmoothTerm,
+) -> SmoothingParameterValue:
+    values = term.smoothing_parameters
+    return values[0] if len(values) == 1 else tuple(values)
+
+
+def _smoothing_parameter_tensor(
+    value: SmoothingParameterValue,
+    *,
+    reference: Tensor,
+) -> Tensor:
+    values = value if isinstance(value, tuple) else (value,)
+    return torch.tensor(
+        values,
+        dtype=reference.dtype,
+        device=reference.device,
+    )
+
+
+def _bootstrap_smoothing_parameter_matrix(
+    result: SmoothBootstrapResult,
+) -> Tensor:
+    parameters = result.bootstrap_smoothing_parameters
+    if parameters.ndim == 1:
+        return parameters.unsqueeze(1)
+    if (
+        parameters.ndim == 2
+        and parameters.shape[1] == result.smoothing_parameter_count
+    ):
+        return parameters
+    raise RuntimeError(
+        "bootstrap smoothing parameters must have shape (replicates,) "
+        "or (replicates, penalties)"
+    )
+
+
+def _combined_term_penalty(term: SmoothTerm) -> Tensor:
+    penalties = term.penalty_matrices()
+    smoothing_parameters = term.smoothing_parameters
+    if len(penalties) != len(smoothing_parameters):
+        raise RuntimeError(
+            "smooth penalties and smoothing parameters have different lengths"
+        )
+    return sum(
+        (
+            smoothing_parameter * penalty
+            for smoothing_parameter, penalty in zip(
+                smoothing_parameters,
+                penalties,
+                strict=True,
+            )
+        ),
+        torch.zeros_like(penalties[0]),
+    )
+
+
+def _term_constraint_transform(
+    term: SmoothTerm,
+    covariate: Tensor,
+    *,
+    context: str,
+) -> Tensor:
+    coefficient_count = term.coefficients.numel()
+    constraints = term.constraints(covariate)
+    if (
+        constraints.ndim != 2
+        or constraints.shape[1] != coefficient_count
+        or constraints.dtype != term.coefficients.dtype
+        or constraints.device != term.coefficients.device
+        or not torch.isfinite(constraints).all()
+    ):
+        raise RuntimeError(
+            f"{context} must be a finite matrix with one column per coefficient"
+        )
+    if constraints.shape[0] == 0:
+        return torch.eye(
+            coefficient_count,
+            dtype=term.coefficients.dtype,
+            device=term.coefficients.device,
+        )
+    _, singular_values, right_vectors = torch.linalg.svd(
+        constraints,
+        full_matrices=True,
+    )
+    tolerance = (
+        max(constraints.shape)
+        * torch.finfo(constraints.dtype).eps
+        * singular_values.max()
+    )
+    rank = int((singular_values > tolerance).sum())
+    if rank >= coefficient_count:
+        raise RuntimeError(f"{context} leave no coefficient free")
+    return right_vectors.mT[:, rank:]
+
+
+def _covariate_frame_values(
+    covariate: Tensor,
+) -> tuple[Tensor, tuple[str, ...]]:
+    if covariate.ndim == 1:
+        return covariate.unsqueeze(-1), ("covariate",)
+    if covariate.ndim == 2 and covariate.shape[1] > 0:
+        return (
+            covariate,
+            tuple(
+                f"covariate_{index}" for index in range(covariate.shape[1])
+            ),
+        )
+    raise RuntimeError(
+        "smooth inference covariates must be a vector or non-empty matrix"
+    )
 
 
 def _right_null_space(

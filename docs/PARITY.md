@@ -462,6 +462,33 @@ resampling follows R's paired resampling of residuals and prior weights;
 cross-language parity is asserted for the statistics rather than random
 sample indices.
 
+## Tensor-product algebra
+
+The tensor reference fixture compares TorchGAMLSS directly with
+`mgcv::tensor.prod.model.matrix()` and
+`mgcv::tensor.prod.penalties()`. It checks the complete row-wise Kronecker
+design and every entry of the embedded marginal penalties using fixed model
+matrices and positive-semidefinite penalties.
+
+The separate tensor LAML fixture is a whole-model numerical check against
+`mgcv::gaulss(method="REML")`. It exports the exact `mgcv::te()` design and
+both directional penalties, then compares the negative LAML objective,
+lambdas, EDF, every coefficient, fitted location and scale, and the outer
+Hessian.
+
+Fixed tensor lambdas can also be fitted with the generic
+dense solver or constructed through formula `te()`/`ti()` terms for
+RS/CG/L-BFGS/mini-batch fitting. Formula tests verify construction, exact
+absorbed centering, stored interaction transforms, prediction, CUDA RS
+execution, external-constraint preservation, and numerical agreement between
+RS and CG. They also verify conditional and joint analytic covariance, new
+grids, multivariate tables, Gaussian bands, and zero covariance along explicit
+constraint directions. Seeded RS/CG bootstrap tests verify fitted-surface
+variation, vector-lambda storage, penalty-level labels, and scalar-result
+compatibility. Formula LAML tests additionally verify automatic `te()` and
+`ti()` selection, state updates, structural constraints, and local CUDA
+execution.
+
 ## Reproducing the fixtures
 
 From the repository root:
@@ -474,6 +501,10 @@ Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_mgcv_tensor_reference.R
+Rscript tools/generate_mgcv_tensor_reference.R --check
+Rscript tools/generate_mgcv_laml_reference.R
+Rscript tools/generate_mgcv_laml_reference.R --check
 python tools/run_parity.py examples/normal_location_scale/parity.json `
   --output-dir work/parity/normal-location-scale
 python tools/run_parity.py examples/bccg_centile_curves/parity.json `
@@ -495,8 +526,12 @@ changing files and compares them with explicit tolerances.
   <https://cran.r-project.org/package=gamlss.tr>
 - `gamlss.cens` 5.0-7, distributed by CRAN under GPL-2 or GPL-3:
   <https://cran.r-project.org/package=gamlss.cens>
+- `mgcv` 1.9-4, distributed by CRAN under GPL-2 or later:
+  <https://cran.r-project.org/package=mgcv>
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
+- Wood (2006),
+  <https://doi.org/10.1111/j.1541-0420.2006.00574.x>
 
 The RS and CG implementations follow the working-response, diagonal, and
 cross-parameter Fisher-weight updates in `gamlss` 5.5-0, `R/gamlss-5.R`.

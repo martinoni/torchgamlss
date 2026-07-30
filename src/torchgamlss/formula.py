@@ -24,6 +24,8 @@ def _identity_transform(value: Any, *args: Any, **kwargs: Any) -> Any:
 _FORMULA_CONTEXT = {
     "offset": _identity_transform,
     "pb": _identity_transform,
+    "te": _identity_transform,
+    "ti": _identity_transform,
 }
 
 
@@ -34,6 +36,17 @@ class SmoothFormulaSpec:
     name: str
     covariate: str
     options: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class TensorFormulaSpec:
+    """Configuration extracted from one ``te(...)`` or ``ti(...)`` factor."""
+
+    name: str
+    covariates: tuple[str, ...]
+    interaction: bool
+    options: Mapping[str, Any]
+    factor_expression: str
 
 
 @dataclass(frozen=True)
@@ -58,6 +71,7 @@ class FormulaEncoder:
         model_specs: Mapping[str, ModelSpec],
         design_columns: Mapping[str, tuple[str, ...]],
         smooth_specs: Mapping[str, tuple[SmoothFormulaSpec, ...]],
+        tensor_specs: Mapping[str, tuple[TensorFormulaSpec, ...]],
         offset_columns: Mapping[str, str],
     ) -> None:
         self.parameter_names = parameter_names
@@ -66,6 +80,7 @@ class FormulaEncoder:
         self.model_specs = dict(model_specs)
         self.design_columns = dict(design_columns)
         self.smooth_specs = dict(smooth_specs)
+        self.tensor_specs = dict(tensor_specs)
         self.offset_columns = dict(offset_columns)
 
     @classmethod
@@ -94,6 +109,7 @@ class FormulaEncoder:
         model_specs: dict[str, ModelSpec] = {}
         design_columns: dict[str, tuple[str, ...]] = {}
         smooth_specs: dict[str, tuple[SmoothFormulaSpec, ...]] = {}
+        tensor_specs: dict[str, tuple[TensorFormulaSpec, ...]] = {}
         offset_columns: dict[str, str] = {}
 
         for index, parameter in enumerate(parameter_names):
@@ -112,17 +128,23 @@ class FormulaEncoder:
                     )
                 matrix = materialized
 
-            parameter_smooths, parameter_offset_factors = _special_factors(
-                matrix.model_spec
-            )
+            (
+                parameter_smooths,
+                parameter_tensors,
+                parameter_offset_factors,
+            ) = _special_factors(matrix.model_spec)
             if len(parameter_offset_factors) > 1:
                 raise ValueError(
                     f"formula for {parameter!r} may contain at most one offset()"
                 )
+            tensor_factors = {
+                spec.factor_expression for spec in parameter_tensors
+            }
             columns = tuple(
                 str(column)
                 for column in matrix.columns
                 if str(column) not in parameter_offset_factors
+                and str(column) not in tensor_factors
             )
             if not columns:
                 raise ValueError(
@@ -132,6 +154,7 @@ class FormulaEncoder:
             model_specs[parameter] = matrix.model_spec
             design_columns[parameter] = columns
             smooth_specs[parameter] = tuple(parameter_smooths)
+            tensor_specs[parameter] = tuple(parameter_tensors)
             if parameter_offset_factors:
                 factor_expression = next(iter(parameter_offset_factors))
                 offset_columns[parameter] = parameter_offset_factors[factor_expression]
@@ -144,6 +167,7 @@ class FormulaEncoder:
             model_specs=model_specs,
             design_columns=design_columns,
             smooth_specs=smooth_specs,
+            tensor_specs=tensor_specs,
             offset_columns=offset_columns,
         )
 
@@ -187,6 +211,20 @@ class FormulaEncoder:
                 )
                 for spec in self.smooth_specs[parameter]
             }
+            smooth_covariates[parameter].update(
+                {
+                    spec.name: _frame_tensor(
+                        frame.loc[:, list(spec.covariates)],
+                        dtype=dtype,
+                        device=device,
+                        context=(
+                            f"tensor covariates {spec.name!r} "
+                            f"for {parameter!r}"
+                        ),
+                    )
+                    for spec in self.tensor_specs[parameter]
+                }
+            )
 
         response = None
         if include_response:
@@ -315,8 +353,13 @@ def _response_column(materialized: ModelMatrices, frame: pd.DataFrame) -> str:
 
 def _special_factors(
     model_spec: ModelSpec,
-) -> tuple[list[SmoothFormulaSpec], dict[str, str]]:
+) -> tuple[
+    list[SmoothFormulaSpec],
+    list[TensorFormulaSpec],
+    dict[str, str],
+]:
     smooths: list[SmoothFormulaSpec] = []
+    tensors: list[TensorFormulaSpec] = []
     offsets: dict[str, str] = {}
     smooth_names: set[str] = set()
 
@@ -327,19 +370,21 @@ def _special_factors(
             nested_special = any(
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id in {"offset", "pb"}
+                and node.func.id in {"offset", "pb", "te", "ti"}
                 for node in ast.walk(ast.parse(expression, mode="eval"))
             )
             if call is None:
                 if nested_special:
                     raise ValueError(
-                        "pb() and offset() must be standalone additive formula terms"
+                        "pb(), te(), ti(), and offset() must be standalone "
+                        "additive formula terms"
                     )
                 continue
             name, parsed_call = call
             if len(term.factors) != 1:
                 raise ValueError(
-                    "pb() and offset() cannot be used in formula interactions"
+                    "pb(), te(), ti(), and offset() cannot be used in "
+                    "formula interactions"
                 )
             if name == "offset":
                 covariate = _simple_covariate(parsed_call, "offset")
@@ -348,19 +393,34 @@ def _special_factors(
                 offsets[expression] = covariate
                 continue
 
+            if name in {"te", "ti"}:
+                covariates = _tensor_covariates(parsed_call, name)
+                options = _tensor_options(parsed_call, name, len(covariates))
+                default_name = f"{name}_{'_'.join(covariates)}"
+                smooth_name = options.pop("name", default_name)
+                _validate_smooth_name(smooth_name, name)
+                if smooth_name in smooth_names:
+                    raise ValueError(
+                        f"duplicate smooth name: {smooth_name!r}"
+                    )
+                smooth_names.add(smooth_name)
+                tensors.append(
+                    TensorFormulaSpec(
+                        name=smooth_name,
+                        covariates=covariates,
+                        interaction=name == "ti",
+                        options=options,
+                        factor_expression=expression,
+                    )
+                )
+                continue
+
             covariate = _simple_covariate(parsed_call, "pb")
             options = _pb_options(parsed_call)
             smooth_name = options.pop("name", covariate)
-            if (
-                not isinstance(smooth_name, str)
-                or not smooth_name
-                or "." in smooth_name
-            ):
-                raise ValueError(
-                    "pb() name must be a non-empty string containing no dots"
-                )
+            _validate_smooth_name(smooth_name, "pb")
             if smooth_name in smooth_names:
-                raise ValueError(f"duplicate pb() smooth name: {smooth_name!r}")
+                raise ValueError(f"duplicate smooth name: {smooth_name!r}")
             smooth_names.add(smooth_name)
             smooths.append(
                 SmoothFormulaSpec(
@@ -369,7 +429,7 @@ def _special_factors(
                     options=options,
                 )
             )
-    return smooths, offsets
+    return smooths, tensors, offsets
 
 
 def _special_call(expression: str) -> tuple[str, ast.Call] | None:
@@ -380,7 +440,7 @@ def _special_call(expression: str) -> tuple[str, ast.Call] | None:
     if (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
-        and node.func.id in {"offset", "pb"}
+        and node.func.id in {"offset", "pb", "te", "ti"}
     ):
         return node.func.id, node
     return None
@@ -390,6 +450,24 @@ def _simple_covariate(call: ast.Call, function_name: str) -> str:
     if not call.args or not isinstance(call.args[0], ast.Name):
         raise ValueError(f"{function_name}() requires a simple numeric column name")
     return call.args[0].id
+
+
+def _tensor_covariates(call: ast.Call, function_name: str) -> tuple[str, ...]:
+    if len(call.args) < 2 or any(
+        not isinstance(argument, ast.Name) for argument in call.args
+    ):
+        raise ValueError(
+            f"{function_name}() requires at least two simple numeric "
+            "column names followed by keyword options"
+        )
+    return tuple(argument.id for argument in call.args)
+
+
+def _validate_smooth_name(value: Any, function_name: str) -> None:
+    if not isinstance(value, str) or not value or "." in value:
+        raise ValueError(
+            f"{function_name}() name must be a non-empty string containing no dots"
+        )
 
 
 def _pb_options(call: ast.Call) -> dict[str, Any]:
@@ -426,6 +504,75 @@ def _pb_options(call: ast.Call) -> dict[str, Any]:
             options[name] = ast.literal_eval(keyword.value)
         except (ValueError, TypeError) as error:
             raise ValueError(f"pb() option {name!r} must be a literal") from error
+    return options
+
+
+def _tensor_options(
+    call: ast.Call,
+    function_name: str,
+    marginal_count: int,
+) -> dict[str, Any]:
+    aliases = {
+        "inter": "intervals",
+        "initial_lambda_": "initial_smoothing_parameters",
+        "lambda_": "smoothing_parameters",
+    }
+    allowed = {
+        "center",
+        "degree",
+        "initial_smoothing_parameters",
+        "intervals",
+        "name",
+        "penalty_order",
+        "smoothing_parameters",
+    }
+    options: dict[str, Any] = {}
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            raise ValueError(
+                f"{function_name}() does not accept expanded keyword arguments"
+            )
+        name = aliases.get(keyword.arg, keyword.arg)
+        if name not in allowed:
+            raise ValueError(
+                f"unsupported {function_name}() option: {keyword.arg!r}"
+            )
+        if name in options:
+            raise ValueError(
+                f"duplicate {function_name}() option: {name!r}"
+            )
+        try:
+            options[name] = ast.literal_eval(keyword.value)
+        except (ValueError, TypeError) as error:
+            raise ValueError(
+                f"{function_name}() option {name!r} must be a literal"
+            ) from error
+
+    fixed = "smoothing_parameters" in options
+    if fixed and "initial_smoothing_parameters" in options:
+        raise ValueError(
+            f"{function_name}() accepts either smoothing_parameters or "
+            "initial_smoothing_parameters, not both"
+        )
+    smoothing_parameters = options.pop(
+        "initial_smoothing_parameters",
+        options.get(
+            "smoothing_parameters",
+            (10.0,) * marginal_count,
+        ),
+    )
+    if (
+        not isinstance(smoothing_parameters, (list, tuple))
+        or len(smoothing_parameters) != marginal_count
+    ):
+        raise ValueError(
+            f"{function_name}() smoothing_parameters must contain one "
+            "value per marginal covariate"
+        )
+    options["smoothing_parameters"] = tuple(smoothing_parameters)
+    options["estimate_smoothing"] = not fixed
+    if function_name == "ti" and "center" in options:
+        raise ValueError("ti() does not accept the center option")
     return options
 
 
