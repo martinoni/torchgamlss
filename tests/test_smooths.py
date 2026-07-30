@@ -69,6 +69,33 @@ def test_pspline_forward_penalty_and_effective_degrees_of_freedom():
     assert 2.0 < float(edf) < term.coefficients.numel()
 
 
+def test_pspline_exposes_generic_basis_penalty_constraint_contract():
+    covariate = torch.linspace(-1.0, 1.0, 21, dtype=torch.float64)
+    term = PSpline.from_data(
+        covariate,
+        smoothing_parameter=4.0,
+        intervals=8,
+    )
+
+    torch.testing.assert_close(term.design(covariate), term.basis(covariate))
+    torch.testing.assert_close(
+        term.predict_design(covariate),
+        term.basis(covariate),
+    )
+    penalty_root = term.penalty_matrix()
+    penalty_matrices = term.penalty_matrices()
+    assert len(penalty_matrices) == 1
+    torch.testing.assert_close(
+        penalty_matrices[0],
+        penalty_root.mT @ penalty_root,
+    )
+    assert term.smoothing_parameters == (4.0,)
+    constraints = term.constraints(covariate)
+    assert constraints.shape == (0, term.coefficients.numel())
+    assert constraints.dtype == covariate.dtype
+    assert constraints.device == covariate.device
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [

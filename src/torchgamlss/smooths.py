@@ -10,7 +10,14 @@ from torch import Tensor, nn
 
 
 class SmoothTerm(nn.Module, ABC):
-    """Protocol for a penalized additive predictor term."""
+    """Protocol for a penalized additive predictor term.
+
+    ``basis()`` and ``penalty_matrix()`` are the original scalar-penalty
+    interface retained for GAMLSS ``pb()`` compatibility. The generic
+    ``design()``, ``penalty_matrices()``, ``constraints()``, and
+    ``predict_design()`` methods expose the basis--penalty representation
+    needed by multidimensional and multiply penalized smooths.
+    """
 
     coefficients: nn.Parameter
 
@@ -47,6 +54,48 @@ class SmoothTerm(nn.Module, ABC):
         """Return the GAIC/GCV effective-degrees-of-freedom multiplier."""
         return 2.0
 
+    def design(self, covariates: Tensor) -> Tensor:
+        """Return the training design for the supplied smooth covariates.
+
+        This generic name deliberately does not imply one-dimensional input.
+        Existing smooths delegate to ``basis()``; future multivariate terms can
+        specialize the representation after the classical fitter consumes this
+        interface directly.
+        """
+        return self.basis(covariates)
+
+    def predict_design(self, new_covariates: Tensor) -> Tensor:
+        """Return the design mapping used for out-of-sample prediction."""
+        return self.design(new_covariates)
+
+    def penalty_matrices(self) -> tuple[Tensor, ...]:
+        """Return unscaled positive-semidefinite coefficient penalties.
+
+        The legacy ``penalty_matrix()`` is a square-root penalty ``D``. The
+        corresponding coefficient-space matrix is ``S = D.T @ D``. Returning
+        a tuple establishes the representation required for terms with
+        ``sum_j lambda_j S_j`` penalties while preserving scalar ``pb()``
+        behavior.
+        """
+        penalty_root = self.penalty_matrix()
+        return (penalty_root.mT @ penalty_root,)
+
+    @property
+    def smoothing_parameters(self) -> tuple[float, ...]:
+        """Return one smoothing parameter for each coefficient penalty."""
+        return (self.smoothing_parameter,)
+
+    def constraints(self, covariates: Tensor) -> Tensor:
+        """Return coefficient constraints ``C`` for ``C @ beta = 0``.
+
+        Classical ``pb()`` compatibility currently uses no explicit
+        constraint. Smooths requiring centering or point constraints can
+        override this method and will be fitted through a null-space
+        reparameterization in a later vertical slice.
+        """
+        design = self.design(covariates)
+        return design.new_empty((0, self.coefficients.numel()))
+
     @property
     def penalty_nullity(self) -> int:
         """Return the dimension of the unpenalized coefficient subspace."""
@@ -57,7 +106,7 @@ class SmoothTerm(nn.Module, ABC):
             raise RuntimeError("This smooth term has a fixed smoothing parameter")
 
     def forward(self, covariate: Tensor) -> Tensor:
-        return self.basis(covariate) @ self.coefficients
+        return self.design(covariate) @ self.coefficients
 
     def quadratic_penalty(self) -> Tensor:
         differences = self.penalty_matrix() @ self.coefficients
