@@ -93,6 +93,8 @@ becoming special cases inside the RS or CG loops.
 
 ### 12B — generic penalized solver
 
+Implementation status: complete on `agent/generic-penalized-solver`.
+
 - accept multiple fixed penalties per term;
 - validate symmetry, positive semidefiniteness, rank, dtype, and device;
 - impose linear constraints through null-space reparameterization;

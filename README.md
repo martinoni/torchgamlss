@@ -82,6 +82,8 @@ The current implementation contains:
   linear and additive predictors;
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
+- a dense low-level solver for multiple fixed positive-semidefinite smooth
+  penalties and null-space-reparameterized linear constraints on CPU or CUDA;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
 - target-EDF P-splines compatible with `pb(x, df=...)`;
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with

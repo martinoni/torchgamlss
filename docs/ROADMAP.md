@@ -144,8 +144,8 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 
 - [x] Generic `design` + penalties + constraints + prediction-design contract
   layered over the GAMLSS-compatible `PSpline`
-- [ ] Coefficient-space penalty representation with multiple lambdas per term
-- [ ] Null-space reparameterization for sum-to-zero and point constraints
+- [x] Coefficient-space penalty representation with multiple fixed lambdas
+- [x] Null-space reparameterization for sum-to-zero and point constraints
 - [ ] Whole-model LAML smoothing selection, initially for fixed family
   parameters and current one-dimensional P-splines
 - [ ] Tensor-product full smooths and ANOVA-style tensor interactions

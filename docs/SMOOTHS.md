@@ -249,9 +249,77 @@ gcv_term = PSpline.from_data(
 
 `smoothing_parameter` and `degrees_of_freedom` are mutually exclusive.
 
+## Generic multiple-penalty systems
+
+The low-level dense solver accepts one or more fixed coefficient-space
+penalties and optional linear equality constraints. It minimizes
+
+```text
+sum_i w_i (y_i - X_i beta)^2 + beta' (sum_j lambda_j S_j) beta
+```
+
+subject to
+
+```text
+C beta = 0.
+```
+
+For example:
+
+```python
+import torch
+from torchgamlss import solve_penalized_least_squares
+
+design = torch.tensor(
+    [[1.0, -1.0, 0.5], [1.0, 0.0, -0.2], [1.0, 1.0, 0.8]],
+    dtype=torch.float64,
+)
+response = torch.tensor([0.0, 0.5, 1.4], dtype=torch.float64)
+weights = torch.ones_like(response)
+
+first_penalty = torch.diag(
+    torch.tensor([0.0, 1.0, 0.0], dtype=torch.float64)
+)
+second_penalty = torch.diag(
+    torch.tensor([0.0, 0.0, 1.0], dtype=torch.float64)
+)
+sum_to_zero = torch.tensor([[1.0, 1.0, 1.0]], dtype=torch.float64)
+
+fit = solve_penalized_least_squares(
+    design,
+    response,
+    weights,
+    (first_penalty, second_penalty),
+    (2.0, 5.0),
+    constraints=sum_to_zero,
+)
+coefficients = fit.coefficients
+edf = fit.effective_degrees_of_freedom
+```
+
+Each `S_j` is validated for shape, finiteness, symmetry, dtype/device
+compatibility, and numerical positive semidefiniteness. Smoothing parameters
+must be finite and non-negative. Constraints are applied through an SVD
+null-space reparameterization; redundant constraint rows are allowed.
+
+The result also exposes fitted values, the combined penalty matrix, individual
+penalty ranks, constraint rank and null space, and the reduced system condition
+number. Rank-deficient penalties are supported when the complete penalized
+system remains identifiable.
+
+This API currently uses fixed lambdas. It does not yet perform whole-model
+LAML selection. Classical `PSpline` fitting through RS and CG continues to use
+the existing square-root augmented solver for exact `gamlss::pb()` numerical
+compatibility. A `PSpline` can nevertheless be passed explicitly through the
+generic contract with `term.design(x)`, `term.penalty_matrices()`,
+`term.smoothing_parameters`, and `term.constraints(x)`.
+
 ## Current limitations
 
 - Only one-dimensional, equally spaced P-spline bases are available.
+- Generic multiple-penalty systems currently use the dense low-level solver;
+  formula construction and automatic multi-lambda selection are not yet
+  available.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
   additive models. Analytic fixed-lambda inference provides joint covariance

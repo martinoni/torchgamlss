@@ -82,26 +82,25 @@ scopes merely to avoid that documentation conflict.
 - GAMLSS, truncation, survival, and censoring R reference checks passed;
 - 11/11 GitHub Actions jobs passed.
 
-### Phase 12B — next implementation
+### Phase 12B — complete on `agent/generic-penalized-solver`
 
-Build the generic penalized coefficient solver before implementing a new
-smoother.
+- public dense `solve_penalized_least_squares()` API;
+- multiple fixed positive-semidefinite `S_j` matrices and non-negative lambdas;
+- shape, symmetry, finiteness, dtype, device, numerical PSD, and rank
+  validation;
+- `S_lambda = sum_j lambda_j S_j`;
+- SVD null-space reparameterization for `C beta = 0`, including redundant
+  constraints;
+- coefficient estimates, fitted values, total EDF, combined penalty,
+  component ranks, constraint rank/null space, and condition diagnostics;
+- numerically thresholded PSD roots for rank-deficient penalties at extreme
+  lambda;
+- unchanged classical square-root solver for scalar `pb()` parity;
+- CPU float64 and local CUDA coverage;
+- 570 Python tests, all R reference checks, package build, Twine validation,
+  and clean wheel smoke test passed.
 
-Acceptance criteria:
-
-- accept multiple fixed positive-semidefinite `S_j` matrices and matching
-  non-negative lambdas;
-- validate dimensions, symmetry, finiteness, dtype, device, rank, and numerical
-  positive semidefiniteness;
-- construct `S_lambda = sum_j lambda_j S_j`;
-- impose `C beta = 0` through a numerically stable null-space basis;
-- provide penalized solves and total effective degrees of freedom;
-- preserve the current augmented least-squares route for scalar `pb()` parity;
-- test full-rank, rank-deficient, constrained, and extreme-lambda cases;
-- run on CPU float64 and CUDA where supported;
-- leave automatic multi-lambda selection out of this slice.
-
-### Phase 12C — first LAML experiment
+### Phase 12C — next implementation: first LAML experiment
 
 Use current one-dimensional P-splines in an overlapping Gaussian
 location-scale model before adding tensor products.
@@ -138,13 +137,13 @@ Acceptance criteria:
   parameters.
 - Dense versus sparse storage thresholds for random effects and GMRF
   penalties.
-- Public result shape for multiple lambdas and penalty-level effective degrees
-  of freedom.
+- Fit-result shape for estimated lambdas, outer-iteration diagnostics, and
+  penalty-level effective degrees of freedom.
 - Naming of the structured large-data execution mode; avoid promising complete
   `bam` compatibility prematurely.
 
-These choices must not block Phase 12B, whose internal representation is common
-to all of them.
+These choices must not block the first constrained P-spline LAML prototype,
+whose internal representation is already available.
 
 ## Working rules
 
@@ -158,8 +157,9 @@ to all of them.
 
 ## Resume point
 
-After PR #11 is accepted or while it remains under review, start Phase 12B in a
-separate branch based on `agent/generic-smooth-architecture`. Rebase that branch
-onto `main` after PR #11 merges. Do not add the generic solver to PR #11; keep
-the architecture contract and its first consumer reviewable as separate
-vertical slices.
+After the generic penalized-solver PR is accepted or while it remains under
+review, start Phase 12C in a separate branch based on
+`agent/generic-penalized-solver`. Rebase that branch onto `main` after its
+dependencies merge. Do not add LAML to the solver PR; keep the coefficient
+system and smoothing-selection algorithm reviewable as separate vertical
+slices.

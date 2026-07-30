@@ -28,10 +28,12 @@ from torchgamlss import (
     InverseGaussian,
     LogNormal,
     Normal,
+    PenalizedLeastSquaresResult,
     PowerExponential,
     StudentT,
     TruncatedFamily,
     Weibull,
+    solve_penalized_least_squares,
 )
 
 
@@ -51,6 +53,24 @@ def main() -> None:
         raise RuntimeError("installed survival-family exports are invalid")
     if IG is not InverseGaussian or GG is not GeneralizedGamma:
         raise RuntimeError("installed extended survival-family exports are invalid")
+
+    penalty_fit = solve_penalized_least_squares(
+        torch.eye(2, dtype=torch.float64),
+        torch.tensor([1.0, 2.0], dtype=torch.float64),
+        torch.ones(2, dtype=torch.float64),
+        (torch.eye(2, dtype=torch.float64),),
+        (2.0,),
+        constraints=torch.tensor([[1.0, -1.0]], dtype=torch.float64),
+    )
+    if not isinstance(penalty_fit, PenalizedLeastSquaresResult):
+        raise RuntimeError("installed generic penalty solver result is invalid")
+    if not torch.isfinite(penalty_fit.coefficients).all():
+        raise RuntimeError("installed generic penalty solver is non-finite")
+    if not torch.allclose(
+        penalty_fit.coefficients[:1],
+        penalty_fit.coefficients[1:],
+    ):
+        raise RuntimeError("installed generic penalty constraints are invalid")
 
     data = pd.DataFrame(
         {
