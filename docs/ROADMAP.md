@@ -4,6 +4,9 @@ TorchGAMLSS will grow in verified vertical slices. Each slice must include
 automated comparisons with the reference R implementation before it is treated
 as supported.
 
+The current implementation state, accepted architectural decisions, and
+next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
+
 ## Phase 0 — foundation
 
 - [x] Package skeleton and GPL-3.0-only licensing
@@ -139,8 +142,20 @@ as supported.
 
 ## Phase 12 — additive-model ecosystem
 
-- [ ] Tensor-product and multidimensional smooths
-- [ ] Free-knot and expanded penalty families
-- [ ] Spatial smooths and GMRF-style penalties
+- [x] Generic `design` + penalties + constraints + prediction-design contract
+  layered over the GAMLSS-compatible `PSpline`
+- [ ] Coefficient-space penalty representation with multiple lambdas per term
+- [ ] Null-space reparameterization for sum-to-zero and point constraints
+- [ ] Whole-model LAML smoothing selection, initially for fixed family
+  parameters and current one-dimensional P-splines
+- [ ] Tensor-product full smooths and ANOVA-style tensor interactions
+- [ ] Random intercepts and slopes represented as ridge-penalized terms
+- [ ] Thin-plate, cyclic, shrinkage, adaptive, spatial, and GMRF smooths
+- [ ] Discretized marginal bases and structured crossproducts for large data
+- [ ] Unconditional covariance including log-smoothing-parameter uncertainty
+- [ ] Basis-dimension, concurvity, rank, and conditioning diagnostics
 - [ ] Cross-validation and rolling-origin model validation
 - [ ] Expanded diagnostic and plotting compatibility with the GAMLSS ecosystem
+
+See [`SMOOTH_ARCHITECTURE.md`](SMOOTH_ARCHITECTURE.md) for the staged design,
+compatibility rules, and validation gates.
