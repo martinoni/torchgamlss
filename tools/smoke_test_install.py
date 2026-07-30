@@ -255,6 +255,50 @@ def main() -> None:
     ):
         raise RuntimeError("installed te() LAML state update is invalid")
 
+    bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
+    bootstrap_generator = torch.Generator().manual_seed(44)
+    bootstrap_y = (
+        0.4
+        + torch.sin(2.5 * bootstrap_x)
+        + 0.16
+        * torch.randn(
+            bootstrap_x.numel(),
+            dtype=torch.float64,
+            generator=bootstrap_generator,
+        )
+    )
+    laml_bootstrap_frame = pd.DataFrame(
+        {"x": bootstrap_x.numpy(), "y": bootstrap_y.numpy()}
+    )
+    laml_bootstrap_model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ pb(x, intervals=4)", "sigma": "~ 1"},
+        laml_bootstrap_frame,
+    )
+    laml_bootstrap_control = LAMLControl(
+        outer_max_iterations=25,
+        outer_gradient_tolerance=1e-4,
+    )
+    laml_bootstrap_model.fit_laml_data(
+        laml_bootstrap_frame,
+        control=laml_bootstrap_control,
+    )
+    laml_bootstrap = laml_bootstrap_model.smooth_bootstrap_data(
+        laml_bootstrap_frame,
+        new_data=laml_bootstrap_frame.iloc[::10].drop(columns="y"),
+        replicates=10,
+        max_attempts=20,
+        algorithm="laml",
+        control=laml_bootstrap_control,
+        generator=torch.Generator().manual_seed(99),
+    )["mu"]["x"]
+    if laml_bootstrap.algorithm != "laml":
+        raise RuntimeError("installed LAML bootstrap algorithm is invalid")
+    if laml_bootstrap.bootstrap_smoothing_parameters.std() <= 0:
+        raise RuntimeError("installed LAML bootstrap did not reselect lambda")
+    if not torch.isfinite(laml_bootstrap.bootstrap_estimates).all():
+        raise RuntimeError("installed LAML bootstrap estimates are non-finite")
+
     model = GAMLSS.from_formula(
         Normal(),
         {"mu": "y ~ x", "sigma": "~ 1"},

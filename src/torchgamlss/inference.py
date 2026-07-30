@@ -15,8 +15,15 @@ from scipy.stats import norm
 from scipy.stats import t as student_t
 from torch import Tensor
 
+from torchgamlss.bootstrap import (
+    BootstrapAlgorithm,
+    BootstrapControl,
+    bootstrap_fit_converged,
+    fit_bootstrap_model,
+    validate_bootstrap_refit,
+)
+
 if TYPE_CHECKING:
-    from torchgamlss.fitting import CGControl, RSControl
     from torchgamlss.functionals import (
         SmoothCrossingBootstrapResult,
         SmoothDerivedBootstrapResult,
@@ -1714,16 +1721,16 @@ def smooth_term_bootstrap(
     evaluation_smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
     replicates: int = 999,
     max_attempts: int | None = None,
-    algorithm: Literal["rs", "cg"] = "rs",
-    control: RSControl | CGControl | None = None,
+    algorithm: BootstrapAlgorithm = "rs",
+    control: BootstrapControl | None = None,
     confidence_level: float = 0.95,
     generator: torch.Generator | None = None,
 ) -> dict[str, dict[str, SmoothBootstrapResult]]:
     """Refit parametric bootstrap samples and summarize smooth uncertainty.
 
     Each replicate draws a response from the fitted distribution and reruns
-    the selected classical fitting algorithm. Automatic smoothing-parameter
-    selection is therefore repeated rather than held fixed.
+    RS, CG, or whole-model LAML. Automatic smoothing-parameter selection is
+    therefore repeated rather than held fixed.
     """
     if (
         isinstance(replicates, bool)
@@ -1741,20 +1748,11 @@ def smooth_term_bootstrap(
         raise ValueError("max_attempts must be an integer not smaller than replicates")
     if not math.isfinite(confidence_level) or not 0.0 < confidence_level < 1.0:
         raise ValueError("confidence_level must be finite and between zero and one")
-    if algorithm not in {"rs", "cg"}:
-        raise ValueError("algorithm must be 'rs' or 'cg'")
+    algorithm = validate_bootstrap_refit(model, algorithm, control)
     if not any(
         model.smooth_terms[parameter] for parameter in model.family.parameter_names
     ):
         raise ValueError("smooth bootstrap requires at least one smooth term")
-    from torchgamlss.fitting import CGControl, RSControl
-
-    expected_control = RSControl if algorithm == "rs" else CGControl
-    if control is not None and not isinstance(control, expected_control):
-        raise ValueError(
-            f"control must be {expected_control.__name__} when algorithm="
-            f"{algorithm!r}"
-        )
 
     model_parameter = next(model.parameters())
     if (
@@ -1863,31 +1861,22 @@ def smooth_term_bootstrap(
             continue
         bootstrap_model = copy.deepcopy(model)
         try:
-            if algorithm == "rs":
-                fit_result = bootstrap_model.fit_rs(
-                    bootstrap_response,
-                    design_matrices,
-                    weights=case_weights,
-                    offsets=offsets,
-                    smooth_covariates=smooth_covariates,
-                    initial_parameters=fitted_parameters,
-                    control=control,
-                )
-            else:
-                fit_result = bootstrap_model.fit_cg(
-                    bootstrap_response,
-                    design_matrices,
-                    weights=case_weights,
-                    offsets=offsets,
-                    smooth_covariates=smooth_covariates,
-                    initial_parameters=fitted_parameters,
-                    control=control,
-                )
+            fit_result = fit_bootstrap_model(
+                bootstrap_model,
+                bootstrap_response,
+                design_matrices,
+                weights=case_weights,
+                offsets=offsets,
+                smooth_covariates=smooth_covariates,
+                initial_parameters=fitted_parameters,
+                algorithm=algorithm,
+                control=control,
+            )
         except (FloatingPointError, RuntimeError, ValueError) as error:
             failure_messages.append(str(error))
             continue
-        if not fit_result.converged:
-            failure_messages.append("classical fit did not converge")
+        if not bootstrap_fit_converged(fit_result, algorithm):
+            failure_messages.append(f"{algorithm.upper()} fit did not converge")
             continue
 
         with torch.no_grad():

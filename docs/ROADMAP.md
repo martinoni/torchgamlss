@@ -159,6 +159,8 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   tensor terms
 - [x] Whole-model LAML selection for tensor smoothing parameters, including
   formula integration and direct `mgcv::te()` REML reference checks
+- [x] Fixed-design LAML bootstrap refits with joint scalar/tensor lambda
+  reselection for smooth and response-quantile inference
 - [x] Random intercepts and slopes represented as ridge-penalized terms
 - [ ] Thin-plate, cyclic, shrinkage, adaptive, spatial, and GMRF smooths
 - [ ] Discretized marginal bases and structured crossproducts for large data

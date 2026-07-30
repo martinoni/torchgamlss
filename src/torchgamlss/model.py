@@ -13,6 +13,7 @@ from torch import Tensor, nn
 from torch.distributions import Distribution
 from torch.utils.data import DataLoader
 
+from torchgamlss.bootstrap import BootstrapAlgorithm, BootstrapControl
 from torchgamlss.diagnostics import (
     BucketPlotResult,
     ModelDiagnostics,
@@ -676,8 +677,8 @@ class GAMLSS(nn.Module):
         new_data: Any = None,
         replicates: int = 999,
         max_attempts: int | None = None,
-        algorithm: Literal["rs", "cg"] = "rs",
-        control: RSControl | CGControl | None = None,
+        algorithm: BootstrapAlgorithm = "rs",
+        control: BootstrapControl | None = None,
         confidence_level: float = 0.95,
         generator: torch.Generator | None = None,
     ) -> QuantileBootstrapResult:
@@ -715,8 +716,8 @@ class GAMLSS(nn.Module):
         new_data: Any = None,
         replicates: int = 999,
         max_attempts: int | None = None,
-        algorithm: Literal["rs", "cg"] = "rs",
-        control: RSControl | CGControl | None = None,
+        algorithm: BootstrapAlgorithm = "rs",
+        control: BootstrapControl | None = None,
         confidence_level: float = 0.95,
         generator: torch.Generator | None = None,
     ) -> QuantileBootstrapResult:
@@ -824,8 +825,8 @@ class GAMLSS(nn.Module):
         new_data: Any = None,
         replicates: int = 999,
         max_attempts: int | None = None,
-        algorithm: Literal["rs", "cg"] = "rs",
-        control: RSControl | CGControl | None = None,
+        algorithm: BootstrapAlgorithm = "rs",
+        control: BootstrapControl | None = None,
         confidence_level: float = 0.95,
         generator: torch.Generator | None = None,
     ) -> dict[str, dict[str, SmoothBootstrapResult]]:
@@ -861,8 +862,8 @@ class GAMLSS(nn.Module):
         new_data: Any = None,
         replicates: int = 999,
         max_attempts: int | None = None,
-        algorithm: Literal["rs", "cg"] = "rs",
-        control: RSControl | CGControl | None = None,
+        algorithm: BootstrapAlgorithm = "rs",
+        control: BootstrapControl | None = None,
         confidence_level: float = 0.95,
         generator: torch.Generator | None = None,
     ) -> SmoothJointBootstrapResult:
@@ -1788,13 +1789,13 @@ class GAMLSS(nn.Module):
         ) = None,
         replicates: int = 999,
         max_attempts: int | None = None,
-        algorithm: Literal["rs", "cg"] = "rs",
-        control: RSControl | CGControl | None = None,
+        algorithm: BootstrapAlgorithm = "rs",
+        control: BootstrapControl | None = None,
         confidence_level: float = 0.95,
         generator: torch.Generator | None = None,
     ) -> dict[str, dict[str, SmoothBootstrapResult]]:
-        """Bootstrap smooth curves while repeating classical fitting."""
-        self._require_no_neural_predictors("classical smooth bootstrap")
+        """Bootstrap smooth curves while repeating the selected estimator."""
+        self._require_no_neural_predictors("parametric smooth bootstrap")
         return smooth_term_bootstrap(
             self,
             response,
@@ -1824,8 +1825,8 @@ class GAMLSS(nn.Module):
         ) = None,
         replicates: int = 999,
         max_attempts: int | None = None,
-        algorithm: Literal["rs", "cg"] = "rs",
-        control: RSControl | CGControl | None = None,
+        algorithm: BootstrapAlgorithm = "rs",
+        control: BootstrapControl | None = None,
         confidence_level: float = 0.95,
         generator: torch.Generator | None = None,
     ) -> SmoothJointBootstrapResult:
@@ -1862,13 +1863,13 @@ class GAMLSS(nn.Module):
         ) = None,
         replicates: int = 999,
         max_attempts: int | None = None,
-        algorithm: Literal["rs", "cg"] = "rs",
-        control: RSControl | CGControl | None = None,
+        algorithm: BootstrapAlgorithm = "rs",
+        control: BootstrapControl | None = None,
         confidence_level: float = 0.95,
         generator: torch.Generator | None = None,
     ) -> QuantileBootstrapResult:
         """Bootstrap conditional response quantiles with complete refits."""
-        self._require_no_neural_predictors("classical quantile bootstrap")
+        self._require_no_neural_predictors("parametric quantile bootstrap")
         return run_quantile_bootstrap(
             self,
             response,

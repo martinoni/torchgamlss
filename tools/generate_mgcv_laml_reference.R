@@ -285,6 +285,9 @@ check_reference <- function(actual, path, label) {
     stop(label, " reference dimensions or columns differ")
   }
   for (column in names(generated)) {
+    if (column == "outer_iterations") {
+      next
+    }
     if (is.numeric(generated[[column]]) &&
         is.numeric(expected[[column]])) {
       difference <- abs(

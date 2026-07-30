@@ -336,8 +336,10 @@ RS and CG use the generic multiple-penalty solver during backfitting while
 preserving the original scalar `pb()` path. `fit_laml_data()` instead selects
 all automatic `pb()`, `te()`, and `ti()` lambdas jointly for the current
 Normal location-scale slice, exposes the outer gradient/Hessian, and updates
-the model state. Fixed-tensor parametric bootstrap refits the complete model
-and stores one lambda column per marginal penalty. See
+the model state. Parametric bootstrap stores one lambda column per marginal
+penalty. Fixed tensor terms can refit through RS or CG; automatic tensor terms
+use `algorithm="laml"` to repeat whole-model selection in every successful
+replicate. See
 [`TENSOR_SMOOTHS.md`](TENSOR_SMOOTHS.md).
 
 `pb()`, `te()`, `ti()`, and `offset()` must currently be standalone additive

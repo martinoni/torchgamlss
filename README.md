@@ -107,8 +107,9 @@ The current implementation contains:
   coefficients, smooth terms, and distribution parameters, including
   multiply penalized tensor surfaces;
 - fixed-design parametric bootstrap intervals, cross-smooth covariance, and
-  joint bands that refit RS or CG, repeat available smoothing-parameter
-  selection, and retain one lambda column per tensor penalty;
+  joint bands that refit RS, CG, or whole-model Normal LAML, repeat available
+  smoothing-parameter selection, and retain one lambda column per tensor
+  penalty;
 - aligned bootstrap inference for smooth contrasts, differences, derivatives,
   extrema, and linearly interpolated crossings;
 - fixed-design bootstrap intervals and joint bands for response-scale centile
@@ -203,9 +204,10 @@ or neural contribution. See
 workflow. Formula `te()` and `ti()` terms can be fitted with fixed lambdas
 through RS, CG, L-BFGS, or mini-batch Adam, or with jointly selected marginal
 lambdas through `fit_laml_data()` for Normal location-scale models. Their
-RS/CG parametric bootstrap stores one value per marginal lambda while
-preserving the scalar `pb()` API. The generic tensor-product API, examples,
-and current limitations are documented in
+parametric bootstrap stores one value per marginal lambda while preserving the
+scalar `pb()` API; `algorithm="laml"` repeats automatic joint tensor
+selection in every successful bootstrap replicate. The generic tensor-product
+API, examples, and current limitations are documented in
 [`docs/TENSOR_SMOOTHS.md`](docs/TENSOR_SMOOTHS.md).
 
 ## Development

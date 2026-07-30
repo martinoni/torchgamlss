@@ -23,6 +23,31 @@ its existing fixed/automatic formula semantics. `fit_laml()` is the
 corresponding tensor-level model method, while `fit_normal_laml()` remains the
 low-level assembled-matrix API.
 
+The same estimator can be repeated inside fixed-design parametric bootstrap
+samples:
+
+```python
+bootstrap = model.smooth_joint_bootstrap_data(
+    data,
+    new_data=new_data,
+    replicates=999,
+    algorithm="laml",
+    control=LAMLControl(),
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+Every successful replicate jointly reselects all automatic scalar and tensor
+lambdas and stores one smoothing-parameter column per penalty. The same
+`algorithm="laml"` option is accepted by `quantile_bootstrap_data()` and
+`centile_bootstrap_data()`.
+
+`LAMLControl.inner_relaxed_gradient_multiplier` controls a guarded
+near-stationary fallback used only when the inner Newton line search stalls or
+reaches its iteration limit. The primary gradient tolerance remains
+`inner_gradient_tolerance`; the relaxed multiplier defaults to 50 to absorb
+small BLAS/platform differences in otherwise converged dense profiles.
+
 ## Model and criterion
 
 The model has separate predictors
@@ -240,8 +265,9 @@ Rscript tools/generate_mgcv_laml_reference.R --check
 - no sparse or discretized large-data backend is connected;
 - smoothing-parameter uncertainty is reported through the outer Hessian but
   is not yet propagated into unconditional coefficient covariance;
-- classical smooth bootstrap currently refits RS or CG, not LAML, so automatic
-  tensor-lambda selection is not yet repeated inside bootstrap samples;
+- parametric LAML bootstrap is simulation-based and repeats the complete
+  nested optimization, so it can be substantially slower and experience more
+  failed refits than RS or CG;
 - `REML` is not exposed as a general alias. `LAML` remains the correct generic
   name outside models with a well-defined restricted-likelihood
   interpretation.

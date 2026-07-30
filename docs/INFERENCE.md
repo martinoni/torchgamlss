@@ -278,12 +278,33 @@ For each successful replicate, TorchGAMLSS:
 1. draws one response at every original design row from the fitted
    distribution;
 2. clones the fitted model;
-3. reruns RS or CG, including ML, GAIC, GCV, or target-EDF lambda selection;
+3. reruns RS or CG, including ML, GAIC, GCV, or target-EDF lambda selection,
+   or reruns whole-model LAML with joint scalar/tensor lambda selection;
 4. evaluates every smooth on the requested covariate values.
 
 Use the same `algorithm=` and `control=` settings as the original fit so the
 bootstrap distribution represents the estimator that produced the reported
-model.
+model. For a Normal model fitted with `fit_laml_data()`, use:
+
+```python
+from torchgamlss import LAMLControl
+
+bootstrap = model.smooth_joint_bootstrap_data(
+    data,
+    new_data=new_data,
+    replicates=999,
+    algorithm="laml",
+    control=LAMLControl(),
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+This repeats the complete nested LAML optimization in every successful
+replicate. Automatic `pb()`, `te()`, and `ti()` lambdas are selected jointly;
+fixed formula lambdas remain fixed. LAML bootstrap currently inherits the
+whole-model fit's Normal-family, identity-`mu`, log-`sigma`, additive-model
+scope. It is materially more expensive than RS or CG bootstrap, so use
+`max_attempts` and inspect `failure_rate`.
 
 The reported pointwise intervals are percentile bootstrap intervals.
 `standard_errors` and `covariance_matrix` are empirical across the successful
@@ -382,7 +403,10 @@ Each successful replicate simulates one training response, refits every
 distribution parameter, repeats configured smoothing selection, predicts all
 parameters on `new_data`, and then evaluates the requested family quantiles.
 Thus a BCT or BCPE centile curve, for example, propagates the joint variation
-of `mu`, `sigma`, `nu`, and `tau`.
+of `mu`, `sigma`, `nu`, and `tau`. RS and CG are available for every
+sampleable supported family. `algorithm="laml"` is additionally available
+for additive Normal models and repeats joint scalar/tensor selection before
+evaluating each quantile curve.
 
 Pointwise limits are percentile bootstrap intervals. The flattened
 `covariance_matrix` follows prediction row first and probability second.
@@ -532,12 +556,12 @@ additive RS and CG fits, including fixed-lambda `te()` and `ti()` terms.
 Fixed-lambda analytic inference provides joint covariance across linear
 coefficients, smooth coefficients, smooth terms, and distribution parameters.
 Parametric-bootstrap smooth inference supports scalar- and multiple-penalty
-terms with both algorithms. It repeats available smoothing-parameter
-selection, stores one lambda column per penalty, and provides empirical joint
-covariance, simultaneous bands, and derived-curve functionals across fitted
-smooths. Tensor lambdas must currently be fixed for RS/CG bootstrap refits, so
-their bootstrap variance is zero. Repeating whole-model LAML inside each
-bootstrap sample remains future work.
+terms with RS, CG, and whole-model Normal LAML refits. It repeats available
+smoothing-parameter selection, stores one lambda column per penalty, and
+provides empirical joint covariance, simultaneous bands, and derived-curve
+functionals across fitted smooths. Tensor lambdas must be fixed for RS/CG
+refits, while `algorithm="laml"` reselects automatic tensor lambdas jointly
+in every successful bootstrap sample.
 
 The Hessian and conditional smooth calculations are local Wald
 approximations. They do not replace profile likelihood or robust sandwich

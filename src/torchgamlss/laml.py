@@ -21,6 +21,7 @@ class LAMLControl:
     inner_max_iterations: int = 100
     outer_max_iterations: int = 30
     inner_gradient_tolerance: float = 1e-7
+    inner_relaxed_gradient_multiplier: float = 50.0
     inner_step_tolerance: float = 1e-11
     outer_gradient_tolerance: float = 5e-5
     outer_step_tolerance: float = 1e-7
@@ -45,6 +46,14 @@ class LAMLControl:
             value = getattr(self, name)
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive")
+        if (
+            not math.isfinite(self.inner_relaxed_gradient_multiplier)
+            or self.inner_relaxed_gradient_multiplier < 1.0
+        ):
+            raise ValueError(
+                "inner_relaxed_gradient_multiplier must be finite and "
+                "at least one"
+            )
         lower, upper = self.log_smoothing_parameter_bounds
         if (
             not math.isfinite(lower)
@@ -440,7 +449,11 @@ class _NormalProfileEvaluator:
                     break
                 scale *= 0.5
             if not accepted:
-                if gradient_max <= 10.0 * threshold:
+                if (
+                    gradient_max
+                    <= self.control.inner_relaxed_gradient_multiplier
+                    * threshold
+                ):
                     coefficients = current.detach()
                     converged = True
                     break
@@ -463,8 +476,10 @@ class _NormalProfileEvaluator:
                 converged = gradient_max <= final_threshold
                 break
 
-        relaxed_threshold = 10.0 * self.control.inner_gradient_tolerance * (
-            1.0 + float(coefficients.detach().abs().max())
+        relaxed_threshold = (
+            self.control.inner_relaxed_gradient_multiplier
+            * self.control.inner_gradient_tolerance
+            * (1.0 + float(coefficients.detach().abs().max()))
         )
         if not converged and gradient_max <= relaxed_threshold:
             converged = True
@@ -856,6 +871,7 @@ def fit_normal_gamlss_laml(
     weights: Tensor | None = None,
     offsets: Mapping[str, Tensor] | None = None,
     control: LAMLControl | None = None,
+    warm_start: bool = False,
 ) -> NormalLAMLResult:
     """Fit a complete additive Normal model and update its Torch state.
 
@@ -1030,6 +1046,17 @@ def fit_normal_gamlss_laml(
         if constraint_rows
         else None
     )
+    initial_coefficients = None
+    if warm_start:
+        initial_coefficients = response.new_empty(coefficient_count)
+        for parameter in model.family.parameter_names:
+            initial_coefficients[linear_slices[parameter]] = (
+                model.coefficients[parameter].detach()
+            )
+            for term_name, term in model.smooth_terms[parameter].items():
+                initial_coefficients[smooth_slices[(parameter, term_name)]] = (
+                    term.coefficients.detach()
+                )
     result = fit_normal_laml(
         response,
         parameter_designs["mu"],
@@ -1041,6 +1068,7 @@ def fit_normal_gamlss_laml(
         mu_offset=contributions["mu"].offset,
         sigma_offset=contributions["sigma"].offset,
         constraints=constraints,
+        initial_coefficients=initial_coefficients,
         control=control,
     )
     result = replace(

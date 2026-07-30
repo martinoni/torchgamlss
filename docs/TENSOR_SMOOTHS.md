@@ -223,16 +223,18 @@ zero variance. Formula `te()` and `ti()` reuse their stored transforms.
 Multivariate inference tables contain `covariate_0`, `covariate_1`, and so on.
 
 `smooth_bootstrap_data()` and `smooth_joint_bootstrap_data()` refit tensor
-models through RS or CG and store one lambda column per marginal penalty.
+models and store one lambda column per marginal penalty.
 For a two-margin surface,
 `bootstrap_smoothing_parameters.shape == (replicates, 2)` and the
 penalty-wise mean, standard error, bias, and percentile intervals are
 available on each curve result. The joint result flattens all penalty columns
 and labels them by `(parameter, term, penalty_index)`. For fixed tensor
 lambdas their bootstrap variance is zero, while the fitted surface still
-varies across simulated responses. The current classical bootstrap accepts
-RS or CG refits; repeating automatic LAML selection within each bootstrap
-sample and unconditional LAML coefficient covariance remain future work.
+varies across simulated responses. RS and CG accept fixed tensor lambdas.
+For automatic tensor terms in an additive Normal model,
+`algorithm="laml"` repeats joint marginal-lambda selection within every
+successful bootstrap sample. Unconditional analytic LAML coefficient
+covariance remains future work.
 
 ## Low-level algebra
 
@@ -255,7 +257,7 @@ Their ordering and values are checked exactly against
 - Marginals must currently be `SmoothTerm` instances with exactly one
   coefficient-space penalty each.
 - Joint automatic selection is available through dense whole-model LAML for
-  the Normal location-scale family.
+  the Normal location-scale family, including parametric bootstrap refits.
 - Tensor terms are consumed through LAML, the generic dense penalized solver,
   the classical fixed-lambda RS/CG paths, or formula fixed-lambda
   L-BFGS/mini-batch fitting.

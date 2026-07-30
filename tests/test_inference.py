@@ -1075,6 +1075,14 @@ def test_smooth_bootstrap_validates_replicates_algorithm_and_control():
             smooth_covariates=smooth_covariates,
             control=CGControl(),
         )
+    with pytest.raises(ValueError, match="LAMLControl"):
+        model.smooth_bootstrap(
+            response,
+            design,
+            smooth_covariates=smooth_covariates,
+            algorithm="laml",
+            control=RSControl(),
+        )
     with pytest.raises(ValueError, match="max_attempts"):
         model.smooth_bootstrap(
             response,

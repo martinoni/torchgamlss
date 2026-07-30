@@ -34,6 +34,10 @@ Development cycle toward the third alpha release.
   log lambdas, structural null-space constraints, model-state updates,
   penalty-level result labels, CPU/CUDA execution, and direct
   `mgcv::gaulss(method="REML")` tensor-product parity.
+- Fixed-design LAML bootstrap refits for additive Normal models, including
+  joint scalar/tensor lambda reselection, aligned smooth covariance and bands,
+  response-quantile/centile inference, retry accounting, and CPU/CUDA
+  execution.
 - Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
   `gamlss.dist` parity for density, CDF, quantiles, survival functions,
   hazards, moments, scores, working derivatives, and starting values.

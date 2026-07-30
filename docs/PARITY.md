@@ -373,8 +373,9 @@ Response-scale centile bootstrap bands are a simulate-and-refit extension over
 these parity-tested quantiles.
 
 Parametric smooth bootstrap is also an extension: it composes the
-parity-tested family distributions, RS/CG fitting, and smoothing-selection
-updates rather than reproducing a single `gamlss` return value. Seeded
+parity-tested family distributions, RS/CG fitting or whole-model Normal LAML,
+and smoothing-selection updates rather than reproducing a single `gamlss`
+return value. Seeded
 samplers for BCCG, BCT, BCPE, TF, and PE are checked through their fitted CDFs
 using the probability integral transform. Joint bootstrap covariance and
 multi-smooth max-|t| bands reuse the same aligned refits; they do not claim a
@@ -487,7 +488,9 @@ constraint directions. Seeded RS/CG bootstrap tests verify fitted-surface
 variation, vector-lambda storage, penalty-level labels, and scalar-result
 compatibility. Formula LAML tests additionally verify automatic `te()` and
 `ti()` selection, state updates, structural constraints, and local CUDA
-execution.
+execution. Seeded LAML bootstrap tests verify repeated joint tensor-lambda
+selection, aligned fitted-surface variation, original-state isolation, and
+CPU/CUDA execution.
 
 ## Reproducing the fixtures
 

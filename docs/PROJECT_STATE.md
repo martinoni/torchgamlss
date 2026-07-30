@@ -23,7 +23,7 @@ large-data smooth fitting.
 
 ## Current pull requests
 
-All four pull requests are intentionally draft and must not be merged without
+All five pull requests are intentionally draft and must not be merged without
 an explicit decision.
 
 | PR | Scope | Branch | Validation |
@@ -32,11 +32,13 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and automatic LAML selection | `agent/tensor-product-smooths` | 624 local tests passed; CI rerun pending |
 
-PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11. The local
-LAML, tensor, and random-effect branches are stacked on #12. Their roadmap
-edits may need a small conflict resolution when merged. Do not combine their
-implementation scopes merely to avoid that documentation conflict.
+PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
+#13 currently contains the LAML/tensor slice stacked on #12. The local
+random-effect branch is also stacked on #12. Their roadmap edits may need a
+small conflict resolution when merged. Do not combine implementation scopes
+merely to avoid that documentation conflict.
 
 ## Accepted `mgcv` and `bam` decisions
 
@@ -152,9 +154,10 @@ module.
 - conditional and joint analytic fixed-lambda covariance for `te()` and
   `ti()`, including new grids, simultaneous Gaussian bands, multivariate
   tables, and exact zero covariance in constrained coefficient directions;
-- reproducible RS/CG parametric bootstrap for `te()` and `ti()`, with one
-  stored lambda column per marginal penalty, penalty-level joint labels, and
-  scalar `pb()` result compatibility;
+- reproducible RS/CG parametric bootstrap for fixed-lambda `te()` and `ti()`,
+  plus whole-model LAML bootstrap for automatic tensor terms, with one stored
+  lambda column per marginal penalty, penalty-level joint labels, and scalar
+  `pb()` result compatibility;
 - parameter-free copies of marginal basis state, without duplicated trainable
   coefficients;
 - prediction/state round trips, EDF, penalty nullity, quadratic penalties,
@@ -165,7 +168,7 @@ module.
 - direct `mgcv::gaulss(method="REML")` tensor reference checks for the LAML
   objective, both directional lambdas, EDF, coefficients, fitted location and
   scale, and outer Hessian;
-- 620 Python tests passed without skips, including formula construction,
+- 624 Python tests passed without skips, including formula construction,
   constrained low-level RS and covariance, `te()`/`ti()` RS--CG agreement,
   conditional/joint inference, vector-lambda bootstrap, automatic
   `te()`/`ti()` LAML, L-BFGS, mini-batch, prediction, and local CUDA
@@ -174,9 +177,10 @@ module.
 - Ruff, dependency, bytecode, package build, strict Twine, and isolated
   installed-wheel smoke checks passed.
 
-Automatic tensor-lambda selection is now part of this slice. Classical smooth
-bootstrap still refits RS or CG; adding LAML as a bootstrap refit algorithm is
-the remaining step for propagating automatic tensor-selection variability.
+Automatic tensor-lambda selection and fixed-design LAML bootstrap refits are
+now part of this slice. Smooth, joint-smooth, quantile, and centile bootstrap
+APIs accept `algorithm="laml"` for additive Normal models and repeat joint
+scalar/tensor selection in every successful replicate.
 
 ### Phase 12E — random-effect portion complete locally
 
@@ -196,7 +200,7 @@ The random-intercept and random-slope slice is implemented in the sibling
 
 ### Later slices
 
-1. LAML bootstrap refits and LAML generalization beyond Normal;
+1. LAML generalization beyond Normal;
 2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
 3. discretized marginal bases and structured crossproducts;
 4. unconditional inference and smoothing-uncertainty-aware information

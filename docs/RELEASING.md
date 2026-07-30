@@ -57,8 +57,8 @@ Pop-Location
 The smoke test checks installed metadata, imports, formula fitting, generic
 tensor-product construction and penalties, constrained formula `te()`
 RS fitting, automatic formula LAML selection, analytic inference,
-vector-lambda bootstrap, prediction, and the public `plot()`, `wp()`, and
-`bp()` APIs.
+vector-lambda RS and LAML bootstrap, prediction, and the public `plot()`,
+`wp()`, and `bp()` APIs.
 
 ## Continuous integration
 

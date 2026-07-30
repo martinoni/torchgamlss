@@ -364,9 +364,10 @@ low-level row-product and penalty embedding are checked against
   additive models, including fixed-lambda tensor terms. Analytic inference
   provides joint covariance across linear coefficients, smooth coefficients,
   smooth terms, and distribution parameters. Parametric smooth-bootstrap
-  summaries support scalar- and vector-lambda terms through RS or CG, with
-  one stored bootstrap column per penalty. Repeating LAML selection within
-  each bootstrap replicate remains future work.
+  summaries support scalar- and vector-lambda terms through RS, CG, or
+  whole-model Normal LAML, with one stored bootstrap column per penalty.
+  LAML refits repeat joint scalar/tensor selection in each successful
+  replicate.
 - Automatic smoothing selection is available through `fit_rs()` and
   `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity

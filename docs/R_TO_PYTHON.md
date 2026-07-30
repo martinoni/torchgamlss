@@ -711,14 +711,15 @@ bootstrap = model.smooth_bootstrap_data(
 mu_x_bootstrap = bootstrap["mu"]["x"]
 ```
 
-Every replicate simulates from the fitted family and reruns the complete RS or
-CG fit, so automatic `pb()` lambda selection is repeated. Fixed-lambda
-`te()`/`ti()` models use the same workflow and store one lambda column per
-marginal penalty; those columns have zero variance. Automatic tensor selection
-is available through LAML, but the current bootstrap refit algorithms are RS
-and CG, so LAML selection is not yet repeated per sample. This is a
-TorchGAMLSS extension rather than a claim of direct `gamlss` output parity;
-the underlying fit and conditional variance remain covered by the R fixtures.
+Every replicate simulates from the fitted family and reruns the selected
+complete estimator. RS and CG repeat their available `pb()` lambda updates.
+Fixed-lambda `te()`/`ti()` models use the same workflow and store one lambda
+column per marginal penalty; those columns have zero variance. For an
+automatic tensor model fitted by LAML, pass `algorithm="laml"` and
+`control=LAMLControl()` to repeat joint scalar/tensor selection in every
+successful sample. This is a TorchGAMLSS extension rather than a claim of
+direct `gamlss` output parity; the underlying fit and conditional variance
+remain covered by the R fixtures.
 
 Use `smooth_joint_bootstrap_data()` when several fitted smooths must remain
 aligned within each replicate:
