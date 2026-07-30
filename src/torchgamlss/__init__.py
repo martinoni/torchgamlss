@@ -20,6 +20,7 @@ from torchgamlss.families import (
     GG,
     IG,
     LOGNO,
+    MX,
     PE,
     TF,
     WEI,
@@ -31,10 +32,12 @@ from torchgamlss.families import (
     CensoredResponse,
     Censoring,
     Family,
+    FiniteMixture,
     Gamma,
     GeneralizedGamma,
     InverseGaussian,
     LogNormal,
+    MixtureDiagnostics,
     NegativeBinomial,
     Normal,
     Poisson,
@@ -62,6 +65,11 @@ from torchgamlss.inference import (
     SmoothSimultaneousBand,
 )
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
+from torchgamlss.mixture_fitting import (
+    MixtureControl,
+    MixtureFitResult,
+    fit_mixture,
+)
 from torchgamlss.model import GAMLSS, FitResult, TermContributions
 from torchgamlss.optimization import (
     MiniBatchControl,
@@ -94,6 +102,7 @@ __all__ = [
     "CensoredResponse",
     "Censoring",
     "Family",
+    "FiniteMixture",
     "FitResult",
     "FormulaData",
     "GAMLSS",
@@ -109,12 +118,16 @@ __all__ = [
     "LogLink",
     "LOGNO",
     "LogNormal",
+    "MixtureDiagnostics",
+    "MixtureControl",
+    "MixtureFitResult",
     "LogitLink",
     "ModelDiagnostics",
     "MiniBatchControl",
     "MiniBatchFitResult",
     "MiniBatchValidationData",
     "MLPPredictor",
+    "MX",
     "NegativeBinomial",
     "Normal",
     "Poisson",
@@ -152,6 +165,7 @@ __all__ = [
     "WormPlotResult",
     "bucket_plot",
     "compare_models",
+    "fit_mixture",
     "worm_plot",
 ]
 

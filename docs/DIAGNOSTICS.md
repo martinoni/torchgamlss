@@ -83,6 +83,32 @@ Supported criteria are `"aic"`, `"aicc"`, `"bic"`, and `"gaic"`. Supply
 `penalty=` for GAIC. All models must refer to the same number of original and
 effective observations.
 
+## Finite-mixture diagnostics
+
+For a `FiniteMixture`, posterior separation diagnostics complement the
+likelihood criteria:
+
+```python
+components = model.component_diagnostics(
+    response,
+    design_matrices,
+    weights=weights,
+)
+
+components.posterior_probabilities
+components.classification
+components.effective_counts
+components.effective_proportions
+components.entropy
+components.mean_entropy
+components.mean_max_posterior
+```
+
+Classifications are zero-based component indices. Effective counts and
+summary averages honor case weights. The generalized EM result also retains
+the final posterior probabilities and effective component sizes. See
+[`MIXTURES.md`](MIXTURES.md).
+
 ## Quantile residuals
 
 Continuous families use:

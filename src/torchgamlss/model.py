@@ -23,7 +23,7 @@ from torchgamlss.diagnostics import (
     quantile_residuals,
     worm_plot_diagnostics,
 )
-from torchgamlss.families import Family
+from torchgamlss.families import Family, FiniteMixture, MixtureDiagnostics
 from torchgamlss.fitting import (
     CGControl,
     CGFitResult,
@@ -44,6 +44,11 @@ from torchgamlss.inference import (
     smooth_term_bootstrap,
     smooth_term_inference,
 )
+from torchgamlss.mixture_fitting import (
+    MixtureControl,
+    MixtureFitResult,
+)
+from torchgamlss.mixture_fitting import fit_mixture as run_mixture_fit
 from torchgamlss.optimization import (
     MiniBatchControl,
     MiniBatchFitResult,
@@ -382,6 +387,32 @@ class GAMLSS(nn.Module):
             max_iter=max_iter,
             tolerance_grad=tolerance_grad,
             tolerance_change=tolerance_change,
+        )
+
+    def fit_mixture_data(
+        self,
+        data: Any,
+        *,
+        weights: Any = None,
+        initial_parameters: Mapping[str, Any] | None = None,
+        control: MixtureControl | None = None,
+    ) -> MixtureFitResult:
+        """Fit a finite-mixture formula model with generalized EM."""
+        prepared = self.prepare_formula_data(data, include_response=True)
+        assert prepared.response is not None
+        case_weights = self._formula_tensor(data, weights, context="weights")
+        parameter_starts = self._formula_initial_parameters(
+            data,
+            initial_parameters,
+        )
+        return self.fit_mixture(
+            prepared.response,
+            prepared.design_matrices,
+            weights=case_weights,
+            offsets=prepared.offsets,
+            smooth_covariates=prepared.smooth_covariates,
+            initial_parameters=parameter_starts,
+            control=control,
         )
 
     def fit_minibatch_data(
@@ -1279,6 +1310,53 @@ class GAMLSS(nn.Module):
             shared_input=shared_input,
         )
 
+    def posterior_probabilities(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
+    ) -> Tensor:
+        """Return fitted posterior probabilities for a finite mixture."""
+        family = self._require_finite_mixture()
+        parameters = self.predict(
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
+            shared_input=shared_input,
+            type="response",
+        )
+        assert isinstance(parameters, dict)
+        return family.posterior_probabilities(response, parameters)
+
+    def component_diagnostics(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        neural_inputs: Mapping[str, Tensor] | None = None,
+        shared_input: Tensor | None = None,
+    ) -> MixtureDiagnostics:
+        """Return posterior separation summaries for a finite mixture."""
+        family = self._require_finite_mixture()
+        parameters = self.predict(
+            design_matrices,
+            offsets,
+            smooth_covariates=smooth_covariates,
+            neural_inputs=neural_inputs,
+            shared_input=shared_input,
+            type="response",
+        )
+        assert isinstance(parameters, dict)
+        return family.diagnostics(response, parameters, weights=weights)
+
     def distribution(
         self,
         design_matrices: Mapping[str, Tensor],
@@ -1462,6 +1540,29 @@ class GAMLSS(nn.Module):
             initial_parameters=initial_parameters,
             control=control,
             generator=generator,
+        )
+
+    def fit_mixture(
+        self,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        *,
+        weights: Tensor | None = None,
+        offsets: Mapping[str, Tensor] | None = None,
+        smooth_covariates: Mapping[str, Mapping[str, Tensor]] | None = None,
+        initial_parameters: Mapping[str, Any] | None = None,
+        control: MixtureControl | None = None,
+    ) -> MixtureFitResult:
+        """Fit a finite mixture with generalized EM and Torch M-steps."""
+        return run_mixture_fit(
+            self,
+            response,
+            design_matrices,
+            weights=weights,
+            offsets=offsets,
+            smooth_covariates=smooth_covariates,
+            initial_parameters=initial_parameters,
+            control=control,
         )
 
     def fit_minibatch_loader(
@@ -2109,6 +2210,13 @@ class GAMLSS(nn.Module):
                 "This operation requires a model constructed with from_formula()"
             )
         return self._formula_encoder
+
+    def _require_finite_mixture(self) -> FiniteMixture:
+        if not isinstance(self.family, FiniteMixture):
+            raise ValueError(
+                "this operation requires a FiniteMixture family"
+            )
+        return self.family
 
     def _formula_tensor(
         self,

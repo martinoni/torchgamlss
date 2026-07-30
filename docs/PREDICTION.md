@@ -110,6 +110,33 @@ inverse-Gaussian (`IG`), and generalized gamma (`GG`). See
 [`CENSORING.md`](CENSORING.md) for parameterizations, censored response status
 codes, and fitting restrictions.
 
+## Finite-mixture prediction
+
+`FiniteMixture` response-scale prediction returns the component parameters and
+unrestricted reference log-odds. Convert them to normalized probabilities or
+group them by component:
+
+```python
+parameters = model.predict_data(new_data)
+prior = model.family.component_weights(parameters)
+components = model.family.component_parameters(parameters)
+```
+
+When observed responses are available, posterior membership uses both the
+prior and component likelihoods:
+
+```python
+posterior = model.posterior_probabilities(
+    response,
+    design_matrices,
+)
+```
+
+Continuous mixtures support `predict_quantiles*()` through numerical
+inversion of the complete mixture CDF. Means and variances are available from
+`model.distribution(...).mean` and `.variance`. See
+[`MIXTURES.md`](MIXTURES.md) for the complete API.
+
 ## Link scale
 
 Pass `type="link"` to obtain each complete additive predictor:

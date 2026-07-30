@@ -18,11 +18,13 @@ from torchgamlss import (
     GG,
     IG,
     LOGNO,
+    MX,
     PE,
     TF,
     WEI,
     CensoredFamily,
     CensoredResponse,
+    FiniteMixture,
     Gamma,
     GeneralizedGamma,
     InverseGaussian,
@@ -51,6 +53,8 @@ def main() -> None:
         raise RuntimeError("installed survival-family exports are invalid")
     if IG is not InverseGaussian or GG is not GeneralizedGamma:
         raise RuntimeError("installed extended survival-family exports are invalid")
+    if MX is not FiniteMixture:
+        raise RuntimeError("installed finite-mixture exports are invalid")
 
     data = pd.DataFrame(
         {
@@ -109,6 +113,31 @@ def main() -> None:
         torch.isfinite(gradient).all() for gradient in gamma_gradients
     ):
         raise RuntimeError("installed Gamma truncation gradients are invalid")
+
+    mixture = FiniteMixture([Normal(), Normal()])
+    mixture_response = torch.tensor([-1.0, 2.0], dtype=torch.float64)
+    mixture_parameters = {
+        "component_1_mu": torch.tensor([-1.0, -1.0], dtype=torch.float64),
+        "component_1_sigma": torch.ones(2, dtype=torch.float64),
+        "component_2_mu": torch.tensor([2.0, 2.0], dtype=torch.float64),
+        "component_2_sigma": torch.ones(2, dtype=torch.float64),
+        "mixing_1": torch.zeros(2, dtype=torch.float64),
+    }
+    mixture_loss = -mixture.log_prob(
+        mixture_response,
+        mixture_parameters,
+    ).sum()
+    mixture_posterior = mixture.posterior_probabilities(
+        mixture_response,
+        mixture_parameters,
+    )
+    if not torch.isfinite(mixture_loss):
+        raise RuntimeError("installed finite-mixture likelihood is non-finite")
+    if not torch.allclose(
+        mixture_posterior.sum(dim=-1),
+        torch.ones_like(mixture_response),
+    ):
+        raise RuntimeError("installed finite-mixture posterior is invalid")
 
     survival_time = torch.tensor([0.8, 1.5, 2.0], dtype=torch.float64)
     event = torch.tensor([1, 0, 1])

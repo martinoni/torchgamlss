@@ -135,6 +135,23 @@ supported. The current mini-batch and streaming loaders require scalar bounds
 because they do not transport bound rows with each batch. For a new prediction
 dataset, construct a family with bounds aligned to those prediction rows.
 
+## Finite mixtures (`gamlss.mx`)
+
+`FiniteMixture` (alias `MX`) composes two or more scalar-event families with
+reference-category mixing predictors. Component parameters are exposed as
+`component_1_mu`, `component_2_mu`, and so on; selected parameters can instead
+share one predictor across every component. The family implements stable
+log-sum-exp likelihoods, CDFs, continuous quantiles, sampling, moments,
+posterior probabilities, deterministic ordered starts, and separation
+diagnostics.
+
+`model.fit_mixture*()` fits linear or fixed-smooth mixture predictors by
+generalized EM with Torch L-BFGS M-steps. Normal, Gamma, and Poisson
+distribution operations plus an intercept-only Normal fit have committed
+`gamlss.mx` parity fixtures. See [`MIXTURES.md`](MIXTURES.md) for parameter
+names, sharing, fitting, label ordering, diagnostics, CUDA behavior, and
+current restrictions.
+
 ## Response simulation
 
 Every public family implements `family.sample(parameters, generator=...)`.
@@ -150,14 +167,15 @@ described in [`INFERENCE.md`](INFERENCE.md).
 
 ## Conditional quantiles
 
-Every public family implements
+Every public base and truncated family implements
 `family.quantile(probabilities, parameters)`. Parameter tensors are
 broadcast, and the returned final dimension follows the probability vector.
 Quantiles are numerically matched to `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`,
 `qBCCG`, `qBCT`, `qBCPE`, `qTF`, `qPE`, `qWEI`, `qLOGNO`, `qIG`, and `qGG`.
 Truncated quantiles map
 probabilities into each observation's retained base-family probability
-interval before inversion.
+interval before inversion. Continuous finite mixtures numerically invert the
+weighted CDF; discrete-mixture quantiles are not yet implemented.
 
 For Poisson and NBI, the result uses the usual left-continuous discrete
 definition: the smallest non-negative integer whose CDF is at least the
@@ -194,6 +212,8 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
   density/mass, CDF, quantile, score, sampling, autograd, and CUDA behavior;
 - truncated Normal RS/L-BFGS and formula-data fitting plus truncated Poisson
   RS/L-BFGS behavior;
+- Normal, Gamma, and Poisson finite-mixture density/CDF/posterior/moment
+  parity, plus a complete two-Normal `gamlssMX()` fit;
 - weighted RS fits with parameter-specific offsets and formulas;
 - CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, BCPE, TF,
   and PE across central and extreme response quantiles.
