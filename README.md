@@ -9,8 +9,8 @@ Models for Location, Scale and Shape (GAMLSS).
 
 The project aims to combine numerical compatibility with the R packages
 [`gamlss`](https://github.com/gamlss-dev/gamlss), `gamlss.dist`,
-`gamlss.tr`, and `gamlss.cens` with PyTorch automatic differentiation,
-composable predictors, and optional GPU execution.
+`gamlss.tr`, `gamlss.cens`, and `gamlss.inf` with PyTorch automatic
+differentiation, composable predictors, and optional GPU execution.
 
 > [!WARNING]
 > TorchGAMLSS is alpha software. The latest GitHub pre-release is 0.1.0a2;
@@ -54,6 +54,9 @@ The current implementation contains:
   (`PE`), four-parameter Box-Cox t (`BCT`), and Box-Cox power-exponential
   (`BCPE`), Weibull (`WEI`), log-normal (`LOGNO`), inverse-Gaussian (`IG`),
   and generalized gamma (`GG`) families;
+- generic zero/one point-mass composition plus `ZIP`, `ZINBI`, `BEZI`,
+  `BEOI`, `BEINF`, `BEINF0`, and `BEINF1`, with boundary-aware quantiles and
+  randomized residuals verified against `gamlss.dist` and `gamlss.inf`;
 - scalar- or observation-bound continuous and discrete family truncation
   through `TruncatedFamily`, with `gamlss.tr` parity and on-device gradients
   verified across all ten pre-survival base families;
@@ -103,7 +106,7 @@ The current implementation contains:
 - fixed-design bootstrap intervals and joint bands for response-scale centile
   curves, including repeated smoothing selection;
 - global deviance, AIC, AICc, GAIC, SBC/BIC, and model-comparison weights;
-- continuous and randomized discrete normal quantile residuals;
+- continuous and randomized discrete/point-mass normal quantile residuals;
 - four-panel quantile-residual diagnostics through `plot()` and `plot_data()`,
   including the time-series ACF/PACF variant;
 - global and covariate-conditioned worm plots through `wp()`, `wp_data()`,
@@ -208,6 +211,8 @@ Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_inflated_references.R
+Rscript tools/generate_inflated_references.R --check
 ```
 
 The complete weighted Normal location-scale example can be run in both
@@ -269,7 +274,8 @@ P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
 parameterization. Poisson, NBI, and Beta are described in
 [`docs/FAMILIES.md`](docs/FAMILIES.md), BCCG in
 [`docs/BCCG.md`](docs/BCCG.md), BCT in [`docs/BCT.md`](docs/BCT.md), and BCPE
-in [`docs/BCPE.md`](docs/BCPE.md). The Student-t location-scale family is
+in [`docs/BCPE.md`](docs/BCPE.md). Inflated and adjusted distributions are in
+[`docs/INFLATED.md`](docs/INFLATED.md). The Student-t location-scale family is
 documented in [`docs/TF.md`](docs/TF.md), and the power-exponential
 location-scale-shape family in [`docs/PE.md`](docs/PE.md). Classical starting
 values are documented in

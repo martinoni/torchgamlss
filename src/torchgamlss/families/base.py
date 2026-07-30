@@ -19,6 +19,7 @@ class Family(ABC):
     name: str
     parameter_names: tuple[str, ...]
     is_discrete = False
+    has_point_masses = False
 
     @property
     @abstractmethod
@@ -98,6 +99,21 @@ class Family(ABC):
             raise NotImplementedError(
                 f"CDF is not implemented for the {self.name} family"
             ) from error
+
+    def cdf_left(
+        self,
+        response: Tensor,
+        parameters: Mapping[str, Tensor],
+    ) -> Tensor:
+        """Evaluate the left limit ``P(Y < response)`` of the response CDF.
+
+        The distinction from :meth:`cdf` matters at probability masses.
+        Integer-valued families use the preceding count. Continuous families
+        have no jumps unless a derived family overrides this method.
+        """
+        if self.is_discrete:
+            return self.cdf(response - 1.0, parameters)
+        return self.cdf(response, parameters)
 
     def survival(
         self,

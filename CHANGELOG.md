@@ -30,12 +30,24 @@ Development cycle toward the third alpha release.
 - Scalar and observation-specific truncation parity across the complete
   translated family catalog, including differentiable Torch CDFs for Gamma,
   Beta, and NBI normalizers and finite BCPE shape gradients at `nu=0`.
+- Generic direct-probability and odds-parameterized response point masses
+  through `PointMassFamily`, with density, CDF, left-CDF, quantile, sampling,
+  moments, fitting, and CUDA support.
+- Zero-inflated Poisson (`ZIP`) and negative-binomial type I (`ZINBI`)
+  families, plus `BEZI`, `BEOI`, `BEINF`, `BEINF0`, and `BEINF1` beta
+  boundary families with their original `gamlss.dist` parameterizations.
+- `gamlss.dist` and `gamlss.inf` parity fixtures for inflated and adjusted
+  densities, CDFs, quantiles, links, derivatives, starting values, and
+  randomized boundary-mass residuals.
 
 ### Changed
 
 - Full-batch Torch likelihood evaluation now calls the family likelihood
   interface, allowing composed likelihoods such as censoring to participate
   correctly in L-BFGS fitting.
+- Quantile residual diagnostics now use CDF left limits for point-mass
+  families, randomizing continuous-base boundary atoms as well as discrete
+  response masses.
 
 ## [0.1.0a2] - 2026-07-28
 

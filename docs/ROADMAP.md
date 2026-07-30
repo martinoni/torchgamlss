@@ -123,11 +123,11 @@ as supported.
 
 ## Phase 10 — inflated and adjusted distributions
 
-- [ ] Generic point-mass composition at zero and one
-- [ ] Zero-inflated Poisson and negative-binomial families
-- [ ] Zero/one-inflated and adjusted beta families
-- [ ] R parity against `gamlss.inf` and `gamlss.dist`
-- [ ] Diagnostics for fitted boundary masses
+- [x] Generic point-mass composition at zero and one
+- [x] Zero-inflated Poisson and negative-binomial families
+- [x] Zero/one-inflated and adjusted beta families
+- [x] R parity against `gamlss.inf` and `gamlss.dist`
+- [x] Diagnostics for fitted boundary masses
 
 ## Phase 11 — finite mixtures
 

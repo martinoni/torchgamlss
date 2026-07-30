@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 import torchgamlss
 from torchgamlss import (
+    BEINF,
     GAMLSS,
     GG,
     IG,
@@ -21,6 +22,8 @@ from torchgamlss import (
     PE,
     TF,
     WEI,
+    ZINBI,
+    ZIP,
     CensoredFamily,
     CensoredResponse,
     Gamma,
@@ -51,6 +54,10 @@ def main() -> None:
         raise RuntimeError("installed survival-family exports are invalid")
     if IG is not InverseGaussian or GG is not GeneralizedGamma:
         raise RuntimeError("installed extended survival-family exports are invalid")
+    if ZIP().name != "ZIP" or ZINBI().name != "ZINBI":
+        raise RuntimeError("installed zero-inflated count exports are invalid")
+    if BEINF().name != "BEINF":
+        raise RuntimeError("installed inflated-beta exports are invalid")
 
     data = pd.DataFrame(
         {

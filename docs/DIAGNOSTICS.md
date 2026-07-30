@@ -91,13 +91,17 @@ Continuous families use:
 r = Phi^-1(F(y))
 ```
 
-For discrete families, TorchGAMLSS implements the randomized Dunn-Smyth
-residual:
+For discrete and mixed point-mass families, TorchGAMLSS implements the
+randomized Dunn-Smyth residual:
 
 ```text
-u ~ Uniform(F(y - 1), F(y))
+u ~ Uniform(F(y-), F(y))
 r = Phi^-1(u)
 ```
+
+For integer-valued families, `F(y-) = F(y - 1)`. For a continuous base
+distribution inflated at zero or one, the two limits differ only at the
+configured atoms.
 
 Use a seeded Torch generator for reproducible randomization:
 
@@ -113,8 +117,8 @@ useful for exact reproducibility across languages:
 residuals = model.quantile_residuals_data(data, uniforms="uniform_column")
 ```
 
-`uniforms` applies only to discrete families. For continuous responses the CDF
-determines the residual uniquely.
+`uniforms` applies only to discrete or point-mass families. For atom-free
+continuous responses the CDF determines the residual uniquely.
 
 The Normal, Gamma, Poisson, NBI, and Beta CDF implementations use SciPy as a
 non-differentiable numerical backend and return a tensor with the model's
@@ -175,8 +179,8 @@ each returned axis after plotting. No implicit `show()` call is made.
 
 Integer frequency weights reproduce observations and zero-weight rows are
 omitted, following the R residual workflow. For non-integer case weights, each
-positive-weight row appears once. Discrete families accept the same
-`generator=` or `uniforms=` controls as `quantile_residuals()`.
+positive-weight row appears once. Discrete and point-mass families accept the
+same `generator=` or `uniforms=` controls as `quantile_residuals()`.
 
 For ordered observations, replace the first two panels by ACF and PACF:
 

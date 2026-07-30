@@ -51,7 +51,9 @@ centiles = model.predict_centiles_data(
 
 Both return `QuantilePrediction`. Its `quantiles` tensor has one row per
 observation and one column per requested probability. For count families,
-the values are integer-valued discrete quantiles.
+the values are integer-valued discrete quantiles. Inflated and adjusted
+families return the configured response atom whenever a probability falls
+inside its CDF jump.
 
 Formula-free workflows use `predict_quantiles()` and `predict_centiles()`
 with the same design matrices, offsets, and smooth covariates as `predict()`.

@@ -12,10 +12,27 @@ from torchgamlss.families.censored import (
 )
 from torchgamlss.families.gamma import Gamma
 from torchgamlss.families.generalized_gamma import GG, GeneralizedGamma
+from torchgamlss.families.inflated import (
+    BEINF,
+    BEINF0,
+    BEINF1,
+    BEOI,
+    BEZI,
+    ZINBI,
+    ZIP,
+    BetaInflated,
+    BetaInflatedOne,
+    BetaInflatedZero,
+    BetaOneInflated,
+    BetaZeroInflated,
+    ZeroInflatedNegativeBinomial,
+    ZeroInflatedPoisson,
+)
 from torchgamlss.families.inverse_gaussian import IG, InverseGaussian
 from torchgamlss.families.lognormal import LOGNO, LogNormal
 from torchgamlss.families.negative_binomial import NegativeBinomial
 from torchgamlss.families.normal import Normal
+from torchgamlss.families.point_mass import PointMassFamily
 from torchgamlss.families.poisson import Poisson
 from torchgamlss.families.power_exponential import PE, PowerExponential
 from torchgamlss.families.student_t import TF, StudentT
@@ -26,7 +43,17 @@ __all__ = [
     "BCCG",
     "BCT",
     "BCPE",
+    "BEINF",
+    "BEINF0",
+    "BEINF1",
+    "BEOI",
+    "BEZI",
     "Beta",
+    "BetaInflated",
+    "BetaInflatedOne",
+    "BetaInflatedZero",
+    "BetaOneInflated",
+    "BetaZeroInflated",
     "BoxCoxColeGreen",
     "BoxCoxPowerExponential",
     "BoxCoxT",
@@ -46,9 +73,14 @@ __all__ = [
     "Poisson",
     "PowerExponential",
     "PE",
+    "PointMassFamily",
     "StudentT",
     "TF",
     "TruncatedFamily",
     "WEI",
     "Weibull",
+    "ZINBI",
+    "ZIP",
+    "ZeroInflatedNegativeBinomial",
+    "ZeroInflatedPoisson",
 ]
