@@ -11,6 +11,10 @@ Development cycle toward the third alpha release.
 
 ### Added
 
+- A generic dense penalized weighted least-squares solver supporting multiple
+  fixed coefficient-space penalties, linear constraints through null-space
+  reparameterization, effective degrees of freedom, rank diagnostics, and
+  CPU/CUDA execution while preserving the classical `pb()` fitting path.
 - Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
   `gamlss.dist` parity for density, CDF, quantiles, survival functions,
   hazards, moments, scores, working derivatives, and starting values.

@@ -68,6 +68,10 @@ from torchgamlss.optimization import (
     MiniBatchFitResult,
     MiniBatchValidationData,
 )
+from torchgamlss.penalties import (
+    PenalizedLeastSquaresResult,
+    solve_penalized_least_squares,
+)
 from torchgamlss.predictors import MLPPredictor, SharedMLPPredictor
 from torchgamlss.quantiles import (
     QuantileBandResult,
@@ -120,6 +124,7 @@ __all__ = [
     "Poisson",
     "PowerExponential",
     "PE",
+    "PenalizedLeastSquaresResult",
     "PSpline",
     "QuantileBandResult",
     "QuantileBootstrapResult",
@@ -152,6 +157,7 @@ __all__ = [
     "WormPlotResult",
     "bucket_plot",
     "compare_models",
+    "solve_penalized_least_squares",
     "worm_plot",
 ]
 
