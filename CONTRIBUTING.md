@@ -32,6 +32,8 @@ library:
 Rscript tools/install_r_dependencies.R
 Rscript tools/generate_r_references.R --check
 Rscript tools/generate_truncated_references.R
+Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_inflated_references.R --check
 ```
 
 ## Pull requests

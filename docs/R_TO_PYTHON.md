@@ -9,6 +9,7 @@ The current numerical reference is:
 
 - `gamlss` 5.5-0;
 - `gamlss.dist` 6.1-1;
+- `gamlss.inf` 1.0-2;
 - float64 Torch calculations.
 
 See [`PARITY.md`](PARITY.md) for the fixture protocol and verified numerical
@@ -80,6 +81,11 @@ from `fit`.
 | `BCPE()` | `BCPE()` or `BoxCoxPowerExponential()` | `mu`, `sigma`, `nu`, `tau` | identity, log, identity, log |
 | `TF()` | `TF()` or `StudentT()` | `mu`, `sigma`, `nu` | identity, log, log |
 | `PE()` | `PE()` or `PowerExponential()` | `mu`, `sigma`, `nu` | identity, log, log |
+| `ZIP()` | `ZIP()` or `ZeroInflatedPoisson()` | `mu`, `sigma` | log, logit |
+| `ZINBI()` | `ZINBI()` or `ZeroInflatedNegativeBinomial()` | `mu`, `sigma`, `nu` | log, log, logit |
+| `BEZI()` | `BEZI()` or `BetaZeroInflated()` | `mu`, `sigma`, `nu` | logit, log, logit |
+| `BEOI()` | `BEOI()` or `BetaOneInflated()` | `mu`, `sigma`, `nu` | logit, log, logit |
+| `BEINF()` | `BEINF()` or `BetaInflated()` | `mu`, `sigma`, `nu`, `tau` | logit, logit, log, log |
 
 The distribution conventions are the R conventions, not necessarily those
 of a similarly named `torch.distributions` class. In particular:
@@ -108,6 +114,63 @@ family = Normal(mu_link=LogLink())
 
 The public link classes are `IdentityLink`, `LogLink`, `LogitLink`, and
 `InverseLink`.
+
+## Translating inflated and adjusted models
+
+A zero-inflated Poisson model translates parameter by parameter:
+
+```r
+fit_r <- gamlss(
+  count ~ x + offset(log_exposure),
+  sigma.formula = ~ treatment,
+  family = ZIP(),
+  data = data
+)
+```
+
+```python
+from torchgamlss import GAMLSS, ZIP
+
+model = GAMLSS.from_formula(
+    ZIP(),
+    {
+        "mu": "count ~ x + offset(log_exposure)",
+        "sigma": "~ treatment",
+    },
+    data,
+)
+fit = model.fit_rs_data(data)
+```
+
+The specialized aliases preserve the R parameter names. In particular,
+`ZIP.sigma` and `ZINBI.nu` are direct zero-inflation probabilities.
+`BEZI.nu` and `BEOI.nu` are direct zero/one probabilities, while `BEINF.nu`
+and `BEINF.tau` are positive odds normalized with a reference weight of one
+for the continuous beta component.
+
+The generic `gamlss.inf` composition:
+
+```r
+dBEInf0to1 <- Inf0to1.d("BE", type.of.Inflation = "Zero&One")
+```
+
+maps to:
+
+```python
+from torchgamlss import Beta, PointMassFamily
+
+family = PointMassFamily(
+    Beta(),
+    points=(0.0, 1.0),
+    mass_parameter_names=("xi0", "xi1"),
+    parameterization="odds",
+)
+```
+
+For `type.of.Inflation="Zero"` or `"One"`, use one point, one `xi`
+parameter, and `parameterization="probability"`. See
+[`INFLATED.md`](INFLATED.md) for the exact component probabilities and the
+important difference between `BEZI.sigma` and `Beta.sigma`.
 
 ## Translating `gamlss.tr`
 

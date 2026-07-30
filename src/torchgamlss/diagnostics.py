@@ -232,7 +232,7 @@ def quantile_residuals(
     uniforms: Tensor | None = None,
     generator: torch.Generator | None = None,
 ) -> Tensor:
-    """Return continuous or randomized discrete normal quantile residuals."""
+    """Return continuous or randomized normal quantile residuals."""
     if response.ndim != 1 or response.numel() < 1 or not torch.isfinite(response).all():
         raise ValueError("quantile residuals require a non-empty finite response")
     model_parameter = next(model.parameters())
@@ -252,7 +252,8 @@ def quantile_residuals(
         type="response",
     )
     model.family.validate_response(response, context="quantile residuals")
-    if model.family.is_discrete:
+    randomized = model.family.is_discrete or model.family.has_point_masses
+    if randomized:
         if uniforms is None:
             uniforms = torch.rand(
                 response.shape,
@@ -271,14 +272,18 @@ def quantile_residuals(
             raise ValueError(
                 "uniforms must match the response and lie in the interval [0, 1]"
             )
-        lower = model.family.cdf(response - 1.0, parameters)
+        lower = model.family.cdf_left(response, parameters)
         upper = model.family.cdf(response, parameters)
         probabilities = lower + uniforms * (upper - lower)
     else:
         if uniforms is not None:
-            raise ValueError("uniforms apply only to discrete response families")
+            raise ValueError(
+                "uniforms apply only to discrete or point-mass response families"
+            )
         if generator is not None:
-            raise ValueError("generator applies only to discrete response families")
+            raise ValueError(
+                "generator applies only to discrete or point-mass response families"
+            )
         probabilities = model.family.cdf(response, parameters)
 
     if (

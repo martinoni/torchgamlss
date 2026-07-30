@@ -30,6 +30,7 @@ python -m compileall -q src/torchgamlss
 Rscript tools/generate_r_references.R --check
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_inflated_references.R --check
 ```
 
 Build both supported distribution formats into a fresh output directory:

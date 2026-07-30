@@ -68,6 +68,24 @@ The response must be finite and strictly between zero and one. Boundary values
 zero and one require a different response family and are not silently moved
 into the interior.
 
+## Inflated and adjusted families
+
+`PointMassFamily` composes a base distribution with response atoms. One atom
+may use a direct probability with a logit link; one or more atoms may use
+positive odds with log links. Named `gamlss.dist` translations are available
+for:
+
+- zero-inflated Poisson (`ZIP`) and negative binomial type I (`ZINBI`);
+- zero- and one-inflated beta (`BEZI` and `BEOI`);
+- two-boundary beta inflation (`BEINF`) and its `BEINF0`/`BEINF1` variants.
+
+`BEZI` and `BEOI` use positive total beta concentration `sigma`, exactly as in
+R. `BEINF*` use the `BE` variance-ratio parameterization described above.
+Boundary-aware CDF left limits make randomized quantile residuals valid for
+these mixed distributions. See [`INFLATED.md`](INFLATED.md) for component
+probabilities, class names, formulas, fitting, diagnostics, and generic
+`gamlss.inf` composition.
+
 ## Event-time families and censoring
 
 `Weibull` (`WEI`) follows `gamlss.dist::WEI`: `mu` is its positive scale and
@@ -155,9 +173,9 @@ Every public family implements
 broadcast, and the returned final dimension follows the probability vector.
 Quantiles are numerically matched to `qNO`, `qGA`, `qPO`, `qNBI`, `qBE`,
 `qBCCG`, `qBCT`, `qBCPE`, `qTF`, `qPE`, `qWEI`, `qLOGNO`, `qIG`, and `qGG`.
-Truncated quantiles map
-probabilities into each observation's retained base-family probability
-interval before inversion.
+Inflated-family quantiles additionally invert their CDF jumps. Truncated
+quantiles map probabilities into each observation's retained base-family
+probability interval before inversion.
 
 For Poisson and NBI, the result uses the usual left-continuous discrete
 definition: the smallest non-negative integer whose CDF is at least the
@@ -194,6 +212,9 @@ Committed fixtures generated with `gamlss.dist` and `gamlss` cover:
   density/mass, CDF, quantile, score, sampling, autograd, and CUDA behavior;
 - truncated Normal RS/L-BFGS and formula-data fitting plus truncated Poisson
   RS/L-BFGS behavior;
+- generic zero/one point-mass compositions against `gamlss.inf`, plus ZIP,
+  ZINBI, BEZI, BEOI, BEINF, BEINF0, and BEINF1 density/CDF/quantile,
+  derivative, fitting, randomized-residual, and CUDA behavior;
 - weighted RS fits with parameter-specific offsets and formulas;
 - CUDA FP16/BF16 mini-batch stress fits for GA, NBI, BCCG, BCT, BCPE, TF,
   and PE across central and extreme response quantiles.
