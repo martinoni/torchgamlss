@@ -285,7 +285,16 @@ check_reference <- function(actual, path, label) {
     stop(label, " reference dimensions or columns differ")
   }
   for (column in names(generated)) {
+    # Optimizer iteration counts and nearly zero terminal gradients vary with
+    # the mgcv build and linked BLAS. Treat the latter as a convergence bound;
+    # all fitted statistical quantities remain strict reference comparisons.
     if (column == "outer_iterations") {
+      next
+    }
+    if (grepl("^gradient_", column)) {
+      if (any(abs(generated[[column]]) > 1e-4)) {
+        stop(label, " convergence gradient is too large for ", column)
+      }
       next
     }
     if (is.numeric(generated[[column]]) &&
