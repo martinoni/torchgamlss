@@ -131,11 +131,11 @@ as supported.
 
 ## Phase 11 — finite mixtures
 
-- [ ] Mixture-family protocol with stable log-sum-exp likelihoods
-- [ ] Parameter sharing and component-specific predictors
-- [ ] Initialization and label-ordering conventions
-- [ ] R parity against `gamlss.mx`
-- [ ] Posterior component probabilities and mixture diagnostics
+- [x] Mixture-family protocol with stable log-sum-exp likelihoods
+- [x] Parameter sharing and component-specific predictors
+- [x] Initialization and label-ordering conventions
+- [x] R parity against `gamlss.mx`
+- [x] Posterior component probabilities and mixture diagnostics
 
 ## Phase 12 — additive-model ecosystem
 

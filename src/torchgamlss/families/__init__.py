@@ -14,6 +14,11 @@ from torchgamlss.families.gamma import Gamma
 from torchgamlss.families.generalized_gamma import GG, GeneralizedGamma
 from torchgamlss.families.inverse_gaussian import IG, InverseGaussian
 from torchgamlss.families.lognormal import LOGNO, LogNormal
+from torchgamlss.families.mixture import (
+    MX,
+    FiniteMixture,
+    MixtureDiagnostics,
+)
 from torchgamlss.families.negative_binomial import NegativeBinomial
 from torchgamlss.families.normal import Normal
 from torchgamlss.families.poisson import Poisson
@@ -34,6 +39,7 @@ __all__ = [
     "CensoredResponse",
     "Censoring",
     "Family",
+    "FiniteMixture",
     "Gamma",
     "GeneralizedGamma",
     "GG",
@@ -41,6 +47,8 @@ __all__ = [
     "InverseGaussian",
     "LOGNO",
     "LogNormal",
+    "MixtureDiagnostics",
+    "MX",
     "NegativeBinomial",
     "Normal",
     "Poisson",

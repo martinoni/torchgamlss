@@ -356,12 +356,72 @@ fit.smoothing_iterations["mu"]["x"]
 
 See [`SMOOTHS.md`](SMOOTHS.md) for the tensor-level `PSpline` API.
 
+## Translating `gamlssMX()`
+
+R supplies one formula or list of formulas for the component models and an
+optional `pi.formula`. TorchGAMLSS makes every component and mixing predictor
+explicit:
+
+```r
+fit_r <- gamlssMX(
+  y ~ x,
+  pi.formula = ~ z,
+  family = NO,
+  K = 2,
+  data = data
+)
+```
+
+```python
+from torchgamlss import FiniteMixture, GAMLSS, Normal
+
+family = FiniteMixture([Normal(), Normal()])
+model = GAMLSS.from_formula(
+    family,
+    {
+        "component_1_mu": "y ~ x",
+        "component_1_sigma": "~ 1",
+        "component_2_mu": "~ x",
+        "component_2_sigma": "~ 1",
+        "mixing_1": "~ z",
+    },
+    data,
+)
+fit = model.fit_mixture_data(data)
+```
+
+`mixing_1` is the log-odds of component 1 against reference component 2. With
+three components, `mixing_1` and `mixing_2` both use component 3 as reference.
+Normalized probabilities are returned by
+`family.component_weights(model.predict_data(data))`.
+
+| `gamlss.mx` | TorchGAMLSS |
+| --- | --- |
+| `K` | number of families passed to `FiniteMixture` |
+| `prob` | `initial_parameters={"mixing_1": log(pi_1 / pi_K), ...}` |
+| `pi.formula` | formulas for `mixing_1`, ..., `mixing_{K-1}` |
+| `MX.control(cc=...)` | `MixtureControl(tolerance=...)` |
+| `MX.control(n.cyc=...)` | `MixtureControl(max_iterations=...)` |
+| `fit$G.deviance` | `fit.global_deviance` |
+| `fit$post.prob` | `fit.posterior_probabilities` |
+| `fit$prob` | `family.component_weights(parameters)` |
+
+TorchGAMLSS uses deterministic response partitions for initialization instead
+of `gamlssMX()`'s seeded random subsamples. Its M-step jointly optimizes the
+expected complete-data objective with Torch L-BFGS. Final likelihood and
+parameters are parity targets; EM and inner-optimizer iteration counts need
+not match.
+
+See [`MIXTURES.md`](MIXTURES.md) for shared parameters, label ordering,
+diagnostics, and current restrictions.
+
 ## Fitting algorithm mapping
 
 | R | TorchGAMLSS |
 | --- | --- |
 | `method=RS()` | `model.fit_rs_data(...)` |
 | `method=CG()` | `model.fit_cg_data(...)` |
+| `gamlssMX()` | `model.fit_mixture_data(...)` |
 | no direct equivalent | `model.fit_data(...)` using Torch L-BFGS |
 
 The methods without the `_data` suffix are the low-level tensor equivalents:
@@ -795,14 +855,17 @@ appropriate final quantities with explicit tolerances.
 TorchGAMLSS is pre-alpha and currently covers a focused subset of R `gamlss`.
 Important exclusions include:
 
-- families other than the ten listed above;
+- response families outside the currently documented base and composed
+  family catalog;
 - smoothers other than the current `pb()` implementation;
 - transformed or interaction smooth terms;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;
 - graphical diagnostics beyond the current four-panel residual plot;
-- exact P-spline extrapolation parity outside the training range.
+- exact P-spline extrapolation parity outside the training range;
+- automatic smoothing selection and neural predictors inside finite-mixture
+  EM M-steps.
 
 When translating an existing analysis, first reproduce the family,
 parameter formulas, weights, offsets, starting values, algorithm, and control

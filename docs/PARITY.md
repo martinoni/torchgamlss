@@ -237,6 +237,28 @@ optimize the same likelihood; the gate compares deviance, coefficients,
 fitted parameters, latent event-time quantiles, and survival, hazard, and
 cumulative-hazard curves.
 
+## Finite mixtures (`gamlss.mx`)
+
+The mixture slice targets `gamlss.mx` 6.0-1. The distribution fixture compares
+Normal, Gamma, and Poisson two-component mixtures row by row:
+
+- `dMX(..., log=TRUE)` and `pMX()`;
+- reference-category prior probabilities;
+- posterior component probabilities;
+- mixture means and variances.
+
+The fitted-model fixture uses the same 100 observations in R and Python.
+`gamlssMX()` and TorchGAMLSS's generalized EM fitter independently estimate
+an intercept-only two-Normal mixture. Components are ordered by fitted `mu`
+before comparison. The fixture covers both component means and scales, prior
+and posterior probabilities, and global deviance.
+
+TorchGAMLSS evaluates component weights and likelihoods with `log_softmax` and
+`logsumexp`, including an explicit extreme-log-odds test. Python tests also
+cover deterministic ordered initialization, label canonicalization, shared
+parameters, component-specific predictors, continuous-mixture quantiles,
+sampling, formula fitting, autograd, and CUDA gradients.
+
 ## Box-Cox Cole-Green family (`BCCG`)
 
 The BCCG slice is the first three-parameter parity target. Its fixtures cover:
@@ -474,6 +496,8 @@ Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_mixture_references.R
+Rscript tools/generate_mixture_references.R --check
 python tools/run_parity.py examples/normal_location_scale/parity.json `
   --output-dir work/parity/normal-location-scale
 python tools/run_parity.py examples/bccg_centile_curves/parity.json `
@@ -495,6 +519,8 @@ changing files and compares them with explicit tolerances.
   <https://cran.r-project.org/package=gamlss.tr>
 - `gamlss.cens` 5.0-7, distributed by CRAN under GPL-2 or GPL-3:
   <https://cran.r-project.org/package=gamlss.cens>
+- `gamlss.mx` 6.0-1, distributed by CRAN under GPL-2 or GPL-3:
+  <https://cran.r-project.org/package=gamlss.mx>
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
 

@@ -30,6 +30,16 @@ Development cycle toward the third alpha release.
 - Scalar and observation-specific truncation parity across the complete
   translated family catalog, including differentiable Torch CDFs for Gamma,
   Beta, and NBI normalizers and finite BCPE shape gradients at `nu=0`.
+- `FiniteMixture`/`MX` composition with stable log-sum-exp likelihoods,
+  reference-category mixing predictors, shared parameters, deterministic
+  ordered initialization, continuous quantiles, sampling, moments, posterior
+  probabilities, and weighted component diagnostics.
+- Generalized EM fitting through `fit_mixture()` and `fit_mixture_data()`,
+  with Torch L-BFGS M-steps for component-specific or shared linear and
+  fixed-smooth predictors.
+- `gamlss.mx` parity fixtures for Normal, Gamma, and Poisson mixture
+  distributions and an intercept-only two-Normal fit, including component
+  parameters, prior/posterior probabilities, and global deviance.
 
 ### Changed
 

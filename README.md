@@ -9,7 +9,7 @@ Models for Location, Scale and Shape (GAMLSS).
 
 The project aims to combine numerical compatibility with the R packages
 [`gamlss`](https://github.com/gamlss-dev/gamlss), `gamlss.dist`,
-`gamlss.tr`, and `gamlss.cens` with PyTorch automatic differentiation,
+`gamlss.tr`, `gamlss.cens`, and `gamlss.mx` with PyTorch automatic differentiation,
 composable predictors, and optional GPU execution.
 
 > [!WARNING]
@@ -61,6 +61,10 @@ The current implementation contains:
   `CensoredResponse` and `CensoredFamily`, with `survival::Surv` status
   compatibility and `gamlss.cens` parity for Weibull, log-normal,
   inverse-Gaussian, and generalized-gamma models;
+- differentiable finite mixtures through `FiniteMixture`/`MX`, including
+  reference-category mixing predictors, shared or component-specific
+  parameters, generalized EM fitting, posterior diagnostics, `gamlss.mx`
+  parity, and CUDA likelihood gradients;
 - a differentiable negative log-likelihood;
 - full-batch joint fitting with Torch L-BFGS;
 - bounded-intermediate mini-batch fitting with Adam, deterministic chunked
@@ -208,6 +212,8 @@ Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_mixture_references.R
+Rscript tools/generate_mixture_references.R --check
 ```
 
 The complete weighted Normal location-scale example can be run in both
@@ -275,6 +281,8 @@ location-scale-shape family in [`docs/PE.md`](docs/PE.md). Classical starting
 values are documented in
 [`docs/INITIALIZATION.md`](docs/INITIALIZATION.md). Classical fitting is
 described in [`docs/RS.md`](docs/RS.md) and [`docs/CG.md`](docs/CG.md). The
+finite-mixture family and generalized EM fitter are documented in
+[`docs/MIXTURES.md`](docs/MIXTURES.md). The
 R-to-Python workflow mapping is in
 [`docs/R_TO_PYTHON.md`](docs/R_TO_PYTHON.md). The prediction interface is
 documented in
