@@ -1,6 +1,6 @@
 # Project state and handoff
 
-Last updated: 2026-07-29, America/Sao_Paulo.
+Last updated: 2026-07-30, America/Sao_Paulo.
 
 This file is the persistent project memory for decisions that should survive a
 conversation or development-session boundary. Detailed feature tracking remains
@@ -31,6 +31,7 @@ an explicit decision.
 | [#9](https://github.com/martinoni/torchgamlss/pull/9) | Inflated and adjusted distributions | `agent/inflated-adjusted-distributions` | 11/11 CI checks passed |
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
+| [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | Local validation passed; CI tracked in PR |
 
 The branches are independent and based on `main`. Their roadmap edits may need
 a small conflict resolution when merged. Do not combine their implementation
@@ -157,8 +158,8 @@ whose internal representation is already available.
 
 ## Resume point
 
-After the generic penalized-solver PR is accepted or while it remains under
-review, start Phase 12C in a separate branch based on
+After PR #12 is accepted or while it remains under review, start Phase 12C in a
+separate branch based on
 `agent/generic-penalized-solver`. Rebase that branch onto `main` after its
 dependencies merge. Do not add LAML to the solver PR; keep the coefficient
 system and smoothing-selection algorithm reviewable as separate vertical
