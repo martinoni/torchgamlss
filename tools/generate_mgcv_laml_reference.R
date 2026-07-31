@@ -637,6 +637,128 @@ beta_fitted_reference <- data.frame(
   mu = as.numeric(fitted(beta_fit))
 )
 
+nbi_design_path <- file.path(
+  reference_dir,
+  "mgcv_nbi_laml_design.csv"
+)
+nbi_penalty_path <- file.path(
+  reference_dir,
+  "mgcv_nbi_laml_penalties.csv"
+)
+nbi_summary_path <- file.path(
+  reference_dir,
+  "mgcv_nbi_laml_reference.csv"
+)
+nbi_coefficient_path <- file.path(
+  reference_dir,
+  "mgcv_nbi_laml_coefficient_reference.csv"
+)
+nbi_fitted_path <- file.path(
+  reference_dir,
+  "mgcv_nbi_laml_fitted_reference.csv"
+)
+
+nbi_observation_count <- 220
+nbi_x <- seq(
+  -1,
+  1,
+  length.out = nbi_observation_count
+)
+nbi_mu <- exp(
+  0.25 + 0.8 * sin(pi * nbi_x) + 0.2 * nbi_x
+)
+nbi_theta <- 4
+set.seed(20260804)
+nbi_y <- rnbinom(
+  nbi_observation_count,
+  size = nbi_theta,
+  mu = nbi_mu
+)
+nbi_data <- data.frame(y = nbi_y, x = nbi_x)
+nbi_setup <- gam(
+  y ~ s(x, bs = "ps", k = 8),
+  data = nbi_data,
+  family = nb(theta = nbi_theta, link = "log"),
+  method = "REML",
+  fit = FALSE
+)
+nbi_fit <- gam(G = nbi_setup, method = "REML")
+nbi_design <- nbi_setup$X
+colnames(nbi_design) <- paste0(
+  "mu_",
+  seq_len(ncol(nbi_design))
+)
+nbi_design_reference <- data.frame(
+  response = nbi_setup$y,
+  weight = nbi_setup$w,
+  nbi_design,
+  check.names = FALSE
+)
+nbi_coefficient_count <- ncol(nbi_design)
+nbi_penalty_references <- lapply(
+  seq_along(nbi_setup$S),
+  function(penalty_index) {
+    full_penalty <- matrix(
+      0,
+      nrow = nbi_coefficient_count,
+      ncol = nbi_coefficient_count
+    )
+    start <- nbi_setup$off[penalty_index]
+    term_indices <- start:(
+      start + nrow(nbi_setup$S[[penalty_index]]) - 1
+    )
+    full_penalty[term_indices, term_indices] <- (
+      nbi_setup$S[[penalty_index]]
+    )
+    data.frame(
+      penalty = penalty_index,
+      row = rep(
+        seq_len(nbi_coefficient_count),
+        each = nbi_coefficient_count
+      ),
+      column = rep(
+        seq_len(nbi_coefficient_count),
+        nbi_coefficient_count
+      ),
+      value = as.vector(t(full_penalty))
+    )
+  }
+)
+nbi_penalty_reference <- do.call(
+  rbind,
+  nbi_penalty_references
+)
+nbi_outer_gradient <- as.numeric(
+  nbi_fit$outer.info$grad
+)
+nbi_outer_hessian <- nbi_fit$outer.info$hess
+nbi_fitted_theta <- as.numeric(nbi_fit$family$getTheta(TRUE))
+nbi_fitted_sigma <- 1 / nbi_fitted_theta
+nbi_summary_reference <- data.frame(
+  mgcv_version = as.character(packageVersion("mgcv")),
+  theta = nbi_fitted_theta,
+  sigma = nbi_fitted_sigma,
+  eta_sigma = log(nbi_fitted_sigma),
+  objective = as.numeric(nbi_fit$gcv.ubre),
+  log_likelihood = as.numeric(logLik(nbi_fit)),
+  lambda_mu = as.numeric(nbi_fit$sp[1]),
+  effective_degrees_of_freedom = sum(nbi_fit$edf),
+  outer_iterations = nbi_fit$outer.info$iter,
+  outer_convergence = nbi_fit$outer.info$conv,
+  gradient_mu = nbi_outer_gradient[1],
+  hessian_mu_mu = nbi_outer_hessian[1, 1],
+  coefficient_count = length(coef(nbi_fit))
+)
+nbi_coefficient_reference <- data.frame(
+  index = seq_along(coef(nbi_fit)),
+  coefficient = as.numeric(coef(nbi_fit)),
+  effective_degrees_of_freedom = as.numeric(nbi_fit$edf)
+)
+nbi_fitted_reference <- data.frame(
+  eta_mu = as.numeric(predict(nbi_fit, type = "link")),
+  mu = as.numeric(fitted(nbi_fit))
+)
+
 write_reference <- function(value, path) {
   connection <- file(path, open = "wb")
   on.exit(close(connection))
@@ -684,12 +806,20 @@ check_reference <- function(actual, path, label) {
         generated[[column]] - expected[[column]]
       )
       relative_tolerance <- 2e-6
-      if (identical(label, "gamma_summary") &&
+      optimizer_sensitive_summary <- label %in% c(
+        "gamma_summary",
+        "beta_summary",
+        "nbi_summary"
+      )
+      if (optimizer_sensitive_summary &&
           grepl("^lambda_", column)) {
         # mgcv's outer Newton optimizer can settle at slightly different
         # smoothing parameters across BLAS implementations even when the
         # fitted model and convergence diagnostics agree.
         relative_tolerance <- 5e-5
+      } else if (optimizer_sensitive_summary &&
+                 identical(column, "effective_degrees_of_freedom")) {
+        relative_tolerance <- 5e-6
       }
       allowed <- relative_tolerance * (
         1 + abs(expected[[column]])
@@ -812,6 +942,26 @@ references <- list(
   beta_fitted = list(
     value = beta_fitted_reference,
     path = beta_fitted_path
+  ),
+  nbi_design = list(
+    value = nbi_design_reference,
+    path = nbi_design_path
+  ),
+  nbi_penalty = list(
+    value = nbi_penalty_reference,
+    path = nbi_penalty_path
+  ),
+  nbi_summary = list(
+    value = nbi_summary_reference,
+    path = nbi_summary_path
+  ),
+  nbi_coefficient = list(
+    value = nbi_coefficient_reference,
+    path = nbi_coefficient_path
+  ),
+  nbi_fitted = list(
+    value = nbi_fitted_reference,
+    path = nbi_fitted_path
   )
 )
 

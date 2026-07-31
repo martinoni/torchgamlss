@@ -165,7 +165,7 @@ generic constrained multiple-penalty solver inside their backfitting cycles;
 `fit_data()` and `fit_minibatch_data()` optimize the same penalty through
 Torch. `fit_laml_data()` selects automatic tensor and scalar smoothness
 parameters jointly for Normal location-scale, Poisson log-mean, Gamma mean/CV,
-and Beta mean/dispersion models. All paths run on CPU or CUDA.
+NBI mean/dispersion, and Beta mean/dispersion models. All paths run on CPU or CUDA.
 
 ## Whole-model LAML selection
 
@@ -257,7 +257,7 @@ Their ordering and values are checked exactly against
 - Marginals must currently be `SmoothTerm` instances with exactly one
   coefficient-space penalty each.
 - Joint automatic selection is available through dense whole-model LAML for
-  Normal location-scale, Poisson log-mean, Gamma mean/CV, and Beta
+  Normal location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and Beta
   mean/dispersion models, including parametric bootstrap refits.
 - Tensor terms are consumed through LAML, the generic dense penalized solver,
   the classical fixed-lambda RS/CG paths, or formula fixed-lambda

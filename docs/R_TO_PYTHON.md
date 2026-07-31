@@ -848,8 +848,8 @@ Important exclusions include:
 - families other than the ten listed above;
 - smoothers other than `pb()` and the current P-spline `te()`/`ti()` slice;
 - transformed smooth covariates and tensor LAML beyond the standard Normal
-  location-scale, Poisson log-mean, Gamma mean/CV, and Beta mean/dispersion
-  families;
+  location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and
+  Beta mean/dispersion families;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;

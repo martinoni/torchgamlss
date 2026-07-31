@@ -492,6 +492,16 @@ Torch predictor is `eta_sigma = eta_phi / 2`; the tests compare the objective,
 both lambdas, EDF, coefficients, predictors, fitted mean/CV, and the complete
 outer Hessian on CPU and CUDA.
 
+The NBI LAML fixture uses `mgcv::nb(theta=4, link="log")`, with
+`theta = 1/sigma` under the `gamlss.dist::NBI` variance convention. Torch
+supplies an empty `sigma` coefficient design plus the equivalent fixed
+log-scale offset, so both implementations optimize the same mean smooth. The
+negative LAML, likelihood, lambda, coefficients, predictor, fitted mean, and
+analytic outer Hessian agree. The small EDF difference is documented as an
+extended-family convention difference. A separate formula test estimates the
+NBI dispersion predictor and repeats lambda selection in bootstrap samples;
+the conditional fixture also runs on CUDA.
+
 The Beta LAML fixture uses `mgcv::betar(theta=12, link="logit")`. Since
 `mgcv` holds its precision fixed, Torch supplies an empty `sigma` coefficient
 design and the equivalent fixed offset under

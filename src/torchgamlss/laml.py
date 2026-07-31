@@ -1080,17 +1080,26 @@ def fit_gamlss_model_laml(
     per marginal direction. Exact unidentifiable directions are removed by
     null-space constraints before the nested optimization.
     """
-    from torchgamlss.families import Beta, Gamma, Normal, Poisson
+    from torchgamlss.families import (
+        Beta,
+        Gamma,
+        NegativeBinomial,
+        Normal,
+        Poisson,
+    )
     from torchgamlss.links import IdentityLink, LogitLink, LogLink
 
     is_normal = isinstance(model.family, Normal)
     is_poisson = isinstance(model.family, Poisson)
+    is_nbi = isinstance(model.family, NegativeBinomial)
     is_gamma = isinstance(model.family, Gamma)
     is_beta = isinstance(model.family, Beta)
-    if not is_normal and not is_poisson and not is_gamma and not is_beta:
+    if not (
+        is_normal or is_poisson or is_nbi or is_gamma or is_beta
+    ):
         raise ValueError(
-            "whole-model LAML currently supports Normal, Poisson, Gamma, "
-            "and Beta families"
+            "whole-model LAML currently supports Normal, Poisson, NBI, "
+            "Gamma, and Beta families"
         )
     if is_normal and (
         not isinstance(model.family.links["mu"], IdentityLink)
@@ -1101,6 +1110,13 @@ def fit_gamlss_model_laml(
         )
     if is_poisson and not isinstance(model.family.links["mu"], LogLink):
         raise ValueError("whole-model Poisson LAML requires a log mu link")
+    if is_nbi and (
+        not isinstance(model.family.links["mu"], LogLink)
+        or not isinstance(model.family.links["sigma"], LogLink)
+    ):
+        raise ValueError(
+            "whole-model NBI LAML requires log mu and log sigma links"
+        )
     if is_gamma and (
         not isinstance(model.family.links["mu"], LogLink)
         or not isinstance(model.family.links["sigma"], LogLink)

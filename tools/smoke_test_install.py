@@ -30,6 +30,7 @@ from torchgamlss import (
     InverseGaussian,
     LAMLControl,
     LogNormal,
+    NegativeBinomial,
     Normal,
     NormalLAMLResult,
     PenalizedLeastSquaresResult,
@@ -284,6 +285,34 @@ def main() -> None:
         raise RuntimeError("installed Beta LAML fit did not converge")
     if not torch.isfinite(beta_laml_fit.outer_hessian).all():
         raise RuntimeError("installed Beta LAML Hessian is non-finite")
+
+    nbi_x = torch.linspace(-1.0, 1.0, 60, dtype=torch.float64)
+    nbi_mu = torch.exp(0.3 + 0.8 * torch.sin(torch.pi * nbi_x))
+    nbi_sigma = torch.full_like(nbi_mu, 0.3)
+    nbi_y = NegativeBinomial().sample(
+        {"mu": nbi_mu, "sigma": nbi_sigma},
+        generator=torch.Generator().manual_seed(20260804),
+    )
+    nbi_frame = pd.DataFrame({"x": nbi_x.numpy(), "y": nbi_y.numpy()})
+    nbi_laml_model = GAMLSS.from_formula(
+        NegativeBinomial(),
+        {"mu": "y ~ pb(x, intervals=4)", "sigma": "~ 1"},
+        nbi_frame,
+    )
+    nbi_laml_fit = nbi_laml_model.fit_laml_data(
+        nbi_frame,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=25,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    if not isinstance(nbi_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed NBI LAML result is invalid")
+    if not nbi_laml_fit.outer_converged:
+        raise RuntimeError("installed NBI LAML fit did not converge")
+    if not torch.isfinite(nbi_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed NBI LAML Hessian is non-finite")
 
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)

@@ -1,6 +1,6 @@
 # Project state and handoff
 
-Last updated: 2026-07-30, America/Sao_Paulo.
+Last updated: 2026-07-31, America/Sao_Paulo.
 
 This file is the persistent project memory for decisions that should survive a
 conversation or development-session boundary. Detailed feature tracking remains
@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | Analytic-Hessian and Beta slices passed 635 local tests plus R/package gates; implicit-gradient commit passed 11/11 CI checks |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | NBI slice passed 638 local tests, CUDA, all R/package gates; refreshed CI pending |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -254,7 +254,7 @@ objectives.
 - on the two-lambda Gamma reference, the default route preserves objective,
   gradient, lambdas, and Hessian while reducing unique profile evaluations
   from 48 to 12;
-- Normal, Poisson, Gamma, tensor, bootstrap, and local CUDA LAML tests pass
+- Normal, Poisson, NBI, Gamma, Beta, tensor, bootstrap, and local CUDA LAML tests pass
   through the implicit default.
 
 ### Phase 12H — fully analytic outer LAML Hessian implemented
@@ -305,6 +305,26 @@ conditional `mgcv::betar` reference.
   and bytecode checks, package build, strict Twine validation, and the isolated
   installed-wheel smoke test pass.
 
+### Phase 12J — NBI LAML vertical implemented locally
+
+Negative-binomial type I now uses the same family-driven nested LAML core.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts standard NBI
+  log-mean/log-dispersion models;
+- LAML bootstrap refits accept NBI and reselect automatic scalar or tensor
+  lambdas in every successful sample;
+- `mgcv::nb(theta=4, link="log")` maps exactly through `sigma = 1/theta`;
+- a zero-column `sigma` design plus a fixed log-scale offset makes the direct
+  comparison conditional on the same dispersion;
+- negative LAML, likelihood, lambda, coefficients, predictor, fitted mean,
+  and analytic outer Hessian agree with the committed `mgcv` fixture;
+- the roughly `0.0045` EDF difference is documented as an extended-family
+  convention difference;
+- formula fitting and LAML bootstrap pass on CPU, and the conditional fixture
+  passes on local CUDA 12.8.
+- all 638 Python tests pass without skips; all five R gates, Ruff, build,
+  strict Twine validation, and the installed-wheel smoke test pass.
+
 ### Later slices
 
 1. LAML validation for further GAMLSS families without a direct `mgcv`
@@ -342,8 +362,9 @@ whose internal representation is already available.
 
 ## Resume point
 
-After 18:00 in America/Sao_Paulo, commit the already staged analytic-Hessian
-slice, then stage and commit the separately validated Beta LAML vertical. Push
-both commits to draft PR #13 and monitor all CI jobs. Rebase onto `main` only
-after dependencies merge. Do not merge any existing draft PR without explicit
-user authorization.
+Publish the validated NBI LAML vertical to draft PR #13 and monitor every CI
+job, especially the cross-platform `mgcv` reference gate. The next family
+slice should use an explicit external-reference strategy; prefer another
+direct `mgcv` overlap when available. Rebase onto `main` only after stacked
+dependencies merge. Do not merge any existing draft PR without explicit user
+authorization.
