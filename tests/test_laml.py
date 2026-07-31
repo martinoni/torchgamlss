@@ -218,10 +218,9 @@ def test_gamma_laml_matches_mgcv_reml_reference():
     torch.testing.assert_close(
         result.outer_hessian,
         expected_hessian,
-        # This is a second central difference of a converged profile. Its
-        # mu-mu entry varies by about 0.15% across Windows/Linux BLAS builds;
-        # fitted quantities and the LAML objective remain strictly checked.
-        rtol=2e-3,
+        # The Hessian is a central difference of the implicit gradient.
+        # Retain a small allowance for cross-platform linear algebra.
+        rtol=5e-4,
         atol=5e-5,
     )
     torch.testing.assert_close(
@@ -257,6 +256,61 @@ def test_gamma_laml_matches_mgcv_reml_reference():
         rtol=2e-6,
         atol=2e-6,
     )
+
+
+def test_implicit_outer_gradient_matches_finite_difference_with_fewer_profiles():
+    (
+        response,
+        weights,
+        mu_design,
+        sigma_design,
+        penalties,
+        _,
+    ) = _mgcv_gamma_system()
+    results = {}
+    for method in ("implicit", "finite_difference"):
+        results[method] = fit_gamlss_laml(
+            Gamma(),
+            response,
+            {"mu": mu_design, "sigma": sigma_design},
+            penalties,
+            (10.0, 10.0),
+            weights=weights,
+            control=LAMLControl(
+                outer_max_iterations=1,
+                outer_derivative_method=method,
+            ),
+        )
+    implicit = results["implicit"]
+    finite_difference = results["finite_difference"]
+
+    assert implicit.outer_derivative_method == "implicit"
+    assert finite_difference.outer_derivative_method == "finite_difference"
+    assert implicit.outer_iterations == finite_difference.outer_iterations == 1
+    torch.testing.assert_close(
+        implicit.history[0].gradient,
+        finite_difference.history[0].gradient,
+        rtol=2e-6,
+        atol=2e-7,
+    )
+    torch.testing.assert_close(
+        implicit.outer_gradient,
+        finite_difference.outer_gradient,
+        rtol=2e-6,
+        atol=2e-7,
+    )
+    torch.testing.assert_close(
+        implicit.smoothing_parameters,
+        finite_difference.smoothing_parameters,
+        rtol=2e-6,
+        atol=2e-7,
+    )
+    assert float(implicit.objective) == pytest.approx(
+        float(finite_difference.objective),
+        rel=2e-10,
+        abs=2e-10,
+    )
+    assert implicit.profile_evaluations < finite_difference.profile_evaluations
 
 
 def test_poisson_laml_matches_mgcv_reml_reference():
@@ -762,6 +816,11 @@ def test_laml_rejects_an_estimated_zero_penalty_component():
 def test_laml_control_rejects_an_invalid_relaxed_gradient_multiplier():
     with pytest.raises(ValueError, match="at least one"):
         LAMLControl(inner_relaxed_gradient_multiplier=0.5)
+
+
+def test_laml_control_rejects_an_unknown_outer_derivative_method():
+    with pytest.raises(ValueError, match="outer_derivative_method"):
+        LAMLControl(outer_derivative_method="automatic")  # type: ignore[arg-type]
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")

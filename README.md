@@ -90,7 +90,8 @@ The current implementation contains:
 - dense whole-model LAML for additive Normal location-scale, Poisson log-mean,
   and Gamma mean/CV models, including formula `fit_laml_data()`, automatic
   scalar and tensor lambdas, null-space constraints, outer diagnostics,
-  CPU/CUDA execution, and direct `mgcv` REML parity;
+  implicit outer gradients, CPU/CUDA execution, and direct `mgcv` REML
+  parity;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
 - target-EDF P-splines compatible with `pb(x, df=...)`;
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with

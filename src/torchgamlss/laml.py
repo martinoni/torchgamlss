@@ -1,11 +1,11 @@
-"""Laplace approximate marginal likelihood for smooth Normal models."""
+"""Laplace approximate marginal likelihood for smooth GAMLSS models."""
 
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import torch
 from torch import Tensor
@@ -28,6 +28,10 @@ class LAMLControl:
     outer_step_tolerance: float = 1e-7
     finite_difference_step: float = 2e-4
     hessian_difference_step: float = 2e-3
+    outer_derivative_method: Literal[
+        "implicit",
+        "finite_difference",
+    ] = "implicit"
     log_smoothing_parameter_bounds: tuple[float, float] = (-20.0, 20.0)
     max_line_search_steps: int = 25
 
@@ -61,6 +65,13 @@ class LAMLControl:
             )
         if self.max_line_search_steps < 1:
             raise ValueError("max_line_search_steps must be at least 1")
+        if self.outer_derivative_method not in {
+            "implicit",
+            "finite_difference",
+        }:
+            raise ValueError(
+                "outer_derivative_method must be 'implicit' or 'finite_difference'"
+            )
 
 
 @dataclass(frozen=True)
@@ -98,6 +109,8 @@ class NormalLAMLResult:
     outer_gradient: Tensor
     outer_hessian: Tensor
     outer_hessian_condition_number: Tensor
+    outer_derivative_method: str
+    profile_evaluations: int
     boundary_status: tuple[str, ...]
     outer_converged: bool
     outer_iterations: int
@@ -148,6 +161,8 @@ class GAMLSSLAMLResult:
     outer_gradient: Tensor
     outer_hessian: Tensor
     outer_hessian_condition_number: Tensor
+    outer_derivative_method: str
+    profile_evaluations: int
     boundary_status: tuple[str, ...]
     outer_converged: bool
     outer_iterations: int
@@ -235,6 +250,8 @@ class _OuterOptimization:
     gradient: Tensor
     hessian: Tensor
     hessian_condition_number: Tensor
+    derivative_method: str
+    profile_evaluations: int
     boundary_status: tuple[str, ...]
     converged: bool
     iterations: int
@@ -876,6 +893,8 @@ def fit_normal_laml(
         outer_gradient=optimization.gradient,
         outer_hessian=optimization.hessian,
         outer_hessian_condition_number=(optimization.hessian_condition_number),
+        outer_derivative_method=optimization.derivative_method,
+        profile_evaluations=optimization.profile_evaluations,
         boundary_status=optimization.boundary_status,
         outer_converged=optimization.converged,
         outer_iterations=optimization.iterations,
@@ -1017,6 +1036,8 @@ def fit_gamlss_laml(
         outer_gradient=optimization.gradient,
         outer_hessian=optimization.hessian,
         outer_hessian_condition_number=(optimization.hessian_condition_number),
+        outer_derivative_method=optimization.derivative_method,
+        profile_evaluations=optimization.profile_evaluations,
         boundary_status=optimization.boundary_status,
         outer_converged=optimization.converged,
         outer_iterations=optimization.iterations,
@@ -1338,11 +1359,11 @@ def _optimize_profile(
     history: list[LAMLHistoryEntry] = []
 
     if free_indices:
-        gradient = _profile_gradient(
+        gradient = _outer_profile_gradient(
             evaluator,
             free_log_parameters,
             current,
-            control.finite_difference_step,
+            control,
         )
         projected = _projected_gradient(
             free_log_parameters,
@@ -1416,11 +1437,11 @@ def _optimize_profile(
             if not accepted:
                 break
 
-            trial_gradient = _profile_gradient(
+            trial_gradient = _outer_profile_gradient(
                 evaluator,
                 trial_log_parameters,
                 trial,
-                control.finite_difference_step,
+                control,
             )
             trial_projected = _projected_gradient(
                 trial_log_parameters,
@@ -1479,11 +1500,11 @@ def _optimize_profile(
                 break
 
         outer_gradient_free = gradient
-        outer_hessian_free = _profile_hessian(
+        outer_hessian_free = _outer_profile_hessian(
             evaluator,
             free_log_parameters,
             current,
-            control.hessian_difference_step,
+            control,
         )
     else:
         outer_converged = True
@@ -1540,11 +1561,167 @@ def _optimize_profile(
         gradient=outer_gradient,
         hessian=outer_hessian,
         hessian_condition_number=hessian_condition.detach(),
+        derivative_method=control.outer_derivative_method,
+        profile_evaluations=len(evaluator.cache),
         boundary_status=boundary_status,
         converged=outer_converged,
         iterations=accepted_iterations,
         history=tuple(history),
     )
+
+
+def _outer_profile_gradient(
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
+    log_parameters: Tensor,
+    central: _ProfileEvaluation | _GAMLSSProfileEvaluation,
+    control: LAMLControl,
+) -> Tensor:
+    if control.outer_derivative_method == "implicit":
+        return _implicit_profile_gradient(
+            evaluator,
+            log_parameters,
+            central,
+        )
+    return _profile_gradient(
+        evaluator,
+        log_parameters,
+        central,
+        control.finite_difference_step,
+    )
+
+
+def _outer_profile_hessian(
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
+    log_parameters: Tensor,
+    central: _ProfileEvaluation | _GAMLSSProfileEvaluation,
+    control: LAMLControl,
+) -> Tensor:
+    if control.outer_derivative_method == "implicit":
+        return _implicit_profile_hessian(
+            evaluator,
+            log_parameters,
+            central,
+            control.hessian_difference_step,
+        )
+    return _profile_hessian(
+        evaluator,
+        log_parameters,
+        central,
+        control.hessian_difference_step,
+    )
+
+
+def _implicit_profile_gradient(
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
+    log_parameters: Tensor,
+    central: _ProfileEvaluation | _GAMLSSProfileEvaluation,
+) -> Tensor:
+    """Differentiate the converged LAML profile by the implicit function theorem."""
+    full_log_parameters = evaluator.full_log_parameters(log_parameters)
+    smoothing_parameters = full_log_parameters.exp()
+    reduced_components = tuple(
+        _symmetrize(evaluator.transform.mT @ penalty @ evaluator.transform)
+        for penalty in evaluator.penalty_matrices
+    )
+    scaled_components = tuple(
+        smoothing_parameter * component
+        for smoothing_parameter, component in zip(
+            smoothing_parameters,
+            reduced_components,
+            strict=True,
+        )
+    )
+
+    coefficients = central.reduced_coefficients.detach()
+    penalized_information = central.penalized_information.detach()
+    information_inverse = torch.linalg.inv(penalized_information)
+    penalty_inverse = _symmetric_pseudoinverse(central.reduced_combined_penalty)
+
+    differentiable_coefficients = coefficients.requires_grad_(True)
+    observed_information = torch.autograd.functional.hessian(
+        evaluator._negative_log_likelihood,
+        differentiable_coefficients,
+        create_graph=True,
+    )
+    differentiable_information = _symmetrize(
+        observed_information + central.reduced_combined_penalty
+    )
+    sign, log_determinant = torch.linalg.slogdet(differentiable_information)
+    if float(sign.detach()) <= 0:
+        raise RuntimeError(
+            "implicit LAML gradient requires positive definite information"
+        )
+    if log_determinant.requires_grad:
+        information_coefficient_gradient = torch.autograd.grad(
+            0.5 * log_determinant,
+            differentiable_coefficients,
+        )[0].detach()
+    else:
+        information_coefficient_gradient = torch.zeros_like(coefficients)
+
+    values: list[Tensor] = []
+    for penalty_index in evaluator.free_indices:
+        derivative_penalty = scaled_components[penalty_index]
+        coefficient_sensitivity = -torch.linalg.solve(
+            penalized_information,
+            derivative_penalty @ coefficients,
+        )
+        penalized_objective_derivative = 0.5 * (
+            coefficients @ derivative_penalty @ coefficients
+        )
+        penalty_determinant_derivative = -0.5 * torch.trace(
+            penalty_inverse @ derivative_penalty
+        )
+        information_direct_derivative = 0.5 * torch.trace(
+            information_inverse @ derivative_penalty
+        )
+        information_implicit_derivative = (
+            information_coefficient_gradient @ coefficient_sensitivity
+        )
+        values.append(
+            penalized_objective_derivative
+            + penalty_determinant_derivative
+            + information_direct_derivative
+            + information_implicit_derivative
+        )
+    return torch.stack(values).detach()
+
+
+def _implicit_profile_hessian(
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
+    log_parameters: Tensor,
+    central: _ProfileEvaluation | _GAMLSSProfileEvaluation,
+    step_size: float,
+) -> Tensor:
+    """Differentiate the implicit profile gradient by central differences."""
+    count = log_parameters.numel()
+    hessian = log_parameters.new_zeros((count, count))
+    for column in range(count):
+        step = step_size * max(1.0, abs(float(log_parameters[column])))
+        displacement = torch.zeros_like(log_parameters)
+        displacement[column] = step
+        plus_parameters = log_parameters + displacement
+        minus_parameters = log_parameters - displacement
+        plus = evaluator.evaluate(
+            plus_parameters,
+            start=central.reduced_coefficients,
+        )
+        minus = evaluator.evaluate(
+            minus_parameters,
+            start=central.reduced_coefficients,
+        )
+        plus_gradient = _implicit_profile_gradient(
+            evaluator,
+            plus_parameters,
+            plus,
+        )
+        minus_gradient = _implicit_profile_gradient(
+            evaluator,
+            minus_parameters,
+            minus,
+        )
+        hessian[:, column] = (plus_gradient - minus_gradient) / (2.0 * step)
+    return _symmetrize(hessian)
 
 
 def _profile_gradient(
@@ -1978,6 +2155,16 @@ def _generalized_log_determinant(matrix: Tensor) -> tuple[Tensor, int]:
     if retained.numel() == 0:
         return matrix.new_zeros(()), 0
     return retained.log().sum(), retained.numel()
+
+
+def _symmetric_pseudoinverse(matrix: Tensor) -> Tensor:
+    eigenvalues, eigenvectors = torch.linalg.eigh(_symmetrize(matrix))
+    tolerance = _matrix_tolerance(matrix)
+    retained = eigenvalues > tolerance
+    if not bool(retained.any()):
+        return torch.zeros_like(matrix)
+    vectors = eigenvectors[:, retained]
+    return _symmetrize((vectors * eigenvalues[retained].reciprocal()) @ vectors.mT)
 
 
 def _matrix_tolerance(matrix: Tensor) -> float:

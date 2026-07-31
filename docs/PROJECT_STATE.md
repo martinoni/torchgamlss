@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and automatic LAML selection | `agent/tensor-product-smooths` | 630 local tests passed; Poisson commit passed 11/11 CI checks |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | 632 local tests passed; pre-implicit commit passed 11/11 CI checks |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -233,15 +233,40 @@ The next family requires an explicit validation strategy because `mgcv` does
 not provide directly overlapping additive predictors for every GAMLSS
 location-scale-shape parameterization.
 
+### Phase 12G — implicit outer LAML gradient implemented
+
+The outer gradient now differentiates the converged penalized score equation
+with the implicit function theorem rather than differencing profile
+objectives.
+
+- coefficient sensitivities use
+  `d beta / d rho_j = -H_p^-1 lambda_j S_j beta`;
+- Torch autograd supplies the third-order likelihood contraction needed by
+  the penalized-information determinant;
+- the generalized penalty-determinant derivative uses the inverse restricted
+  to the penalized subspace;
+- the outer Hessian differences the implicit gradient, removing the noisier
+  second difference of the profile objective;
+- `outer_derivative_method="finite_difference"` preserves the original
+  implementation as an audit fallback;
+- results record the derivative method and number of unique profile
+  evaluations;
+- on the two-lambda Gamma reference, the default route preserves objective,
+  gradient, lambdas, and Hessian while reducing unique profile evaluations
+  from 48 to 12;
+- Normal, Poisson, Gamma, tensor, bootstrap, and local CUDA LAML tests pass
+  through the implicit default.
+
 ### Later slices
 
-1. LAML validation for additional GAMLSS families without a direct `mgcv`
+1. fully analytic outer LAML Hessian;
+2. LAML validation for additional GAMLSS families without a direct `mgcv`
    location-scale counterpart;
-2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
-3. discretized marginal bases and structured crossproducts;
-4. unconditional inference and smoothing-uncertainty-aware information
+3. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
+4. discretized marginal bases and structured crossproducts;
+5. unconditional inference and smoothing-uncertainty-aware information
    criteria;
-5. basis-dimension, concurvity, rank, and conditioning diagnostics.
+6. basis-dimension, concurvity, rank, and conditioning diagnostics.
 
 ## Open design decisions
 
@@ -270,7 +295,8 @@ whose internal representation is already available.
 
 ## Resume point
 
-Commit and push the validated Gamma LAML slice to draft PR #13 during the
-permitted publication window, then design the next-family validation strategy.
-Rebase onto `main` only after dependencies merge. Do not merge any existing
-draft PR without explicit user authorization.
+Complete the Python/R/package validation for the implicit-gradient slice,
+commit and push it to draft PR #13 during the permitted publication window,
+then choose between a fully analytic outer Hessian and the next-family
+validation strategy. Rebase onto `main` only after dependencies merge. Do not
+merge any existing draft PR without explicit user authorization.

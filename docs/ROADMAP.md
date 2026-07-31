@@ -151,6 +151,10 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 - [x] Generic family-driven LAML likelihood core and non-Normal vertical
   slices for Poisson log-mean and Gamma mean/CV models, including direct
   `mgcv` REML parity and bootstrap refits
+- [x] Implicit-function outer LAML gradients with a finite-difference audit
+  fallback and reduced profile-evaluation diagnostics
+- [ ] Fully analytic outer LAML Hessian; the current Hessian differences the
+  implicit gradient rather than the noisier profile objective
 - [ ] Extend whole-model LAML to the remaining multi-parameter families,
   with an explicit reference strategy for families without a directly
   overlapping `mgcv` location-scale family
