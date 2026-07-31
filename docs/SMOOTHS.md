@@ -358,8 +358,8 @@ low-level row-product and penalty embedding are checked against
 - Only equally spaced P-splines are available as tensor marginal bases.
 - Generic multiple-penalty systems currently use the dense low-level solver
   directly, through fixed-lambda formula RS/CG/L-BFGS/mini-batch fitting, or
-  through dense whole-model LAML for Normal location-scale and Poisson
-  log-mean models.
+  through dense whole-model LAML for Normal location-scale, Poisson log-mean,
+  and Gamma mean/CV models.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
   additive models, including fixed-lambda tensor terms. Analytic inference

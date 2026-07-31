@@ -47,14 +47,15 @@ def validate_bootstrap_refit(
         )
 
     if normalized == "laml":
-        from torchgamlss.families import Normal, Poisson
+        from torchgamlss.families import Gamma, Normal, Poisson
         from torchgamlss.links import IdentityLink, LogLink
 
         is_normal = isinstance(model.family, Normal)
         is_poisson = isinstance(model.family, Poisson)
-        if not is_normal and not is_poisson:
+        is_gamma = isinstance(model.family, Gamma)
+        if not is_normal and not is_poisson and not is_gamma:
             raise ValueError(
-                "LAML bootstrap currently supports Normal and Poisson families"
+                "LAML bootstrap currently supports Normal, Poisson, and Gamma families"
             )
         if is_normal and (
             not isinstance(model.family.links["mu"], IdentityLink)
@@ -65,6 +66,11 @@ def validate_bootstrap_refit(
             )
         if is_poisson and not isinstance(model.family.links["mu"], LogLink):
             raise ValueError("Poisson LAML bootstrap requires a log mu link")
+        if is_gamma and (
+            not isinstance(model.family.links["mu"], LogLink)
+            or not isinstance(model.family.links["sigma"], LogLink)
+        ):
+            raise ValueError("Gamma LAML bootstrap requires log mu and log sigma links")
         if not any(model.smooth_terms.values()):
             raise ValueError("LAML bootstrap requires at least one smooth term")
         if model.neural_predictors or model.shared_predictor is not None:

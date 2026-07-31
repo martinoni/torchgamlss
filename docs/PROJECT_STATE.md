@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and automatic LAML selection | `agent/tensor-product-smooths` | 624 local tests passed; 11/11 CI checks passed |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and automatic LAML selection | `agent/tensor-product-smooths` | 630 local tests passed; Poisson commit passed 11/11 CI checks |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -198,9 +198,9 @@ The random-intercept and random-slope slice is implemented in the sibling
 - RS, CG, L-BFGS, mini-batch, autograd, state, and CUDA coverage;
 - 600 Python tests and the complete R/package validation stack passed.
 
-### Phase 12F — first non-Normal LAML vertical implemented
+### Phase 12F — family-driven non-Normal LAML implemented
 
-The family-driven LAML likelihood core and the first non-Normal vertical are
+The family-driven LAML likelihood core and the Poisson/Gamma verticals are
 implemented on `agent/tensor-product-smooths`.
 
 - `fit_gamlss_laml()` obtains parameter order, links, starts, and
@@ -212,26 +212,31 @@ implemented on `agent/tensor-product-smooths`.
 - `GAMLSSLAMLResult` exposes parameter-keyed coefficients, predictors, fitted
   parameters, and the common LAML diagnostics;
 - whole-model `fit_laml()`/`fit_laml_data()` now accept standard Poisson
-  log-mean models in addition to standard Normal location-scale models;
-- fixed-design smooth bootstrap with `algorithm="laml"` reselects Poisson
-  smoothing parameters without mutating the fitted model;
-- a direct `mgcv::gam(..., family=poisson(), method="REML")` fixture checks
-  the LAML objective, selected lambda, EDF, coefficients, link predictor,
-  fitted mean, and outer Hessian;
-- CPU and local CUDA coverage exercise the generic Poisson path;
+  log-mean and Gamma mean/CV models in addition to standard Normal
+  location-scale models;
+- fixed-design smooth bootstrap with `algorithm="laml"` reselects Poisson and
+  Gamma smoothing parameters without mutating the fitted model;
+- direct `mgcv::gam(..., family=poisson(), method="REML")` and
+  `mgcv::gammals()` fixtures check objectives, selected lambdas, EDF,
+  coefficients, predictors, fitted parameters, and outer Hessians;
+- the Gamma reference explicitly maps `mgcv` variance scale
+  `phi = sigma^2` to the GAMLSS coefficient of variation;
+- CPU and local CUDA coverage exercise the one- and two-parameter generic
+  paths;
 - the specialized Normal API and result remain available for compatibility,
   and existing Normal/tensor LAML parity tests remain unchanged;
-- 627 Python tests passed without skips; all R reference gates, Ruff,
+- 630 Python tests passed without skips; all R reference gates, Ruff,
   dependency and bytecode checks, package build, strict Twine validation, and
   isolated installed-wheel smoke checks passed.
 
-Gamma is the next family candidate. Before claiming parity, its GAMLSS
-coefficient-of-variation `sigma` must be mapped explicitly to the scale
-parameterization of the chosen `mgcv` reference family.
+The next family requires an explicit validation strategy because `mgcv` does
+not provide directly overlapping additive predictors for every GAMLSS
+location-scale-shape parameterization.
 
 ### Later slices
 
-1. LAML generalization beyond Poisson, beginning with Gamma;
+1. LAML validation for additional GAMLSS families without a direct `mgcv`
+   location-scale counterpart;
 2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
 3. discretized marginal bases and structured crossproducts;
 4. unconditional inference and smoothing-uncertainty-aware information
@@ -265,7 +270,7 @@ whose internal representation is already available.
 
 ## Resume point
 
-Commit and push the validated Poisson LAML slice to draft PR #13 during the
-permitted publication window, then begin the explicit Gamma parameterization
-mapping. Rebase onto `main` only after dependencies merge. Do not merge any
-existing draft PR without explicit user authorization.
+Commit and push the validated Gamma LAML slice to draft PR #13 during the
+permitted publication window, then design the next-family validation strategy.
+Rebase onto `main` only after dependencies merge. Do not merge any existing
+draft PR without explicit user authorization.

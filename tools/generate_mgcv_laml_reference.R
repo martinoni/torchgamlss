@@ -368,6 +368,153 @@ poisson_fitted_reference <- data.frame(
   mu = as.numeric(fitted(poisson_fit))
 )
 
+gamma_design_path <- file.path(
+  reference_dir,
+  "mgcv_gamma_laml_design.csv"
+)
+gamma_penalty_path <- file.path(
+  reference_dir,
+  "mgcv_gamma_laml_penalties.csv"
+)
+gamma_summary_path <- file.path(
+  reference_dir,
+  "mgcv_gamma_laml_reference.csv"
+)
+gamma_coefficient_path <- file.path(
+  reference_dir,
+  "mgcv_gamma_laml_coefficient_reference.csv"
+)
+gamma_fitted_path <- file.path(
+  reference_dir,
+  "mgcv_gamma_laml_fitted_reference.csv"
+)
+
+gamma_observation_count <- 240
+gamma_index <- seq_len(gamma_observation_count)
+gamma_x <- seq(
+  -1,
+  1,
+  length.out = gamma_observation_count
+)
+gamma_z <- sin(gamma_index * sqrt(2))
+gamma_mu <- exp(0.4 + 0.65 * sin(pi * gamma_x))
+gamma_sigma <- exp(-0.65 + 0.75 * gamma_z)
+set.seed(20260802)
+gamma_y <- rgamma(
+  gamma_observation_count,
+  shape = 1 / gamma_sigma^2,
+  scale = gamma_mu * gamma_sigma^2
+)
+gamma_data <- data.frame(
+  y = gamma_y,
+  x = gamma_x,
+  z = gamma_z
+)
+gamma_setup <- gam(
+  list(
+    y ~ s(x, bs = "ps", k = 8),
+    ~s(z, bs = "ps", k = 7)
+  ),
+  data = gamma_data,
+  family = gammals(link = list("identity", "identity")),
+  method = "REML",
+  fit = FALSE
+)
+gamma_fit <- gam(G = gamma_setup, method = "REML")
+gamma_predictor_indices <- attr(gamma_setup$X, "lpi")
+gamma_mu_design <- gamma_setup$X[
+  ,
+  gamma_predictor_indices[[1]],
+  drop = FALSE
+]
+gamma_phi_design <- gamma_setup$X[
+  ,
+  gamma_predictor_indices[[2]],
+  drop = FALSE
+]
+colnames(gamma_mu_design) <- paste0(
+  "mu_",
+  seq_len(ncol(gamma_mu_design))
+)
+colnames(gamma_phi_design) <- paste0(
+  "phi_",
+  seq_len(ncol(gamma_phi_design))
+)
+gamma_design_reference <- data.frame(
+  response = gamma_setup$y,
+  weight = gamma_setup$w,
+  gamma_mu_design,
+  gamma_phi_design,
+  check.names = FALSE
+)
+gamma_coefficient_count <- ncol(gamma_setup$X)
+gamma_penalty_references <- lapply(
+  seq_along(gamma_setup$S),
+  function(penalty_index) {
+    full_penalty <- matrix(
+      0,
+      nrow = gamma_coefficient_count,
+      ncol = gamma_coefficient_count
+    )
+    start <- gamma_setup$off[penalty_index]
+    term_indices <- start:(
+      start + nrow(gamma_setup$S[[penalty_index]]) - 1
+    )
+    full_penalty[term_indices, term_indices] <- (
+      gamma_setup$S[[penalty_index]]
+    )
+    data.frame(
+      penalty = penalty_index,
+      row = rep(
+        seq_len(gamma_coefficient_count),
+        each = gamma_coefficient_count
+      ),
+      column = rep(
+        seq_len(gamma_coefficient_count),
+        gamma_coefficient_count
+      ),
+      value = as.vector(t(full_penalty))
+    )
+  }
+)
+gamma_penalty_reference <- do.call(
+  rbind,
+  gamma_penalty_references
+)
+gamma_outer_gradient <- as.numeric(
+  gamma_fit$outer.info$grad
+)
+gamma_outer_hessian <- gamma_fit$outer.info$hess
+gamma_summary_reference <- data.frame(
+  mgcv_version = as.character(packageVersion("mgcv")),
+  objective = as.numeric(gamma_fit$gcv.ubre),
+  log_likelihood = as.numeric(logLik(gamma_fit)),
+  lambda_mu = as.numeric(gamma_fit$sp[1]),
+  lambda_phi = as.numeric(gamma_fit$sp[2]),
+  effective_degrees_of_freedom = sum(gamma_fit$edf),
+  outer_iterations = gamma_fit$outer.info$iter,
+  outer_convergence = gamma_fit$outer.info$conv,
+  gradient_mu = gamma_outer_gradient[1],
+  gradient_phi = gamma_outer_gradient[2],
+  hessian_mu_mu = gamma_outer_hessian[1, 1],
+  hessian_mu_phi = gamma_outer_hessian[1, 2],
+  hessian_phi_phi = gamma_outer_hessian[2, 2],
+  coefficient_count = length(coef(gamma_fit))
+)
+gamma_coefficient_reference <- data.frame(
+  index = seq_along(coef(gamma_fit)),
+  coefficient = as.numeric(coef(gamma_fit)),
+  effective_degrees_of_freedom = as.numeric(gamma_fit$edf)
+)
+gamma_link_prediction <- predict(gamma_fit, type = "link")
+gamma_response_prediction <- fitted(gamma_fit)
+gamma_fitted_reference <- data.frame(
+  eta_mu = gamma_link_prediction[, 1],
+  eta_phi = gamma_link_prediction[, 2],
+  mu = gamma_response_prediction[, 1],
+  sigma = exp(0.5 * gamma_response_prediction[, 2])
+)
+
 write_reference <- function(value, path) {
   connection <- file(path, open = "wb")
   on.exit(close(connection))
@@ -477,6 +624,26 @@ references <- list(
   poisson_fitted = list(
     value = poisson_fitted_reference,
     path = poisson_fitted_path
+  ),
+  gamma_design = list(
+    value = gamma_design_reference,
+    path = gamma_design_path
+  ),
+  gamma_penalty = list(
+    value = gamma_penalty_reference,
+    path = gamma_penalty_path
+  ),
+  gamma_summary = list(
+    value = gamma_summary_reference,
+    path = gamma_summary_path
+  ),
+  gamma_coefficient = list(
+    value = gamma_coefficient_reference,
+    path = gamma_coefficient_path
+  ),
+  gamma_fitted = list(
+    value = gamma_fitted_reference,
+    path = gamma_fitted_path
   )
 )
 

@@ -1,8 +1,8 @@
 # Whole-model LAML
 
 TorchGAMLSS has a dense whole-model Laplace approximate marginal likelihood
-implementation for additive Normal location-scale and Poisson log-mean
-models. A Normal formula model uses:
+implementation for additive Normal location-scale, Poisson log-mean, and
+Gamma mean/coefficient-of-variation models. A Normal formula model uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -12,6 +12,22 @@ model = GAMLSS.from_formula(
     {
         "mu": "y ~ te(x, z, intervals=(6, 4), name='surface')",
         "sigma": "~ pb(w, intervals=6)",
+    },
+    data,
+)
+fit = model.fit_laml_data(data, control=LAMLControl())
+```
+
+A Gamma model can smooth both its mean and coefficient of variation:
+
+```python
+from torchgamlss import GAMLSS, Gamma, LAMLControl
+
+model = GAMLSS.from_formula(
+    Gamma(),
+    {
+        "mu": "y ~ pb(x, intervals=8)",
+        "sigma": "~ pb(z, intervals=6)",
     },
     data,
 )
@@ -109,6 +125,14 @@ For Poisson, `eta_mu = X_mu beta_mu + offset_mu`,
 `Poisson.log_prob()`. The generic path obtains links, starting parameters, and
 the differentiable observation-wise likelihood from the public `Family`
 interface; its smoothing optimizer is shared with the exact Normal path.
+
+For Gamma, TorchGAMLSS follows `gamlss.dist::GA`: `sigma` is the coefficient
+of variation and `Var(Y) = sigma^2 mu^2`. The overlapping `mgcv::gammals`
+scale is `phi = sigma^2`, so its predictor obeys
+`eta_sigma = eta_phi / 2`. The committed reference uses identity links on
+`mgcv`'s internal log-mean and log-scale parameters, making this
+reparameterization explicit rather than relying on `gammals`' default lower
+bound transform.
 
 ## Formula and model integration
 
@@ -267,10 +291,11 @@ parameter-keyed coefficient, predictor, and fitted-parameter mappings:
 
 `tools/generate_mgcv_laml_reference.R` builds a two-smooth Gaussian
 location-scale model and a two-penalty tensor-product model with
-`mgcv::gaulss(method="REML")`, plus a Poisson log-mean model with
-`mgcv::gam(..., family=poisson(), method="REML")`. It exports the exact model
-matrices and coefficient-space penalties and checks the committed reference
-files.
+`mgcv::gaulss(method="REML")`, a Poisson log-mean model, and a Gamma
+location-scale model. The latter two use
+`mgcv::gam(..., method="REML")` with `poisson()` and `gammals()`,
+respectively. The generator exports the exact model matrices and
+coefficient-space penalties and checks the committed reference files.
 
 For the current fixture:
 
@@ -298,10 +323,20 @@ For the Poisson fixture:
 | lambda for `mu` | 9.09069376 | 9.09059115 |
 | total EDF | 4.90660697 | 4.90661362 |
 
+For the Gamma fixture:
+
+| Quantity | TorchGAMLSS | `mgcv` |
+|---|---:|---:|
+| negative LAML | 246.1128227180 | 246.1128227179 |
+| lambda for `mu` | 13.84549454 | 13.84547277 |
+| lambda for `phi = sigma^2` | 437.1846991 | 437.1872877 |
+| total EDF | 8.20690616 | 8.20690518 |
+
 The tests also compare every coefficient and every fitted location and scale,
-the Poisson link and fitted mean, the outer Hessian, penalty ranks, the joint
-cross-information block, tensor penalty directions, and fixed-lambda results
-from the existing classical `GAMLSS.fit_rs()` path.
+the Poisson link and fitted mean, the Gamma mean/CV predictors and parameters,
+the outer Hessian, penalty ranks, the joint cross-information block, tensor
+penalty directions, and fixed-lambda results from the existing classical
+`GAMLSS.fit_rs()` path.
 
 Regenerate or verify the fixture with:
 
@@ -312,9 +347,10 @@ Rscript tools/generate_mgcv_laml_reference.R --check
 
 ## Current limits
 
-- whole-model integration currently accepts standard Normal identity/log and
-  Poisson log-link models; the low-level family-driven core is deliberately
-  exposed, but other families are not yet claimed as validated;
+- whole-model integration currently accepts standard Normal identity/log,
+  Poisson log-link, and Gamma log/log models; the low-level family-driven core
+  is deliberately exposed, but other families are not yet claimed as
+  validated;
 - outer derivatives are numerical profile derivatives;
 - no sparse or discretized large-data backend is connected;
 - smoothing-parameter uncertainty is reported through the outer Hessian but
@@ -335,3 +371,5 @@ Rscript tools/generate_mgcv_laml_reference.R --check
   documentation](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/gaulss.html).
 - [`mgcv::gam`
   documentation](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/gam.html).
+- [`mgcv::gammals`
+  documentation](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/gammals.html).

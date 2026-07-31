@@ -284,7 +284,7 @@ For each successful replicate, TorchGAMLSS:
 
 Use the same `algorithm=` and `control=` settings as the original fit so the
 bootstrap distribution represents the estimator that produced the reported
-model. For a supported Normal or Poisson model fitted with
+model. For a supported Normal, Poisson, or Gamma model fitted with
 `fit_laml_data()`, use:
 
 ```python
@@ -303,9 +303,10 @@ bootstrap = model.smooth_joint_bootstrap_data(
 This repeats the complete nested LAML optimization in every successful
 replicate. Automatic `pb()`, `te()`, and `ti()` lambdas are selected jointly;
 fixed formula lambdas remain fixed. LAML bootstrap currently supports additive
-Normal models with identity-`mu`/log-`sigma` links and Poisson models with a
-log-`mu` link. It is materially more expensive than RS or CG bootstrap, so
-use `max_attempts` and inspect `failure_rate`.
+Normal models with identity-`mu`/log-`sigma` links, Poisson models with a
+log-`mu` link, and Gamma models with log-`mu`/log-`sigma` links. It is
+materially more expensive than RS or CG bootstrap, so use `max_attempts` and
+inspect `failure_rate`.
 
 The reported pointwise intervals are percentile bootstrap intervals.
 `standard_errors` and `covariance_matrix` are empirical across the successful

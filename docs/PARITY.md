@@ -484,6 +484,14 @@ lambda, EDF, every coefficient, link predictor, fitted mean, and outer
 Hessian. The same Torch core is covered through formula fitting, parametric
 smooth bootstrap, and local CUDA execution.
 
+The Gamma LAML fixture then exercises two parameters and cross-information.
+It uses `mgcv::gammals(link=list("identity","identity"))` and the identity
+`phi = sigma^2`, where `phi` is `mgcv`'s variance scale and `sigma` is the
+GAMLSS coefficient of variation. The exported scale design is halved so the
+Torch predictor is `eta_sigma = eta_phi / 2`; the tests compare the objective,
+both lambdas, EDF, coefficients, predictors, fitted mean/CV, and the complete
+outer Hessian on CPU and CUDA.
+
 Fixed tensor lambdas can also be fitted with the generic
 dense solver or constructed through formula `te()`/`ti()` terms for
 RS/CG/L-BFGS/mini-batch fitting. Formula tests verify construction, exact

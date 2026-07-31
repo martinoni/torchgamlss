@@ -8,6 +8,7 @@ import torch
 from torchgamlss import (
     GAMLSS,
     GAMLSSLAMLResult,
+    Gamma,
     LAMLControl,
     Normal,
     Poisson,
@@ -94,6 +95,165 @@ def _mgcv_poisson_system():
         ] = torch.tensor(rows["value"].to_numpy(), dtype=dtype)
         penalties.append(penalty)
     return response, weights, design, tuple(penalties), reference
+
+
+def _mgcv_gamma_system():
+    design_frame = pd.read_csv(REFERENCE_DIR / "mgcv_gamma_laml_design.csv")
+    reference = pd.read_csv(REFERENCE_DIR / "mgcv_gamma_laml_reference.csv").iloc[0]
+    dtype = torch.float64
+    response = torch.tensor(
+        design_frame["response"].to_numpy(),
+        dtype=dtype,
+    )
+    weights = torch.tensor(
+        design_frame["weight"].to_numpy(),
+        dtype=dtype,
+    )
+    mu_design = torch.tensor(
+        design_frame.filter(regex=r"^mu_").to_numpy(),
+        dtype=dtype,
+    )
+    phi_design = torch.tensor(
+        design_frame.filter(regex=r"^phi_").to_numpy(),
+        dtype=dtype,
+    )
+    sigma_design = 0.5 * phi_design
+    coefficient_count = mu_design.shape[1] + sigma_design.shape[1]
+    penalty_frame = pd.read_csv(REFERENCE_DIR / "mgcv_gamma_laml_penalties.csv")
+    penalties = []
+    for penalty_index in sorted(penalty_frame["penalty"].unique()):
+        rows = penalty_frame[penalty_frame["penalty"] == penalty_index]
+        penalty = torch.zeros(
+            (coefficient_count, coefficient_count),
+            dtype=dtype,
+        )
+        penalty[
+            torch.tensor(rows["row"].to_numpy() - 1),
+            torch.tensor(rows["column"].to_numpy() - 1),
+        ] = torch.tensor(rows["value"].to_numpy(), dtype=dtype)
+        penalties.append(penalty)
+    return (
+        response,
+        weights,
+        mu_design,
+        sigma_design,
+        tuple(penalties),
+        reference,
+    )
+
+
+def test_gamma_laml_matches_mgcv_reml_reference():
+    (
+        response,
+        weights,
+        mu_design,
+        sigma_design,
+        penalties,
+        reference,
+    ) = _mgcv_gamma_system()
+    result = fit_gamlss_laml(
+        Gamma(),
+        response,
+        {"mu": mu_design, "sigma": sigma_design},
+        penalties,
+        (10.0, 10.0),
+        weights=weights,
+        control=LAMLControl(
+            outer_max_iterations=40,
+            outer_gradient_tolerance=2e-5,
+        ),
+    )
+    coefficients = pd.read_csv(
+        REFERENCE_DIR / "mgcv_gamma_laml_coefficient_reference.csv"
+    )
+    fitted = pd.read_csv(REFERENCE_DIR / "mgcv_gamma_laml_fitted_reference.csv")
+
+    assert result.outer_converged
+    assert result.inner_converged
+    assert result.family == "GA"
+    assert result.parameter_names == ("mu", "sigma")
+    assert result.boundary_status == ("interior", "interior")
+    assert result.penalty_ranks == (6, 5)
+    assert result.combined_penalty_rank == 11
+    assert result.unpenalized_dimension == 4
+    assert float(result.objective) == pytest.approx(
+        float(reference["objective"]),
+        rel=2e-8,
+        abs=2e-8,
+    )
+    assert float(result.log_likelihood) == pytest.approx(
+        float(reference["log_likelihood"]),
+        rel=2e-8,
+        abs=2e-6,
+    )
+    torch.testing.assert_close(
+        result.smoothing_parameters,
+        torch.tensor(
+            [
+                reference["lambda_mu"],
+                reference["lambda_phi"],
+            ],
+            dtype=torch.float64,
+        ),
+        rtol=1e-5,
+        atol=1e-5,
+    )
+    assert float(result.effective_degrees_of_freedom) == pytest.approx(
+        float(reference["effective_degrees_of_freedom"]),
+        rel=2e-6,
+    )
+    expected_hessian = torch.tensor(
+        [
+            [
+                reference["hessian_mu_mu"],
+                reference["hessian_mu_phi"],
+            ],
+            [
+                reference["hessian_mu_phi"],
+                reference["hessian_phi_phi"],
+            ],
+        ],
+        dtype=torch.float64,
+    )
+    torch.testing.assert_close(
+        result.outer_hessian,
+        expected_hessian,
+        rtol=5e-4,
+        atol=5e-5,
+    )
+    torch.testing.assert_close(
+        result.coefficients,
+        torch.tensor(
+            coefficients["coefficient"].to_numpy(),
+            dtype=torch.float64,
+        ),
+        rtol=2e-6,
+        atol=1e-6,
+    )
+    torch.testing.assert_close(
+        result.linear_predictors["mu"],
+        torch.tensor(fitted["eta_mu"].to_numpy(), dtype=torch.float64),
+        rtol=2e-6,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        result.linear_predictors["sigma"],
+        0.5 * torch.tensor(fitted["eta_phi"].to_numpy(), dtype=torch.float64),
+        rtol=2e-6,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        result.fitted_parameters["mu"],
+        torch.tensor(fitted["mu"].to_numpy(), dtype=torch.float64),
+        rtol=2e-6,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        result.fitted_parameters["sigma"],
+        torch.tensor(fitted["sigma"].to_numpy(), dtype=torch.float64),
+        rtol=2e-6,
+        atol=2e-6,
+    )
 
 
 def test_poisson_laml_matches_mgcv_reml_reference():
@@ -675,6 +835,70 @@ def _formula_poisson_laml_data(
     return pd.DataFrame({"y": response.numpy(), "x": x.numpy()})
 
 
+def _formula_gamma_laml_data(
+    observation_count: int = 80,
+) -> pd.DataFrame:
+    dtype = torch.float64
+    x = torch.linspace(-1.0, 1.0, observation_count, dtype=dtype)
+    mean = torch.exp(0.4 + 0.6 * torch.sin(math.pi * x))
+    sigma = torch.full_like(mean, 0.45)
+    response = Gamma().sample(
+        {"mu": mean, "sigma": sigma},
+        generator=torch.Generator().manual_seed(20260802),
+    )
+    return pd.DataFrame({"y": response.numpy(), "x": x.numpy()})
+
+
+def test_formula_gamma_laml_selects_lambda_and_bootstraps():
+    data = _formula_gamma_laml_data()
+    model = GAMLSS.from_formula(
+        Gamma(),
+        {
+            "mu": "y ~ pb(x, intervals=5)",
+            "sigma": "~ 1",
+        },
+        data,
+    )
+    control = LAMLControl(
+        inner_gradient_tolerance=1e-6,
+        outer_max_iterations=25,
+        outer_gradient_tolerance=5e-4,
+    )
+
+    result = model.fit_laml_data(data, control=control)
+    prediction = model.predict_data(data)
+
+    assert isinstance(result, GAMLSSLAMLResult)
+    assert result.outer_converged
+    assert result.parameter_names == ("mu", "sigma")
+    assert result.smoothing_parameter_labels == (("mu", "x", 0),)
+    assert result.smoothing_parameters[0] > 0
+    torch.testing.assert_close(
+        prediction["mu"],
+        result.fitted_parameters["mu"],
+    )
+    torch.testing.assert_close(
+        prediction["sigma"],
+        result.fitted_parameters["sigma"],
+    )
+
+    bootstrap = model.smooth_bootstrap_data(
+        data,
+        new_data=data.iloc[::20].drop(columns="y"),
+        replicates=10,
+        max_attempts=20,
+        algorithm="laml",
+        control=control,
+        generator=torch.Generator().manual_seed(719),
+    )["mu"]["x"]
+
+    assert bootstrap.algorithm == "laml"
+    assert bootstrap.bootstrap_estimates.shape == (10, 4)
+    assert bootstrap.bootstrap_smoothing_parameters.shape == (10,)
+    assert bootstrap.bootstrap_smoothing_parameters.std() > 0
+    assert torch.isfinite(bootstrap.bootstrap_estimates).all()
+
+
 def test_formula_poisson_laml_selects_lambda_and_bootstraps():
     data = _formula_poisson_laml_data()
     model = GAMLSS.from_formula(
@@ -1071,4 +1295,40 @@ def test_poisson_laml_runs_on_cuda():
     assert result.outer_converged
     assert result.coefficients.device.type == "cuda"
     assert result.fitted_parameters["mu"].device.type == "cuda"
+    assert result.outer_hessian.device.type == "cuda"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_gamma_laml_runs_on_cuda():
+    (
+        response,
+        weights,
+        mu_design,
+        sigma_design,
+        penalties,
+        _,
+    ) = _mgcv_gamma_system()
+    response = response.cuda()
+    weights = weights.cuda()
+    mu_design = mu_design.cuda()
+    sigma_design = sigma_design.cuda()
+    penalties = tuple(penalty.cuda() for penalty in penalties)
+
+    result = fit_gamlss_laml(
+        Gamma(),
+        response,
+        {"mu": mu_design, "sigma": sigma_design},
+        penalties,
+        (10.0, 10.0),
+        weights=weights,
+        control=LAMLControl(
+            outer_max_iterations=40,
+            outer_gradient_tolerance=2e-5,
+        ),
+    )
+
+    assert result.outer_converged
+    assert result.coefficients.device.type == "cuda"
+    assert result.fitted_parameters["mu"].device.type == "cuda"
+    assert result.fitted_parameters["sigma"].device.type == "cuda"
     assert result.outer_hessian.device.type == "cuda"
