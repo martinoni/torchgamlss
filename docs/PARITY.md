@@ -492,11 +492,12 @@ Torch predictor is `eta_sigma = eta_phi / 2`; the tests compare the objective,
 both lambdas, EDF, coefficients, predictors, fitted mean/CV, and the complete
 outer Hessian on CPU and CUDA.
 
-The default implicit outer gradient is checked against the retained
-finite-difference implementation at the same Gamma profile. Initial and final
-gradients, the accepted lambda update, and the objective agree while the
-implicit route uses one third as many unique profile evaluations in the
-one-iteration audit and one quarter as many at full convergence.
+The default implicit outer gradient and fully analytic Hessian are checked
+against the retained finite-difference implementation at the same Gamma
+profile. Initial and final gradients, the Hessian, accepted lambda update, and
+objective agree within the audit path's numerical tolerance. The implicit
+route uses 2 rather than 18 unique profile evaluations in the one-iteration
+audit and 8 rather than 48 at full convergence.
 
 Fixed tensor lambdas can also be fitted with the generic
 dense solver or constructed through formula `te()`/`ti()` terms for

@@ -721,8 +721,8 @@ successful sample. This is a TorchGAMLSS extension rather than a claim of
 direct `gamlss` output parity; the underlying fit and conditional variance
 remain covered by the R fixtures.
 
-Whole-model LAML uses implicit-function outer gradients by default, matching
-the outer-iteration strategy used by `mgcv`. Set
+Whole-model LAML uses implicit-function outer gradients and Hessians by
+default, matching the outer-derivative strategy used by `mgcv`. Set
 `LAMLControl(outer_derivative_method="finite_difference")` only to audit
 against the original profile-difference implementation.
 

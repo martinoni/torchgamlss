@@ -1601,7 +1601,6 @@ def _outer_profile_hessian(
             evaluator,
             log_parameters,
             central,
-            control.hessian_difference_step,
         )
     return _profile_hessian(
         evaluator,
@@ -1691,37 +1690,158 @@ def _implicit_profile_hessian(
     evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
     log_parameters: Tensor,
     central: _ProfileEvaluation | _GAMLSSProfileEvaluation,
-    step_size: float,
 ) -> Tensor:
-    """Differentiate the implicit profile gradient by central differences."""
-    count = log_parameters.numel()
-    hessian = log_parameters.new_zeros((count, count))
-    for column in range(count):
-        step = step_size * max(1.0, abs(float(log_parameters[column])))
-        displacement = torch.zeros_like(log_parameters)
-        displacement[column] = step
-        plus_parameters = log_parameters + displacement
-        minus_parameters = log_parameters - displacement
-        plus = evaluator.evaluate(
-            plus_parameters,
-            start=central.reduced_coefficients,
+    """Build the exact profile Hessian from implicit coefficient sensitivities."""
+    coefficients = central.reduced_coefficients.detach()
+    coefficient_count = coefficients.numel()
+    free_smoothing_count = log_parameters.numel()
+    penalized_information = central.penalized_information.detach()
+
+    reduced_components = tuple(
+        _symmetrize(evaluator.transform.mT @ penalty @ evaluator.transform)
+        for penalty in evaluator.penalty_matrices
+    )
+    full_log_parameters = evaluator.full_log_parameters(log_parameters)
+    smoothing_parameters = full_log_parameters.exp()
+    scaled_components = tuple(
+        smoothing_parameter * component
+        for smoothing_parameter, component in zip(
+            smoothing_parameters,
+            reduced_components,
+            strict=True,
         )
-        minus = evaluator.evaluate(
-            minus_parameters,
-            start=central.reduced_coefficients,
+    )
+    free_components = tuple(
+        scaled_components[index] for index in evaluator.free_indices
+    )
+
+    sensitivity_right_hand_side = torch.stack(
+        tuple(component @ coefficients for component in free_components),
+        dim=1,
+    )
+    coefficient_sensitivity = -torch.linalg.solve(
+        penalized_information,
+        sensitivity_right_hand_side,
+    )
+
+    second_sensitivity = coefficients.new_empty(
+        (coefficient_count, free_smoothing_count, free_smoothing_count)
+    )
+    # If g(beta, rho) is the penalized score, differentiating g = 0 twice gives
+    # H_p beta_jk = -(l'''[beta_j, beta_k] + D_j beta_k + D_k beta_j
+    #                  + 1[j=k] D_j beta), where D_j = lambda_j S_j.
+    for left in range(free_smoothing_count):
+        left_sensitivity = coefficient_sensitivity[:, left]
+
+        def information_times_left(value: Tensor) -> Tensor:
+            likelihood_gradient = torch.autograd.grad(
+                evaluator._negative_log_likelihood(value),
+                value,
+                create_graph=True,
+            )[0]
+            return torch.autograd.grad(
+                likelihood_gradient @ left_sensitivity,
+                value,
+                create_graph=True,
+            )[0]
+
+        for right in range(left, free_smoothing_count):
+            right_sensitivity = coefficient_sensitivity[:, right]
+            _, third_derivative_contraction = torch.autograd.functional.jvp(
+                information_times_left,
+                coefficients,
+                right_sensitivity,
+            )
+            right_hand_side = (
+                third_derivative_contraction
+                + free_components[right] @ left_sensitivity
+                + free_components[left] @ right_sensitivity
+            )
+            if left == right:
+                right_hand_side = right_hand_side + free_components[left] @ coefficients
+            value = -torch.linalg.solve(
+                penalized_information,
+                right_hand_side,
+            )
+            second_sensitivity[:, left, right] = value
+            second_sensitivity[:, right, left] = value
+
+    penalty_eigenvalues, penalty_eigenvectors = torch.linalg.eigh(
+        central.reduced_combined_penalty
+    )
+    # Positive lambdas keep the combined penalty range fixed locally. Restricting
+    # to this detached basis makes the generalized log determinant differentiable.
+    penalty_range = penalty_eigenvectors[
+        :, penalty_eigenvalues > _matrix_tolerance(central.reduced_combined_penalty)
+    ].detach()
+
+    def partial_profile_objective(value: Tensor) -> Tensor:
+        trial_coefficients = value[:coefficient_count]
+        trial_log_parameters = value[coefficient_count:]
+        trial_full_log_parameters = evaluator.full_log_parameters(trial_log_parameters)
+        trial_smoothing_parameters = trial_full_log_parameters.exp()
+        trial_penalty = _symmetrize(
+            sum(
+                (
+                    smoothing_parameter * component
+                    for smoothing_parameter, component in zip(
+                        trial_smoothing_parameters,
+                        reduced_components,
+                        strict=True,
+                    )
+                ),
+                torch.zeros_like(reduced_components[0]),
+            )
         )
-        plus_gradient = _implicit_profile_gradient(
-            evaluator,
-            plus_parameters,
-            plus,
+        negative_log_likelihood = evaluator._negative_log_likelihood(trial_coefficients)
+        observed_information = torch.autograd.functional.hessian(
+            evaluator._negative_log_likelihood,
+            trial_coefficients,
+            create_graph=True,
         )
-        minus_gradient = _implicit_profile_gradient(
-            evaluator,
-            minus_parameters,
-            minus,
+        trial_information = _symmetrize(observed_information + trial_penalty)
+        penalty_log_determinant = trial_coefficients.new_zeros(())
+        if penalty_range.shape[1] > 0:
+            penalty_log_determinant = torch.linalg.slogdet(
+                penalty_range.mT @ trial_penalty @ penalty_range
+            ).logabsdet
+        information_log_determinant = torch.linalg.slogdet(trial_information).logabsdet
+        return (
+            negative_log_likelihood
+            + 0.5 * trial_coefficients @ trial_penalty @ trial_coefficients
+            - 0.5 * penalty_log_determinant
+            + 0.5 * information_log_determinant
         )
-        hessian[:, column] = (plus_gradient - minus_gradient) / (2.0 * step)
-    return _symmetrize(hessian)
+
+    joint_point = torch.cat((coefficients, log_parameters.detach()))
+    partial_gradient = torch.autograd.functional.jacobian(
+        partial_profile_objective,
+        joint_point,
+    )
+    partial_hessian = torch.autograd.functional.hessian(
+        partial_profile_objective,
+        joint_point,
+    )
+    joint_sensitivity = torch.cat(
+        (
+            coefficient_sensitivity,
+            torch.eye(
+                free_smoothing_count,
+                dtype=log_parameters.dtype,
+                device=log_parameters.device,
+            ),
+        ),
+        dim=0,
+    )
+    # For z(rho) = (beta_hat(rho), rho), apply
+    # d2 V / d rho2 = z' V_zz z + V_beta beta_jk.
+    hessian = joint_sensitivity.mT @ partial_hessian @ joint_sensitivity
+    hessian = hessian + torch.einsum(
+        "a,ajk->jk",
+        partial_gradient[:coefficient_count],
+        second_sensitivity,
+    )
+    return _symmetrize(hessian.detach())
 
 
 def _profile_gradient(

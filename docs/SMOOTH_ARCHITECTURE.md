@@ -127,9 +127,10 @@ matches a direct two-penalty `mgcv::te()` REML fixture.
 The integrated branch now obtains coefficient sensitivities from the
 converged penalized score by the implicit function theorem. Its default outer
 gradient is analytic, including the autograd third-order contraction required
-by the information determinant. The outer Hessian currently differences this
-implicit gradient; the original profile-objective finite differences remain
-an explicit audit fallback.
+by the information determinant. The outer Hessian uses second-order implicit
+coefficient sensitivities and exact autograd partials through fourth order;
+the original profile-objective finite differences remain an explicit audit
+fallback.
 
 `LAML` is the generic name in the implementation. A `REML` alias should only be
 advertised where its fixed-effect and scale interpretation is well defined.

@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | 632 local tests passed; pre-implicit commit passed 11/11 CI checks |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | Analytic-Hessian slice passed 632 local tests plus R/package gates; implicit-gradient commit passed 11/11 CI checks |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -257,16 +257,39 @@ objectives.
 - Normal, Poisson, Gamma, tensor, bootstrap, and local CUDA LAML tests pass
   through the implicit default.
 
+### Phase 12H — fully analytic outer LAML Hessian implemented
+
+The implicit default now differentiates the converged coefficient solution a
+second time instead of differencing gradients at displaced smoothing
+parameters.
+
+- second coefficient sensitivities solve the differentiated penalized score
+  equation with the already available penalized information matrix;
+- Torch autograd supplies the exact LAML partial Hessian, including the
+  fourth-order likelihood derivatives induced by the information determinant;
+- the chain rule combines exact partials with the first and second implicit
+  coefficient sensitivities without differentiating through Newton iterations;
+- the finite-difference derivative route remains available as an explicit
+  audit fallback;
+- the one-iteration Gamma audit preserves gradients, Hessian, objective, and
+  the accepted lambda update while reducing profile evaluations from 18 to 2;
+- at full Gamma convergence the reduction is from 48 to 8 profile evaluations;
+- direct `mgcv` Hessian parity and CPU/CUDA LAML coverage pass through the
+  analytic default.
+
+The local derivative calculation now reaches likelihood derivatives through
+fourth order. It removes repeated inner fits and finite-difference noise, but
+can still be compute- or memory-intensive for large dense coefficient spaces.
+
 ### Later slices
 
-1. fully analytic outer LAML Hessian;
-2. LAML validation for additional GAMLSS families without a direct `mgcv`
+1. LAML validation for additional GAMLSS families without a direct `mgcv`
    location-scale counterpart;
-3. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
-4. discretized marginal bases and structured crossproducts;
-5. unconditional inference and smoothing-uncertainty-aware information
+2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
+3. discretized marginal bases and structured crossproducts;
+4. unconditional inference and smoothing-uncertainty-aware information
    criteria;
-6. basis-dimension, concurvity, rank, and conditioning diagnostics.
+5. basis-dimension, concurvity, rank, and conditioning diagnostics.
 
 ## Open design decisions
 
@@ -295,8 +318,8 @@ whose internal representation is already available.
 
 ## Resume point
 
-Complete the Python/R/package validation for the implicit-gradient slice,
-commit and push it to draft PR #13 during the permitted publication window,
-then choose between a fully analytic outer Hessian and the next-family
-validation strategy. Rebase onto `main` only after dependencies merge. Do not
-merge any existing draft PR without explicit user authorization.
+Commit and push the locally validated analytic-Hessian slice to draft PR #13
+during the permitted publication window, then continue the Beta LAML vertical
+using `mgcv::betar` as the direct mean-smooth/global-precision reference.
+Rebase onto `main` only after dependencies merge. Do not merge any existing
+draft PR without explicit user authorization.

@@ -35,10 +35,11 @@ Development cycle toward the third alpha release.
   lambdas, structural null-space constraints, model-state updates,
   penalty-level result labels, implicit-function outer gradients, CPU/CUDA
   execution, and direct `mgcv` REML parity.
-- A finite-difference fallback for auditing LAML outer derivatives, an
-  implicit-gradient-difference outer Hessian, and profile-evaluation
-  diagnostics; the two-lambda Gamma reference drops from 48 to 12 unique
-  profile evaluations at equivalent fitted results.
+- A finite-difference fallback for auditing LAML outer derivatives, a fully
+  analytic outer Hessian from second-order implicit coefficient sensitivities
+  and exact autograd partials, and profile-evaluation diagnostics; the
+  two-lambda Gamma reference drops from 48 to 8 unique profile evaluations at
+  equivalent fitted results.
 - Fixed-design LAML bootstrap refits for supported Normal, Poisson, and Gamma
   models, including joint scalar/tensor lambda reselection, aligned smooth
   covariance and bands, response-quantile/centile inference, retry accounting,

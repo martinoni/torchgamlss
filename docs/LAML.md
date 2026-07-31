@@ -80,7 +80,8 @@ reaches its iteration limit. The primary gradient tolerance remains
 small BLAS/platform differences in otherwise converged dense profiles.
 
 `LAMLControl.outer_derivative_method="implicit"` is the default. It uses the
-implicit function theorem after the inner fit has converged.
+implicit function theorem after the inner fit has converged for both the
+outer gradient and Hessian.
 `outer_derivative_method="finite_difference"` retains the original
 objective-difference implementation as a diagnostic fallback.
 
@@ -271,7 +272,7 @@ For every accepted outer iterate:
 2. Torch autograd forms the exact joint observed likelihood Hessian, including
    cross-information between `mu` and `sigma`;
 3. the criterion uses eigendecomposition-based generalized log determinants;
-4. implicit differentiation supplies the outer LAML gradient;
+4. implicit differentiation supplies the outer LAML gradient and Hessian;
 5. a bounded BFGS iteration updates all free log smoothing parameters jointly.
 
 For `rho_j = log(lambda_j)`, differentiating the converged penalized score
@@ -285,9 +286,16 @@ d beta_hat / d rho_j =
 This avoids differentiating through an arbitrary number of inner Newton
 iterations. Torch autograd supplies the third-order likelihood contraction
 needed by the `log|H_p|` derivative, while the penalty determinant derivative
-uses the generalized inverse on the penalized subspace. The default outer
-Hessian is a central difference of this implicit gradient; fully analytic
-second derivatives remain a later step.
+uses the generalized inverse on the penalized subspace.
+
+The Hessian differentiates the same converged score equation a second time.
+For two log smoothing parameters `rho_j` and `rho_k`, it solves for
+`d^2 beta_hat / (d rho_j d rho_k)` using `H_p` and the required third-order
+likelihood contraction. Torch autograd then supplies the exact partial
+Hessian of the LAML criterion, including the fourth-order derivatives induced
+by `log|H_p|`, and the implementation combines those partials with the first
+and second coefficient sensitivities by the chain rule. No displaced inner
+fits or finite-difference step size enter the default Hessian.
 
 The legacy fallback can be selected explicitly:
 
@@ -298,7 +306,8 @@ control = LAMLControl(
 ```
 
 On the two-lambda Gamma reference fit, the implicit route reaches the same
-objective and lambdas with 12 unique profile evaluations instead of 48.
+objective and lambdas with 8 unique profile evaluations instead of 48 at full
+convergence. In the one-iteration derivative audit it uses 2 instead of 18.
 
 `NormalLAMLResult` and `GAMLSSLAMLResult` expose the common optimization,
 penalty, and smoothing diagnostics. The generic result additionally exposes
@@ -380,8 +389,10 @@ Rscript tools/generate_mgcv_laml_reference.R --check
   Poisson log-link, and Gamma log/log models; the low-level family-driven core
   is deliberately exposed, but other families are not yet claimed as
   validated;
-- the default outer gradient is implicit/analytic, but the outer Hessian still
-  differences that gradient numerically;
+- the dense exact Hessian uses likelihood derivatives through fourth order;
+  it avoids repeated inner fits and finite-difference noise, but its local
+  autograd work can be expensive for models with many coefficients or free
+  smoothing parameters;
 - no sparse or discretized large-data backend is connected;
 - smoothing-parameter uncertainty is reported through the outer Hessian but
   is not yet propagated into unconditional coefficient covariance;

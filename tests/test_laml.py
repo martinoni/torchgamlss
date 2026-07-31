@@ -218,8 +218,8 @@ def test_gamma_laml_matches_mgcv_reml_reference():
     torch.testing.assert_close(
         result.outer_hessian,
         expected_hessian,
-        # The Hessian is a central difference of the implicit gradient.
-        # Retain a small allowance for cross-platform linear algebra.
+        # The Hessian is assembled from exact autograd partials and implicit
+        # coefficient sensitivities. Retain a small cross-platform allowance.
         rtol=5e-4,
         atol=5e-5,
     )
@@ -258,7 +258,7 @@ def test_gamma_laml_matches_mgcv_reml_reference():
     )
 
 
-def test_implicit_outer_gradient_matches_finite_difference_with_fewer_profiles():
+def test_implicit_outer_derivatives_match_finite_difference_with_fewer_profiles():
     (
         response,
         weights,
@@ -310,7 +310,15 @@ def test_implicit_outer_gradient_matches_finite_difference_with_fewer_profiles()
         rel=2e-10,
         abs=2e-10,
     )
-    assert implicit.profile_evaluations < finite_difference.profile_evaluations
+    torch.testing.assert_close(
+        implicit.outer_hessian,
+        finite_difference.outer_hessian,
+        # Objective second differences are the deliberately noisier audit path.
+        rtol=3e-3,
+        atol=1e-4,
+    )
+    assert implicit.profile_evaluations == 2
+    assert finite_difference.profile_evaluations == 18
 
 
 def test_poisson_laml_matches_mgcv_reml_reference():

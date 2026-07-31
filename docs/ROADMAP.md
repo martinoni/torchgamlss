@@ -153,8 +153,8 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   `mgcv` REML parity and bootstrap refits
 - [x] Implicit-function outer LAML gradients with a finite-difference audit
   fallback and reduced profile-evaluation diagnostics
-- [ ] Fully analytic outer LAML Hessian; the current Hessian differences the
-  implicit gradient rather than the noisier profile objective
+- [x] Fully analytic outer LAML Hessian from second-order implicit coefficient
+  sensitivities and exact autograd partials, with no displaced profile fits
 - [ ] Extend whole-model LAML to the remaining multi-parameter families,
   with an explicit reference strategy for families without a directly
   overlapping `mgcv` location-scale family
