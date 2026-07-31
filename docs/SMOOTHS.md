@@ -359,7 +359,7 @@ low-level row-product and penalty embedding are checked against
 - Generic multiple-penalty systems currently use the dense low-level solver
   directly, through fixed-lambda formula RS/CG/L-BFGS/mini-batch fitting, or
   through dense whole-model LAML for Normal location-scale, Poisson log-mean,
-  and Gamma mean/CV models.
+  Gamma mean/CV, and Beta mean/dispersion models.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
   additive models, including fixed-lambda tensor terms. Analytic inference

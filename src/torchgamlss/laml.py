@@ -1080,15 +1080,17 @@ def fit_gamlss_model_laml(
     per marginal direction. Exact unidentifiable directions are removed by
     null-space constraints before the nested optimization.
     """
-    from torchgamlss.families import Gamma, Normal, Poisson
-    from torchgamlss.links import IdentityLink, LogLink
+    from torchgamlss.families import Beta, Gamma, Normal, Poisson
+    from torchgamlss.links import IdentityLink, LogitLink, LogLink
 
     is_normal = isinstance(model.family, Normal)
     is_poisson = isinstance(model.family, Poisson)
     is_gamma = isinstance(model.family, Gamma)
-    if not is_normal and not is_poisson and not is_gamma:
+    is_beta = isinstance(model.family, Beta)
+    if not is_normal and not is_poisson and not is_gamma and not is_beta:
         raise ValueError(
-            "whole-model LAML currently supports Normal, Poisson, and Gamma families"
+            "whole-model LAML currently supports Normal, Poisson, Gamma, "
+            "and Beta families"
         )
     if is_normal and (
         not isinstance(model.family.links["mu"], IdentityLink)
@@ -1104,6 +1106,13 @@ def fit_gamlss_model_laml(
         or not isinstance(model.family.links["sigma"], LogLink)
     ):
         raise ValueError("whole-model Gamma LAML requires log mu and log sigma links")
+    if is_beta and (
+        not isinstance(model.family.links["mu"], LogitLink)
+        or not isinstance(model.family.links["sigma"], LogitLink)
+    ):
+        raise ValueError(
+            "whole-model Beta LAML requires logit mu and logit sigma links"
+        )
     if model.neural_predictors or model.shared_predictor is not None:
         raise ValueError(
             "whole-model LAML does not support neural or shared predictors"
@@ -1986,14 +1995,10 @@ def _validate_family_inputs(
         )
     for parameter in family.parameter_names:
         design = design_matrices[parameter]
-        if (
-            design.ndim != 2
-            or design.shape[0] != response.numel()
-            or design.shape[1] < 1
-        ):
+        if design.ndim != 2 or design.shape[0] != response.numel():
             raise ValueError(
                 f"{parameter!r} design must be two-dimensional with one "
-                "row per response and at least one column"
+                "row per response"
             )
         if design.dtype != response.dtype or design.device != response.device:
             raise ValueError(
@@ -2001,6 +2006,10 @@ def _validate_family_inputs(
             )
         if not torch.isfinite(design).all():
             raise ValueError(f"{parameter!r} design must be finite")
+    if not any(
+        design_matrices[parameter].shape[1] > 0 for parameter in family.parameter_names
+    ):
+        raise ValueError("at least one family parameter design must contain a column")
 
 
 def _validate_inputs(
@@ -2256,11 +2265,14 @@ def _initial_family_coefficients(
         initial_parameters = family.initial_parameters(response)
         full = response.new_empty(coefficient_count)
         for parameter in family.parameter_names:
+            coefficient_slice = coefficient_slices[parameter]
+            if coefficient_slice.start == coefficient_slice.stop:
+                continue
             target = (
                 family.links[parameter](initial_parameters[parameter])
                 - offsets[parameter]
             )
-            full[coefficient_slices[parameter]] = (
+            full[coefficient_slice] = (
                 torch.linalg.pinv(design_matrices[parameter]) @ target
             )
     return transform.mT @ full

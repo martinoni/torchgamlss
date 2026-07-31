@@ -149,8 +149,8 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 - [x] First whole-model LAML prototype for Normal location-scale models and
   current one-dimensional P-splines
 - [x] Generic family-driven LAML likelihood core and non-Normal vertical
-  slices for Poisson log-mean and Gamma mean/CV models, including direct
-  `mgcv` REML parity and bootstrap refits
+  slices for Poisson log-mean, Gamma mean/CV, and Beta mean/dispersion models,
+  including direct `mgcv` REML/LAML parity and bootstrap refits
 - [x] Implicit-function outer LAML gradients with a finite-difference audit
   fallback and reduced profile-evaluation diagnostics
 - [x] Fully analytic outer LAML Hessian from second-order implicit coefficient

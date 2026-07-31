@@ -21,8 +21,10 @@ from torchgamlss import (
     PE,
     TF,
     WEI,
+    Beta,
     CensoredFamily,
     CensoredResponse,
+    GAMLSSLAMLResult,
     Gamma,
     GeneralizedGamma,
     InverseGaussian,
@@ -254,6 +256,34 @@ def main() -> None:
         ),
     ):
         raise RuntimeError("installed te() LAML state update is invalid")
+
+    beta_x = torch.linspace(-1.0, 1.0, 60, dtype=torch.float64)
+    beta_mu = torch.sigmoid(-0.2 + 0.9 * torch.sin(torch.pi * beta_x))
+    beta_sigma = torch.full_like(beta_mu, 0.28)
+    beta_y = Beta().sample(
+        {"mu": beta_mu, "sigma": beta_sigma},
+        generator=torch.Generator().manual_seed(20260803),
+    )
+    beta_frame = pd.DataFrame({"x": beta_x.numpy(), "y": beta_y.numpy()})
+    beta_laml_model = GAMLSS.from_formula(
+        Beta(),
+        {"mu": "y ~ pb(x, intervals=4)", "sigma": "~ 1"},
+        beta_frame,
+    )
+    beta_laml_fit = beta_laml_model.fit_laml_data(
+        beta_frame,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=25,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    if not isinstance(beta_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed Beta LAML result is invalid")
+    if not beta_laml_fit.outer_converged:
+        raise RuntimeError("installed Beta LAML fit did not converge")
+    if not torch.isfinite(beta_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed Beta LAML Hessian is non-finite")
 
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)

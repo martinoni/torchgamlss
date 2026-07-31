@@ -726,6 +726,11 @@ default, matching the outer-derivative strategy used by `mgcv`. Set
 `LAMLControl(outer_derivative_method="finite_difference")` only to audit
 against the original profile-difference implementation.
 
+The low-level `fit_gamlss_laml()` API can condition on a fixed distribution
+parameter by pairing an `n x 0` design with its link-scale offset. This is used
+for direct Beta parity with `mgcv::betar(theta=...)`; regular Beta formula
+models estimate both `mu` and `sigma` predictors.
+
 Use `smooth_joint_bootstrap_data()` when several fitted smooths must remain
 aligned within each replicate:
 
@@ -843,7 +848,8 @@ Important exclusions include:
 - families other than the ten listed above;
 - smoothers other than `pb()` and the current P-spline `te()`/`ti()` slice;
 - transformed smooth covariates and tensor LAML beyond the standard Normal
-  location-scale, Poisson log-mean, and Gamma mean/CV families;
+  location-scale, Poisson log-mean, Gamma mean/CV, and Beta mean/dispersion
+  families;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;

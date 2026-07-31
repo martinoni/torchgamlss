@@ -515,6 +515,128 @@ gamma_fitted_reference <- data.frame(
   sigma = exp(0.5 * gamma_response_prediction[, 2])
 )
 
+beta_design_path <- file.path(
+  reference_dir,
+  "mgcv_beta_laml_design.csv"
+)
+beta_penalty_path <- file.path(
+  reference_dir,
+  "mgcv_beta_laml_penalties.csv"
+)
+beta_summary_path <- file.path(
+  reference_dir,
+  "mgcv_beta_laml_reference.csv"
+)
+beta_coefficient_path <- file.path(
+  reference_dir,
+  "mgcv_beta_laml_coefficient_reference.csv"
+)
+beta_fitted_path <- file.path(
+  reference_dir,
+  "mgcv_beta_laml_fitted_reference.csv"
+)
+
+beta_observation_count <- 200
+beta_x <- seq(
+  -1,
+  1,
+  length.out = beta_observation_count
+)
+beta_mu <- plogis(
+  -0.2 + 1.1 * sin(pi * beta_x) + 0.3 * beta_x
+)
+beta_phi <- 12
+set.seed(20260803)
+beta_y <- rbeta(
+  beta_observation_count,
+  beta_mu * beta_phi,
+  (1 - beta_mu) * beta_phi
+)
+beta_data <- data.frame(y = beta_y, x = beta_x)
+beta_setup <- gam(
+  y ~ s(x, bs = "ps", k = 8),
+  data = beta_data,
+  family = betar(theta = beta_phi, link = "logit"),
+  method = "REML",
+  fit = FALSE
+)
+beta_fit <- gam(G = beta_setup, method = "REML")
+beta_design <- beta_setup$X
+colnames(beta_design) <- paste0(
+  "mu_",
+  seq_len(ncol(beta_design))
+)
+beta_design_reference <- data.frame(
+  response = beta_setup$y,
+  weight = beta_setup$w,
+  beta_design,
+  check.names = FALSE
+)
+beta_coefficient_count <- ncol(beta_design)
+beta_penalty_references <- lapply(
+  seq_along(beta_setup$S),
+  function(penalty_index) {
+    full_penalty <- matrix(
+      0,
+      nrow = beta_coefficient_count,
+      ncol = beta_coefficient_count
+    )
+    start <- beta_setup$off[penalty_index]
+    term_indices <- start:(
+      start + nrow(beta_setup$S[[penalty_index]]) - 1
+    )
+    full_penalty[term_indices, term_indices] <- (
+      beta_setup$S[[penalty_index]]
+    )
+    data.frame(
+      penalty = penalty_index,
+      row = rep(
+        seq_len(beta_coefficient_count),
+        each = beta_coefficient_count
+      ),
+      column = rep(
+        seq_len(beta_coefficient_count),
+        beta_coefficient_count
+      ),
+      value = as.vector(t(full_penalty))
+    )
+  }
+)
+beta_penalty_reference <- do.call(
+  rbind,
+  beta_penalty_references
+)
+beta_outer_gradient <- as.numeric(
+  beta_fit$outer.info$grad
+)
+beta_outer_hessian <- beta_fit$outer.info$hess
+beta_fitted_phi <- as.numeric(beta_fit$family$getTheta(TRUE))
+beta_fitted_sigma <- sqrt(1 / (1 + beta_fitted_phi))
+beta_summary_reference <- data.frame(
+  mgcv_version = as.character(packageVersion("mgcv")),
+  phi = beta_fitted_phi,
+  sigma = beta_fitted_sigma,
+  eta_sigma = qlogis(beta_fitted_sigma),
+  objective = as.numeric(beta_fit$gcv.ubre),
+  log_likelihood = as.numeric(logLik(beta_fit)),
+  lambda_mu = as.numeric(beta_fit$sp[1]),
+  effective_degrees_of_freedom = sum(beta_fit$edf),
+  outer_iterations = beta_fit$outer.info$iter,
+  outer_convergence = beta_fit$outer.info$conv,
+  gradient_mu = beta_outer_gradient[1],
+  hessian_mu_mu = beta_outer_hessian[1, 1],
+  coefficient_count = length(coef(beta_fit))
+)
+beta_coefficient_reference <- data.frame(
+  index = seq_along(coef(beta_fit)),
+  coefficient = as.numeric(coef(beta_fit)),
+  effective_degrees_of_freedom = as.numeric(beta_fit$edf)
+)
+beta_fitted_reference <- data.frame(
+  eta_mu = as.numeric(predict(beta_fit, type = "link")),
+  mu = as.numeric(fitted(beta_fit))
+)
+
 write_reference <- function(value, path) {
   connection <- file(path, open = "wb")
   on.exit(close(connection))
@@ -644,6 +766,26 @@ references <- list(
   gamma_fitted = list(
     value = gamma_fitted_reference,
     path = gamma_fitted_path
+  ),
+  beta_design = list(
+    value = beta_design_reference,
+    path = beta_design_path
+  ),
+  beta_penalty = list(
+    value = beta_penalty_reference,
+    path = beta_penalty_path
+  ),
+  beta_summary = list(
+    value = beta_summary_reference,
+    path = beta_summary_path
+  ),
+  beta_coefficient = list(
+    value = beta_coefficient_reference,
+    path = beta_coefficient_path
+  ),
+  beta_fitted = list(
+    value = beta_fitted_reference,
+    path = beta_fitted_path
   )
 )
 

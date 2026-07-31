@@ -88,7 +88,8 @@ The current implementation contains:
   with one penalty per marginal direction, explicit identifiability
   constraints, and `mgcv` algebraic parity;
 - dense whole-model LAML for additive Normal location-scale, Poisson log-mean,
-  and Gamma mean/CV models, including formula `fit_laml_data()`, automatic
+  Gamma mean/CV, and Beta mean/dispersion models, including formula
+  `fit_laml_data()`, automatic
   scalar and tensor lambdas, null-space constraints, outer diagnostics,
   implicit outer gradients and Hessians, CPU/CUDA execution, and direct
   `mgcv` REML parity;
@@ -205,7 +206,8 @@ or neural contribution. See
 workflow. Formula `te()` and `ti()` terms can be fitted with fixed lambdas
 through RS, CG, L-BFGS, or mini-batch Adam, or with jointly selected marginal
 lambdas through `fit_laml_data()` for Normal location-scale, Poisson log-mean,
-and Gamma mean/CV models. Their parametric bootstrap stores one value per
+Gamma mean/CV, and Beta mean/dispersion models. Their parametric bootstrap
+stores one value per
 marginal lambda while preserving the scalar `pb()` API; `algorithm="laml"`
 repeats automatic joint tensor selection in every successful bootstrap
 replicate. The generic tensor-product API, examples, and current limitations

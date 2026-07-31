@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | Analytic-Hessian slice passed 632 local tests plus R/package gates; implicit-gradient commit passed 11/11 CI checks |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | Analytic-Hessian and Beta slices passed 635 local tests plus R/package gates; implicit-gradient commit passed 11/11 CI checks |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -281,9 +281,33 @@ The local derivative calculation now reaches likelihood derivatives through
 fourth order. It removes repeated inner fits and finite-difference noise, but
 can still be compute- or memory-intensive for large dense coefficient spaces.
 
+### Phase 12I — Beta LAML vertical implemented locally
+
+The first post-Hessian family extension uses `gamlss.dist::BE` and a
+conditional `mgcv::betar` reference.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts standard Beta
+  logit-mean/logit-dispersion models;
+- LAML smooth, joint-smooth, response-quantile, and centile bootstrap refits
+  accept Beta and reselect automatic lambdas in every successful sample;
+- the low-level family-driven API accepts an `n x 0` design plus a link-scale
+  offset to condition on a fixed family parameter;
+- `mgcv::betar(theta=12, link="logit")` maps through
+  `phi = 1/sigma^2 - 1`, fixing Torch `sigma` while both implementations
+  optimize the same mean smooth;
+- negative LAML, likelihood, lambda, coefficients, predictor, fitted mean, and
+  analytic outer Hessian match the direct `mgcv` fixture;
+- the roughly `0.004` EDF difference is documented as an extended-family EDF
+  convention difference rather than silently tightened away;
+- formula fitting and LAML bootstrap pass on CPU, and the conditional fixture
+  passes on local CUDA.
+- all 635 Python tests pass without skips; all five R gates, Ruff, dependency
+  and bytecode checks, package build, strict Twine validation, and the isolated
+  installed-wheel smoke test pass.
+
 ### Later slices
 
-1. LAML validation for additional GAMLSS families without a direct `mgcv`
+1. LAML validation for further GAMLSS families without a direct `mgcv`
    location-scale counterpart;
 2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
 3. discretized marginal bases and structured crossproducts;
@@ -318,8 +342,8 @@ whose internal representation is already available.
 
 ## Resume point
 
-Commit and push the locally validated analytic-Hessian slice to draft PR #13
-during the permitted publication window, then continue the Beta LAML vertical
-using `mgcv::betar` as the direct mean-smooth/global-precision reference.
-Rebase onto `main` only after dependencies merge. Do not merge any existing
-draft PR without explicit user authorization.
+After 18:00 in America/Sao_Paulo, commit the already staged analytic-Hessian
+slice, then stage and commit the separately validated Beta LAML vertical. Push
+both commits to draft PR #13 and monitor all CI jobs. Rebase onto `main` only
+after dependencies merge. Do not merge any existing draft PR without explicit
+user authorization.

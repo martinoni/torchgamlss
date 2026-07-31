@@ -492,6 +492,16 @@ Torch predictor is `eta_sigma = eta_phi / 2`; the tests compare the objective,
 both lambdas, EDF, coefficients, predictors, fitted mean/CV, and the complete
 outer Hessian on CPU and CUDA.
 
+The Beta LAML fixture uses `mgcv::betar(theta=12, link="logit")`. Since
+`mgcv` holds its precision fixed, Torch supplies an empty `sigma` coefficient
+design and the equivalent fixed offset under
+`phi = 1/sigma^2 - 1`. The negative LAML, likelihood, selected mean lambda,
+coefficients, predictor, fitted mean, and analytic outer Hessian agree. The
+small EDF difference is retained and documented because `mgcv` uses its
+extended-family EDF convention. A separate formula test estimates the Beta
+dispersion predictor and repeats lambda selection inside bootstrap samples;
+the conditional reference also runs on CUDA.
+
 The default implicit outer gradient and fully analytic Hessian are checked
 against the retained finite-difference implementation at the same Gamma
 profile. Initial and final gradients, the Hessian, accepted lambda update, and

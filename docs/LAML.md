@@ -1,8 +1,9 @@
 # Whole-model LAML
 
 TorchGAMLSS has a dense whole-model Laplace approximate marginal likelihood
-implementation for additive Normal location-scale, Poisson log-mean, and
-Gamma mean/coefficient-of-variation models. A Normal formula model uses:
+implementation for additive Normal location-scale, Poisson log-mean, Gamma
+mean/coefficient-of-variation, and Beta mean/dispersion models. A Normal
+formula model uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -39,7 +40,7 @@ contribute one free log lambda per marginal direction. A scalar `pb()` keeps
 its existing fixed/automatic formula semantics. `fit_laml()` is the
 corresponding tensor-level model method, while `fit_normal_laml()` remains the
 specialized low-level Normal API. `fit_gamlss_laml()` is the family-driven
-low-level API used by the Poisson path.
+low-level API used by every non-Normal path.
 
 A Poisson model uses the same formula and fitting surface:
 
@@ -49,6 +50,23 @@ from torchgamlss import GAMLSS, LAMLControl, Poisson
 model = GAMLSS.from_formula(
     Poisson(),
     {"mu": "count ~ pb(x, intervals=8)"},
+    data,
+)
+fit = model.fit_laml_data(data, control=LAMLControl())
+```
+
+A Beta model uses the `gamlss.dist::BE` logit links for both its mean and
+dispersion parameter:
+
+```python
+from torchgamlss import Beta, GAMLSS, LAMLControl
+
+model = GAMLSS.from_formula(
+    Beta(),
+    {
+        "mu": "proportion ~ pb(x, intervals=8)",
+        "sigma": "~ 1",
+    },
     data,
 )
 fit = model.fit_laml_data(data, control=LAMLControl())
@@ -87,7 +105,7 @@ objective-difference implementation as a diagnostic fallback.
 
 ## Model and criterion
 
-The model has separate predictors
+The Normal model has separate predictors
 
 ```text
 mu_i = X_mu[i] beta_mu + offset_mu[i]
@@ -139,6 +157,13 @@ scale is `phi = sigma^2`, so its predictor obeys
 `mgcv`'s internal log-mean and log-scale parameters, making this
 reparameterization explicit rather than relying on `gammals`' default lower
 bound transform.
+
+For Beta, TorchGAMLSS follows `gamlss.dist::BE`, with
+`Var(Y) = sigma^2 mu(1-mu)`. The overlapping `mgcv::betar` precision is
+`phi = 1/sigma^2 - 1`. The direct reference fixes `phi` in `mgcv` and fixes
+the corresponding Torch `sigma` predictor by offset, so both systems optimize
+the same mean-smooth LAML problem. A regular formula Beta fit estimates the
+`sigma` predictor jointly and is therefore a broader GAMLSS model.
 
 ## Formula and model integration
 
@@ -249,6 +274,27 @@ fit.linear_predictors["mu"]
 fit.fitted_parameters["mu"]
 ```
 
+To hold one family parameter fixed in the low-level API, give it an `n x 0`
+design and its fixed link-scale value as an offset. At least one other family
+parameter must retain coefficient columns. For example, the Beta reference
+holds `sigma` fixed while smoothing `mu`:
+
+```python
+from torchgamlss import Beta
+
+sigma_design = response.new_empty((response.numel(), 0))
+sigma_offset = response.new_full(response.shape, fixed_sigma.logit().item())
+
+fit = fit_gamlss_laml(
+    Beta(),
+    response,
+    {"mu": X_mu, "sigma": sigma_design},
+    (S_mu,),
+    (10.0,),
+    offsets={"sigma": sigma_offset},
+)
+```
+
 Set `estimate_smoothing=False` to evaluate a fixed-lambda fit, or pass one
 boolean per penalty to mix fixed and estimated components:
 
@@ -332,7 +378,8 @@ location-scale model and a two-penalty tensor-product model with
 `mgcv::gaulss(method="REML")`, a Poisson log-mean model, and a Gamma
 location-scale model. The latter two use
 `mgcv::gam(..., method="REML")` with `poisson()` and `gammals()`,
-respectively. The generator exports the exact model matrices and
+respectively. It also fits a Beta mean smooth with fixed precision through
+`mgcv::betar(theta=...)`. The generator exports the exact model matrices and
 coefficient-space penalties and checks the committed reference files.
 
 For the current fixture:
@@ -370,6 +417,20 @@ For the Gamma fixture:
 | lambda for `phi = sigma^2` | 437.1846991 | 437.1872877 |
 | total EDF | 8.20690616 | 8.20690518 |
 
+For the conditional Beta fixture:
+
+| Quantity | TorchGAMLSS | `mgcv` |
+|---|---:|---:|
+| negative LAML | -140.4336887830 | -140.4336887832 |
+| lambda for `mu` | 6.30659455 | 6.30659732 |
+| fixed `phi = 1/sigma^2 - 1` | 12 | 12 |
+| outer Hessian | 1.79952854 | 1.79952920 |
+
+The fitted Beta coefficients agree within `1.1e-7`. `mgcv` reports an EDF
+about `0.004` lower because its extended-family EDF convention differs
+slightly even with fixed `phi`; the objective, likelihood, lambda, predictor,
+fitted mean, and outer Hessian are the strict comparison targets.
+
 The tests also compare every coefficient and every fitted location and scale,
 the Poisson link and fitted mean, the Gamma mean/CV predictors and parameters,
 the outer Hessian, penalty ranks, the joint cross-information block, tensor
@@ -386,9 +447,9 @@ Rscript tools/generate_mgcv_laml_reference.R --check
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
-  Poisson log-link, and Gamma log/log models; the low-level family-driven core
-  is deliberately exposed, but other families are not yet claimed as
-  validated;
+  Poisson log-link, Gamma log/log, and Beta logit/logit models; the low-level
+  family-driven core is deliberately exposed, but other families are not yet
+  claimed as validated;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
   it avoids repeated inner fits and finite-difference noise, but its local
   autograd work can be expensive for models with many coefficients or free
