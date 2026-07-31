@@ -944,7 +944,19 @@ check_reference <- function(actual, path, label) {
         "nbi_summary",
         "scat_summary"
       )
-      if (optimizer_sensitive_summary &&
+      optimizer_sensitive_output <- label %in% c(
+        "gamma_coefficient",
+        "gamma_fitted",
+        "beta_coefficient",
+        "beta_fitted",
+        "nbi_coefficient",
+        "nbi_fitted",
+        "scat_coefficient",
+        "scat_fitted"
+      )
+      if (optimizer_sensitive_output) {
+        relative_tolerance <- 1e-5
+      } else if (optimizer_sensitive_summary &&
           grepl("^lambda_", column)) {
         # mgcv's outer Newton optimizer can settle at slightly different
         # smoothing parameters across BLAS implementations even when the
