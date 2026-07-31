@@ -218,7 +218,10 @@ def test_gamma_laml_matches_mgcv_reml_reference():
     torch.testing.assert_close(
         result.outer_hessian,
         expected_hessian,
-        rtol=5e-4,
+        # This is a second central difference of a converged profile. Its
+        # mu-mu entry varies by about 0.15% across Windows/Linux BLAS builds;
+        # fitted quantities and the LAML objective remain strictly checked.
+        rtol=2e-3,
         atol=5e-5,
     )
     torch.testing.assert_close(
