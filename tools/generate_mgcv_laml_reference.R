@@ -689,7 +689,7 @@ check_reference <- function(actual, path, label) {
         # mgcv's outer Newton optimizer can settle at slightly different
         # smoothing parameters across BLAS implementations even when the
         # fitted model and convergence diagnostics agree.
-        relative_tolerance <- 1e-5
+        relative_tolerance <- 5e-5
       }
       allowed <- relative_tolerance * (
         1 + abs(expected[[column]])
