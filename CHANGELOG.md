@@ -30,8 +30,9 @@ Development cycle toward the third alpha release.
   backward-compatible scalar results, one replicate column per tensor
   penalty, penalty-level joint labels and slices, and multivariate tables.
 - Dense whole-model LAML with a family-driven likelihood core for additive
-  Normal location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and Beta
-  mean/dispersion models, formula and tensor-level `fit_laml` APIs, jointly
+  Normal location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV,
+  Beta mean/dispersion, and Student-t location/scale/shape models, formula and
+  tensor-level `fit_laml` APIs, jointly
   selected scalar and tensor log
   lambdas, structural null-space constraints, model-state updates,
   penalty-level result labels, implicit-function outer gradients, CPU/CUDA
@@ -42,12 +43,14 @@ Development cycle toward the third alpha release.
   two-lambda Gamma reference drops from 48 to 8 unique profile evaluations at
   equivalent fitted results.
 - Fixed-design LAML bootstrap refits for supported Normal, Poisson, NBI,
-  Gamma, and Beta models, including joint scalar/tensor lambda reselection, aligned smooth
+  Gamma, Beta, and Student-t models, including joint scalar/tensor lambda
+  reselection, aligned smooth
   covariance and bands, response-quantile/centile inference, retry accounting,
   and CPU/CUDA execution.
 - Conditional-parameter low-level LAML designs with zero coefficient columns
-  and a fixed link-scale offset, plus direct `mgcv::betar` and `mgcv::nb`
-  parity for Beta and NBI mean smoothing at fixed family parameters.
+  and a fixed link-scale offset, plus direct `mgcv::betar`, `mgcv::nb`, and
+  `mgcv::scat` parity for Beta, NBI, and Student-t mean smoothing at fixed
+  family parameters.
 - Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
   `gamlss.dist` parity for density, CDF, quantiles, survival functions,
   hazards, moments, scores, working derivatives, and starting values.

@@ -53,6 +53,7 @@ def validate_bootstrap_refit(
             NegativeBinomial,
             Normal,
             Poisson,
+            StudentT,
         )
         from torchgamlss.links import IdentityLink, LogitLink, LogLink
 
@@ -61,12 +62,18 @@ def validate_bootstrap_refit(
         is_nbi = isinstance(model.family, NegativeBinomial)
         is_gamma = isinstance(model.family, Gamma)
         is_beta = isinstance(model.family, Beta)
+        is_student_t = isinstance(model.family, StudentT)
         if not (
-            is_normal or is_poisson or is_nbi or is_gamma or is_beta
+            is_normal
+            or is_poisson
+            or is_nbi
+            or is_gamma
+            or is_beta
+            or is_student_t
         ):
             raise ValueError(
                 "LAML bootstrap currently supports Normal, Poisson, NBI, "
-                "Gamma, and Beta families"
+                "Gamma, Beta, and Student-t families"
             )
         if is_normal and (
             not isinstance(model.family.links["mu"], IdentityLink)
@@ -95,6 +102,15 @@ def validate_bootstrap_refit(
         ):
             raise ValueError(
                 "Beta LAML bootstrap requires logit mu and logit sigma links"
+            )
+        if is_student_t and (
+            not isinstance(model.family.links["mu"], IdentityLink)
+            or not isinstance(model.family.links["sigma"], LogLink)
+            or not isinstance(model.family.links["nu"], LogLink)
+        ):
+            raise ValueError(
+                "Student-t LAML bootstrap requires identity mu, log sigma, "
+                "and log nu links"
             )
         if not any(model.smooth_terms.values()):
             raise ValueError("LAML bootstrap requires at least one smooth term")

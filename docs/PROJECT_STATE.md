@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | NBI slice passed 638 local tests, CUDA, all R/package gates; refreshed CI pending |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | NBI head passed 11/11 CI; Student-t slice passed 641 local tests, CUDA, and R gates |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -325,10 +325,34 @@ Negative-binomial type I now uses the same family-driven nested LAML core.
 - all 638 Python tests pass without skips; all five R gates, Ruff, build,
   strict Twine validation, and the installed-wheel smoke test pass.
 
+### Phase 12K — Student-t LAML vertical implemented locally
+
+The three-parameter `gamlss.dist::TF` family now uses whole-model LAML with a
+direct conditional `mgcv::scat` reference.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts standard Student-t
+  identity-location/log-scale/log-degrees-of-freedom models;
+- LAML bootstrap refits estimate all three TF predictors and reselect
+  automatic scalar or tensor lambdas;
+- `mgcv::scat(theta=c(5, 0.8), link="identity")` uses the same
+  `(Y - mu)/sigma ~ t_nu` parameterization;
+- zero-column `sigma` and `nu` designs plus fixed log-link offsets isolate the
+  identical conditional location-smooth problem;
+- negative LAML, likelihood, lambda, coefficients, predictor, fitted location,
+  and analytic outer Hessian agree numerically;
+- the approximately `0.056` EDF difference is reported as the scaled-t
+  extended-family convention instead of being presented as equality;
+- formula fitting and ten-replicate LAML bootstrap pass on CPU, while the
+  conditional fixture passes on local CUDA 12.8;
+- all 641 Python tests pass without skips; all five R gates, Ruff, dependency
+  and bytecode checks, package build, strict Twine validation, and the
+  installed-wheel smoke test pass.
+
 ### Later slices
 
 1. LAML validation for further GAMLSS families without a direct `mgcv`
-   location-scale counterpart;
+   location-scale counterpart, using fixed-lambda R fits plus derivative
+   audits when no overlapping marginal-likelihood family exists;
 2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
 3. discretized marginal bases and structured crossproducts;
 4. unconditional inference and smoothing-uncertainty-aware information
@@ -362,9 +386,8 @@ whose internal representation is already available.
 
 ## Resume point
 
-Publish the validated NBI LAML vertical to draft PR #13 and monitor every CI
-job, especially the cross-platform `mgcv` reference gate. The next family
-slice should use an explicit external-reference strategy; prefer another
-direct `mgcv` overlap when available. Rebase onto `main` only after stacked
-dependencies merge. Do not merge any existing draft PR without explicit user
-authorization.
+Publish the validated Student-t LAML vertical to draft PR #13 and monitor every
+CI job. `mgcv::scat` is the last direct overlap in the currently translated
+family catalog; the next family extension needs a documented validation design
+before implementation. Rebase onto `main` only after stacked dependencies
+merge. Do not merge any existing draft PR without explicit user authorization.

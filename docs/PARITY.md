@@ -502,6 +502,15 @@ extended-family convention difference. A separate formula test estimates the
 NBI dispersion predictor and repeats lambda selection in bootstrap samples;
 the conditional fixture also runs on CUDA.
 
+The Student-t LAML fixture uses `mgcv::scat(theta=c(5, 0.8))`. Torch fixes
+the log-`sigma` and log-`nu` predictors through empty coefficient designs and
+offsets, leaving both implementations to optimize the same identity-link
+location smooth. The negative LAML, likelihood, lambda, coefficients,
+predictor, fitted location, and analytic outer Hessian agree numerically. The
+larger family-specific EDF convention difference is reported explicitly. A
+separate formula test estimates all three TF predictors and repeats lambda
+selection inside bootstrap samples; the conditional fixture runs on CUDA.
+
 The Beta LAML fixture uses `mgcv::betar(theta=12, link="logit")`. Since
 `mgcv` holds its precision fixed, Torch supplies an empty `sigma` coefficient
 design and the equivalent fixed offset under

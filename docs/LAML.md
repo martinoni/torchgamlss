@@ -2,8 +2,8 @@
 
 TorchGAMLSS has a dense whole-model Laplace approximate marginal likelihood
 implementation for additive Normal location-scale, Poisson log-mean, Gamma
-mean/coefficient-of-variation, NBI mean/dispersion, and Beta mean/dispersion
-models. A Normal
+mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion, and
+Student-t location/scale/shape models. A Normal
 formula model uses:
 
 ```python
@@ -67,6 +67,24 @@ model = GAMLSS.from_formula(
     {
         "mu": "count ~ pb(x, intervals=8)",
         "sigma": "~ 1",
+    },
+    data,
+)
+fit = model.fit_laml_data(data, control=LAMLControl())
+```
+
+A Student-t model can estimate location, scale, and degrees of freedom while
+selecting smoothness jointly:
+
+```python
+from torchgamlss import GAMLSS, LAMLControl, StudentT
+
+model = GAMLSS.from_formula(
+    StudentT(),
+    {
+        "mu": "y ~ pb(x, intervals=8)",
+        "sigma": "~ 1",
+        "nu": "~ 1",
     },
     data,
 )
@@ -190,6 +208,12 @@ the corresponding Torch `sigma` predictor by offset, so both systems optimize
 the same mean-smooth LAML problem. A regular formula Beta fit estimates the
 `sigma` predictor jointly and is therefore a broader GAMLSS model.
 
+For Student-t, TorchGAMLSS follows `gamlss.dist::TF`, with
+`(Y - mu)/sigma ~ t_nu`. This is the same scale convention used by
+`mgcv::scat`. The direct reference fixes `sigma` and `nu` in `mgcv` and fixes
+their Torch log-link predictors by offsets, leaving the identical location
+smooth. A regular formula fit estimates all three TF predictors jointly.
+
 ## Formula and model integration
 
 The high-level adapter:
@@ -301,8 +325,8 @@ fit.fitted_parameters["mu"]
 
 To hold one family parameter fixed in the low-level API, give it an `n x 0`
 design and its fixed link-scale value as an offset. At least one other family
-parameter must retain coefficient columns. For example, the Beta and NBI
-references hold `sigma` fixed while smoothing `mu`:
+parameter must retain coefficient columns. For example, the Beta, NBI, and
+Student-t references hold nuisance parameters fixed while smoothing `mu`:
 
 ```python
 from torchgamlss import Beta
@@ -403,10 +427,11 @@ location-scale model and a two-penalty tensor-product model with
 `mgcv::gaulss(method="REML")`, a Poisson log-mean model, and a Gamma
 location-scale model. The latter two use
 `mgcv::gam(..., method="REML")` with `poisson()` and `gammals()`,
-respectively. It also fits Beta and NBI mean smooths with fixed family
-parameters through `mgcv::betar(theta=...)` and `mgcv::nb(theta=...)`. The
-generator exports the exact model matrices and coefficient-space penalties
-and checks the committed reference files.
+respectively. It also fits Beta, NBI, and Student-t mean smooths with fixed
+family parameters through `mgcv::betar(theta=...)`, `mgcv::nb(theta=...)`,
+and `mgcv::scat(theta=c(nu, sigma))`. The generator exports the exact model
+matrices and coefficient-space penalties and checks the committed reference
+files.
 
 For the current fixture:
 
@@ -471,6 +496,23 @@ roughly `0.0045` EDF difference is likewise retained as an `mgcv`
 extended-family convention difference; the criterion, likelihood, lambda,
 fitted quantities, and analytic outer Hessian are the strict targets.
 
+For the conditional Student-t fixture:
+
+| Quantity | TorchGAMLSS | `mgcv` |
+|---|---:|---:|
+| negative LAML | 302.3076455104 | 302.3076455103 |
+| lambda for `mu` | 4.52959486 | 4.52964958 |
+| fixed `nu` | 5 | 5 |
+| fixed `sigma` | 0.8 | 0.8 |
+| outer Hessian | 1.51393482 | 1.51394488 |
+
+The TF coefficients and fitted location agree within roughly `1e-5` relative
+tolerance. `mgcv` reports EDF `5.4388` while the generic Torch trace gives
+`5.4952`; this approximately `0.056` difference is documented as the scaled-t
+extended-family EDF convention rather than presented as equality. The LAML
+criterion, likelihood, lambda, fixed family parameters, fitted location, and
+analytic outer Hessian are the strict comparison targets.
+
 The tests also compare every coefficient and every fitted location and scale,
 the Poisson link and fitted mean, the Gamma mean/CV predictors and parameters,
 the outer Hessian, penalty ranks, the joint cross-information block, tensor
@@ -487,9 +529,9 @@ Rscript tools/generate_mgcv_laml_reference.R --check
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
-  Poisson log-link, NBI and Gamma log/log, and Beta logit/logit models; the
-  low-level family-driven core is deliberately exposed, but other families
-  are not yet claimed as validated;
+  Poisson log-link, NBI and Gamma log/log, Beta logit/logit, and Student-t
+  identity/log/log models; the low-level family-driven core is deliberately
+  exposed, but other families are not yet claimed as validated;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
   it avoids repeated inner fits and finite-difference noise, but its local
   autograd work can be expensive for models with many coefficients or free

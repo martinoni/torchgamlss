@@ -314,6 +314,39 @@ def main() -> None:
     if not torch.isfinite(nbi_laml_fit.outer_hessian).all():
         raise RuntimeError("installed NBI LAML Hessian is non-finite")
 
+    tf_x = torch.linspace(-1.0, 1.0, 60, dtype=torch.float64)
+    tf_mu = 0.3 + 0.9 * torch.sin(torch.pi * tf_x)
+    tf_sigma = torch.full_like(tf_mu, 0.5)
+    tf_nu = torch.full_like(tf_mu, 7.0)
+    tf_y = StudentT().sample(
+        {"mu": tf_mu, "sigma": tf_sigma, "nu": tf_nu},
+        generator=torch.Generator().manual_seed(20260805),
+    )
+    tf_frame = pd.DataFrame({"x": tf_x.numpy(), "y": tf_y.numpy()})
+    tf_laml_model = GAMLSS.from_formula(
+        StudentT(),
+        {
+            "mu": "y ~ pb(x, intervals=4)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+        },
+        tf_frame,
+    )
+    tf_laml_fit = tf_laml_model.fit_laml_data(
+        tf_frame,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=25,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    if not isinstance(tf_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed Student-t LAML result is invalid")
+    if not tf_laml_fit.outer_converged:
+        raise RuntimeError("installed Student-t LAML fit did not converge")
+    if not torch.isfinite(tf_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed Student-t LAML Hessian is non-finite")
+
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)
     bootstrap_y = (

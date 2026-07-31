@@ -16,6 +16,7 @@ from torchgamlss import (
     Poisson,
     PSpline,
     RSControl,
+    StudentT,
     fit_gamlss_laml,
     fit_normal_laml,
 )
@@ -276,6 +277,131 @@ def test_nbi_laml_with_fixed_dispersion_matches_mgcv_nb_reference():
     torch.testing.assert_close(
         result.fitted_parameters["sigma"],
         response.new_full(response.shape, float(reference["sigma"])),
+    )
+
+
+def _mgcv_scat_system():
+    design_frame = pd.read_csv(REFERENCE_DIR / "mgcv_scat_laml_design.csv")
+    reference = pd.read_csv(REFERENCE_DIR / "mgcv_scat_laml_reference.csv").iloc[0]
+    dtype = torch.float64
+    response = torch.tensor(design_frame["response"].to_numpy(), dtype=dtype)
+    weights = torch.tensor(design_frame["weight"].to_numpy(), dtype=dtype)
+    mu_design = torch.tensor(
+        design_frame.filter(regex=r"^mu_").to_numpy(),
+        dtype=dtype,
+    )
+    penalty_frame = pd.read_csv(REFERENCE_DIR / "mgcv_scat_laml_penalties.csv")
+    penalties = []
+    for penalty_index in sorted(penalty_frame["penalty"].unique()):
+        rows = penalty_frame[penalty_frame["penalty"] == penalty_index]
+        penalty = torch.zeros(
+            (mu_design.shape[1], mu_design.shape[1]),
+            dtype=dtype,
+        )
+        penalty[
+            torch.tensor(rows["row"].to_numpy() - 1),
+            torch.tensor(rows["column"].to_numpy() - 1),
+        ] = torch.tensor(rows["value"].to_numpy(), dtype=dtype)
+        penalties.append(penalty)
+    return response, weights, mu_design, tuple(penalties), reference
+
+
+def test_student_t_laml_with_fixed_shape_matches_mgcv_scat_reference():
+    response, weights, mu_design, penalties, reference = _mgcv_scat_system()
+    sigma_design = response.new_empty((response.numel(), 0))
+    nu_design = response.new_empty((response.numel(), 0))
+    result = fit_gamlss_laml(
+        StudentT(),
+        response,
+        {"mu": mu_design, "sigma": sigma_design, "nu": nu_design},
+        penalties,
+        (10.0,),
+        weights=weights,
+        offsets={
+            "sigma": response.new_full(
+                response.shape,
+                float(reference["eta_sigma"]),
+            ),
+            "nu": response.new_full(
+                response.shape,
+                float(reference["eta_nu"]),
+            ),
+        },
+        control=LAMLControl(
+            outer_max_iterations=30,
+            outer_gradient_tolerance=2e-5,
+        ),
+    )
+    coefficients = pd.read_csv(
+        REFERENCE_DIR / "mgcv_scat_laml_coefficient_reference.csv"
+    )
+    fitted = pd.read_csv(REFERENCE_DIR / "mgcv_scat_laml_fitted_reference.csv")
+
+    coefficient_count = mu_design.shape[1]
+    assert result.outer_converged
+    assert result.inner_converged
+    assert result.family == "TF"
+    assert result.parameter_names == ("mu", "sigma", "nu")
+    assert result.coefficient_slices == {
+        "mu": slice(0, coefficient_count),
+        "sigma": slice(coefficient_count, coefficient_count),
+        "nu": slice(coefficient_count, coefficient_count),
+    }
+    assert result.parameter_coefficients["sigma"].numel() == 0
+    assert result.parameter_coefficients["nu"].numel() == 0
+    assert result.boundary_status == ("interior",)
+    assert result.penalty_ranks == (6,)
+    assert result.combined_penalty_rank == 6
+    assert result.unpenalized_dimension == 2
+    assert float(result.objective) == pytest.approx(
+        float(reference["objective"]),
+        rel=2e-8,
+        abs=2e-8,
+    )
+    assert float(result.log_likelihood) == pytest.approx(
+        float(reference["log_likelihood"]),
+        rel=2e-8,
+        abs=1e-5,
+    )
+    assert float(result.smoothing_parameters[0]) == pytest.approx(
+        float(reference["lambda_mu"]),
+        rel=2e-5,
+    )
+    assert float(result.effective_degrees_of_freedom) == pytest.approx(
+        float(reference["effective_degrees_of_freedom"]),
+        # mgcv's scaled-t extended-family EDF convention differs even when
+        # sigma and nu are fixed; fitted quantities and the criterion agree.
+        rel=1.1e-2,
+    )
+    assert float(result.outer_hessian[0, 0]) == pytest.approx(
+        float(reference["hessian_mu_mu"]),
+        rel=3e-4,
+    )
+    torch.testing.assert_close(
+        result.coefficients,
+        torch.tensor(coefficients["coefficient"].to_numpy(), dtype=torch.float64),
+        rtol=1.2e-5,
+        atol=3e-7,
+    )
+    torch.testing.assert_close(
+        result.linear_predictors["mu"],
+        torch.tensor(fitted["eta_mu"].to_numpy(), dtype=torch.float64),
+        rtol=1e-5,
+        atol=5e-7,
+    )
+    torch.testing.assert_close(
+        result.fitted_parameters["mu"],
+        torch.tensor(fitted["mu"].to_numpy(), dtype=torch.float64),
+        rtol=1e-5,
+        atol=5e-7,
+    )
+    torch.testing.assert_close(
+        result.fitted_parameters["sigma"],
+        response.new_full(response.shape, float(reference["sigma"])),
+    )
+    torch.testing.assert_close(
+        result.fitted_parameters["nu"],
+        response.new_full(response.shape, float(reference["nu"])),
     )
 
 
@@ -1139,6 +1265,21 @@ def _formula_nbi_laml_data(
     return pd.DataFrame({"y": response.numpy(), "x": x.numpy()})
 
 
+def _formula_student_t_laml_data(
+    observation_count: int = 80,
+) -> pd.DataFrame:
+    dtype = torch.float64
+    x = torch.linspace(-1.0, 1.0, observation_count, dtype=dtype)
+    mean = 0.3 + 0.9 * torch.sin(math.pi * x) + 0.15 * x
+    sigma = torch.full_like(mean, 0.5)
+    nu = torch.full_like(mean, 7.0)
+    response = StudentT().sample(
+        {"mu": mean, "sigma": sigma, "nu": nu},
+        generator=torch.Generator().manual_seed(20260805),
+    )
+    return pd.DataFrame({"y": response.numpy(), "x": x.numpy()})
+
+
 def _formula_gamma_laml_data(
     observation_count: int = 80,
 ) -> pd.DataFrame:
@@ -1260,6 +1401,55 @@ def test_formula_nbi_laml_selects_lambda_and_bootstraps():
         algorithm="laml",
         control=control,
         generator=torch.Generator().manual_seed(721),
+    )["mu"]["x"]
+
+    assert bootstrap.algorithm == "laml"
+    assert bootstrap.bootstrap_estimates.shape == (10, 4)
+    assert bootstrap.bootstrap_smoothing_parameters.shape == (10,)
+    assert bootstrap.bootstrap_smoothing_parameters.std() > 0
+    assert torch.isfinite(bootstrap.bootstrap_estimates).all()
+
+
+def test_formula_student_t_laml_selects_lambda_and_bootstraps():
+    data = _formula_student_t_laml_data()
+    model = GAMLSS.from_formula(
+        StudentT(),
+        {
+            "mu": "y ~ pb(x, intervals=5)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+        },
+        data,
+    )
+    control = LAMLControl(
+        inner_gradient_tolerance=1e-6,
+        outer_max_iterations=25,
+        outer_gradient_tolerance=5e-4,
+    )
+
+    result = model.fit_laml_data(data, control=control)
+    prediction = model.predict_data(data)
+
+    assert isinstance(result, GAMLSSLAMLResult)
+    assert result.outer_converged
+    assert result.family == "TF"
+    assert result.parameter_names == ("mu", "sigma", "nu")
+    assert result.smoothing_parameter_labels == (("mu", "x", 0),)
+    assert result.smoothing_parameters[0] > 0
+    for parameter in result.parameter_names:
+        torch.testing.assert_close(
+            prediction[parameter],
+            result.fitted_parameters[parameter],
+        )
+
+    bootstrap = model.smooth_bootstrap_data(
+        data,
+        new_data=data.iloc[::20].drop(columns="y"),
+        replicates=10,
+        max_attempts=40,
+        algorithm="laml",
+        control=control,
+        generator=torch.Generator().manual_seed(722),
     )["mu"]["x"]
 
     assert bootstrap.algorithm == "laml"
@@ -1782,6 +1972,47 @@ def test_nbi_laml_with_fixed_dispersion_runs_on_cuda():
     assert result.coefficients.device.type == "cuda"
     assert result.fitted_parameters["mu"].device.type == "cuda"
     assert result.fitted_parameters["sigma"].device.type == "cuda"
+    assert result.outer_hessian.device.type == "cuda"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_student_t_laml_with_fixed_shape_runs_on_cuda():
+    response, weights, mu_design, penalties, reference = _mgcv_scat_system()
+    response = response.cuda()
+    weights = weights.cuda()
+    mu_design = mu_design.cuda()
+    penalties = tuple(penalty.cuda() for penalty in penalties)
+    sigma_design = response.new_empty((response.numel(), 0))
+    nu_design = response.new_empty((response.numel(), 0))
+
+    result = fit_gamlss_laml(
+        StudentT(),
+        response,
+        {"mu": mu_design, "sigma": sigma_design, "nu": nu_design},
+        penalties,
+        (10.0,),
+        weights=weights,
+        offsets={
+            "sigma": response.new_full(
+                response.shape,
+                float(reference["eta_sigma"]),
+            ),
+            "nu": response.new_full(
+                response.shape,
+                float(reference["eta_nu"]),
+            ),
+        },
+        control=LAMLControl(
+            outer_max_iterations=30,
+            outer_gradient_tolerance=2e-5,
+        ),
+    )
+
+    assert result.outer_converged
+    assert result.coefficients.device.type == "cuda"
+    assert result.fitted_parameters["mu"].device.type == "cuda"
+    assert result.fitted_parameters["sigma"].device.type == "cuda"
+    assert result.fitted_parameters["nu"].device.type == "cuda"
     assert result.outer_hessian.device.type == "cuda"
 
 

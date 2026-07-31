@@ -759,6 +759,130 @@ nbi_fitted_reference <- data.frame(
   mu = as.numeric(fitted(nbi_fit))
 )
 
+scat_design_path <- file.path(
+  reference_dir,
+  "mgcv_scat_laml_design.csv"
+)
+scat_penalty_path <- file.path(
+  reference_dir,
+  "mgcv_scat_laml_penalties.csv"
+)
+scat_summary_path <- file.path(
+  reference_dir,
+  "mgcv_scat_laml_reference.csv"
+)
+scat_coefficient_path <- file.path(
+  reference_dir,
+  "mgcv_scat_laml_coefficient_reference.csv"
+)
+scat_fitted_path <- file.path(
+  reference_dir,
+  "mgcv_scat_laml_fitted_reference.csv"
+)
+
+scat_observation_count <- 220
+scat_x <- seq(
+  -1,
+  1,
+  length.out = scat_observation_count
+)
+scat_mu <- (
+  0.4 + 1.1 * sin(pi * scat_x) + 0.2 * scat_x
+)
+scat_nu <- 5
+scat_sigma <- 0.8
+set.seed(20260805)
+scat_y <- scat_mu + scat_sigma * rt(
+  scat_observation_count,
+  df = scat_nu
+)
+scat_data <- data.frame(y = scat_y, x = scat_x)
+scat_setup <- gam(
+  y ~ s(x, bs = "ps", k = 8),
+  data = scat_data,
+  family = scat(theta = c(scat_nu, scat_sigma), link = "identity"),
+  method = "REML",
+  fit = FALSE
+)
+scat_fit <- gam(G = scat_setup, method = "REML")
+scat_design <- scat_setup$X
+colnames(scat_design) <- paste0(
+  "mu_",
+  seq_len(ncol(scat_design))
+)
+scat_design_reference <- data.frame(
+  response = scat_setup$y,
+  weight = scat_setup$w,
+  scat_design,
+  check.names = FALSE
+)
+scat_coefficient_count <- ncol(scat_design)
+scat_penalty_references <- lapply(
+  seq_along(scat_setup$S),
+  function(penalty_index) {
+    full_penalty <- matrix(
+      0,
+      nrow = scat_coefficient_count,
+      ncol = scat_coefficient_count
+    )
+    start <- scat_setup$off[penalty_index]
+    term_indices <- start:(
+      start + nrow(scat_setup$S[[penalty_index]]) - 1
+    )
+    full_penalty[term_indices, term_indices] <- (
+      scat_setup$S[[penalty_index]]
+    )
+    data.frame(
+      penalty = penalty_index,
+      row = rep(
+        seq_len(scat_coefficient_count),
+        each = scat_coefficient_count
+      ),
+      column = rep(
+        seq_len(scat_coefficient_count),
+        scat_coefficient_count
+      ),
+      value = as.vector(t(full_penalty))
+    )
+  }
+)
+scat_penalty_reference <- do.call(
+  rbind,
+  scat_penalty_references
+)
+scat_outer_gradient <- as.numeric(
+  scat_fit$outer.info$grad
+)
+scat_outer_hessian <- scat_fit$outer.info$hess
+scat_fitted_theta <- as.numeric(scat_fit$family$getTheta(TRUE))
+scat_fitted_nu <- scat_fitted_theta[1]
+scat_fitted_sigma <- scat_fitted_theta[2]
+scat_summary_reference <- data.frame(
+  mgcv_version = as.character(packageVersion("mgcv")),
+  nu = scat_fitted_nu,
+  sigma = scat_fitted_sigma,
+  eta_nu = log(scat_fitted_nu),
+  eta_sigma = log(scat_fitted_sigma),
+  objective = as.numeric(scat_fit$gcv.ubre),
+  log_likelihood = as.numeric(logLik(scat_fit)),
+  lambda_mu = as.numeric(scat_fit$sp[1]),
+  effective_degrees_of_freedom = sum(scat_fit$edf),
+  outer_iterations = scat_fit$outer.info$iter,
+  outer_convergence = scat_fit$outer.info$conv,
+  gradient_mu = scat_outer_gradient[1],
+  hessian_mu_mu = scat_outer_hessian[1, 1],
+  coefficient_count = length(coef(scat_fit))
+)
+scat_coefficient_reference <- data.frame(
+  index = seq_along(coef(scat_fit)),
+  coefficient = as.numeric(coef(scat_fit)),
+  effective_degrees_of_freedom = as.numeric(scat_fit$edf)
+)
+scat_fitted_reference <- data.frame(
+  eta_mu = as.numeric(predict(scat_fit, type = "link")),
+  mu = as.numeric(fitted(scat_fit))
+)
+
 write_reference <- function(value, path) {
   connection <- file(path, open = "wb")
   on.exit(close(connection))
@@ -817,7 +941,8 @@ check_reference <- function(actual, path, label) {
       optimizer_sensitive_summary <- label %in% c(
         "gamma_summary",
         "beta_summary",
-        "nbi_summary"
+        "nbi_summary",
+        "scat_summary"
       )
       if (optimizer_sensitive_summary &&
           grepl("^lambda_", column)) {
@@ -982,6 +1107,26 @@ references <- list(
   nbi_fitted = list(
     value = nbi_fitted_reference,
     path = nbi_fitted_path
+  ),
+  scat_design = list(
+    value = scat_design_reference,
+    path = scat_design_path
+  ),
+  scat_penalty = list(
+    value = scat_penalty_reference,
+    path = scat_penalty_path
+  ),
+  scat_summary = list(
+    value = scat_summary_reference,
+    path = scat_summary_path
+  ),
+  scat_coefficient = list(
+    value = scat_coefficient_reference,
+    path = scat_coefficient_path
+  ),
+  scat_fitted = list(
+    value = scat_fitted_reference,
+    path = scat_fitted_path
   )
 )
 

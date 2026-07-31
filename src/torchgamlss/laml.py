@@ -1086,6 +1086,7 @@ def fit_gamlss_model_laml(
         NegativeBinomial,
         Normal,
         Poisson,
+        StudentT,
     )
     from torchgamlss.links import IdentityLink, LogitLink, LogLink
 
@@ -1094,12 +1095,18 @@ def fit_gamlss_model_laml(
     is_nbi = isinstance(model.family, NegativeBinomial)
     is_gamma = isinstance(model.family, Gamma)
     is_beta = isinstance(model.family, Beta)
+    is_student_t = isinstance(model.family, StudentT)
     if not (
-        is_normal or is_poisson or is_nbi or is_gamma or is_beta
+        is_normal
+        or is_poisson
+        or is_nbi
+        or is_gamma
+        or is_beta
+        or is_student_t
     ):
         raise ValueError(
             "whole-model LAML currently supports Normal, Poisson, NBI, "
-            "Gamma, and Beta families"
+            "Gamma, Beta, and Student-t families"
         )
     if is_normal and (
         not isinstance(model.family.links["mu"], IdentityLink)
@@ -1128,6 +1135,15 @@ def fit_gamlss_model_laml(
     ):
         raise ValueError(
             "whole-model Beta LAML requires logit mu and logit sigma links"
+        )
+    if is_student_t and (
+        not isinstance(model.family.links["mu"], IdentityLink)
+        or not isinstance(model.family.links["sigma"], LogLink)
+        or not isinstance(model.family.links["nu"], LogLink)
+    ):
+        raise ValueError(
+            "whole-model Student-t LAML requires identity mu, log sigma, "
+            "and log nu links"
         )
     if model.neural_predictors or model.shared_predictor is not None:
         raise ValueError(

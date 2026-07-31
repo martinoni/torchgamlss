@@ -150,8 +150,8 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   current one-dimensional P-splines
 - [x] Generic family-driven LAML likelihood core and non-Normal vertical
   slices for Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and Beta
-  mean/dispersion models, including direct `mgcv` REML/LAML parity and
-  bootstrap refits
+  mean/dispersion models, plus Student-t location/scale/shape, including direct
+  `mgcv` REML/LAML parity and bootstrap refits
 - [x] Implicit-function outer LAML gradients with a finite-difference audit
   fallback and reduced profile-evaluation diagnostics
 - [x] Fully analytic outer LAML Hessian from second-order implicit coefficient
