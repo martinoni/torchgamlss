@@ -11,6 +11,7 @@ import torch
 from torch import Tensor
 
 if TYPE_CHECKING:
+    from torchgamlss.families import Family
     from torchgamlss.model import GAMLSS
 
 
@@ -51,15 +52,10 @@ class LAMLControl:
             or self.inner_relaxed_gradient_multiplier < 1.0
         ):
             raise ValueError(
-                "inner_relaxed_gradient_multiplier must be finite and "
-                "at least one"
+                "inner_relaxed_gradient_multiplier must be finite and at least one"
             )
         lower, upper = self.log_smoothing_parameter_bounds
-        if (
-            not math.isfinite(lower)
-            or not math.isfinite(upper)
-            or lower >= upper
-        ):
+        if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
             raise ValueError(
                 "log_smoothing_parameter_bounds must be finite and increasing"
             )
@@ -122,9 +118,57 @@ class NormalLAMLResult:
     constraint_rank: int
     effective_degrees_of_freedom: Tensor
     penalty_degrees_of_freedom: Tensor
-    linear_coefficient_slices: Mapping[str, slice] = field(
+    linear_coefficient_slices: Mapping[str, slice] = field(default_factory=dict)
+    smooth_coefficient_slices: Mapping[tuple[str, str], slice] = field(
         default_factory=dict
     )
+    smoothing_parameter_labels: tuple[tuple[str, str, int], ...] = ()
+    smoothing_parameter_slices: Mapping[tuple[str, str], slice] = field(
+        default_factory=dict
+    )
+
+
+@dataclass(frozen=True)
+class GAMLSSLAMLResult:
+    """Fitted multi-parameter family model and nested LAML diagnostics."""
+
+    family: str
+    parameter_names: tuple[str, ...]
+    coefficients: Tensor
+    parameter_coefficients: Mapping[str, Tensor]
+    coefficient_slices: Mapping[str, slice]
+    linear_predictors: Mapping[str, Tensor]
+    fitted_parameters: Mapping[str, Tensor]
+    log_smoothing_parameters: Tensor
+    smoothing_parameters: Tensor
+    estimated_smoothing_parameters: tuple[bool, ...]
+    objective: Tensor
+    log_likelihood: Tensor
+    penalized_negative_log_likelihood: Tensor
+    outer_gradient: Tensor
+    outer_hessian: Tensor
+    outer_hessian_condition_number: Tensor
+    boundary_status: tuple[str, ...]
+    outer_converged: bool
+    outer_iterations: int
+    inner_converged: bool
+    inner_iterations: int
+    inner_gradient_max: float
+    history: tuple[LAMLHistoryEntry, ...]
+    coefficient_transform: Tensor
+    reduced_observed_information: Tensor
+    reduced_penalized_information: Tensor
+    combined_penalty_matrix: Tensor
+    reduced_combined_penalty_matrix: Tensor
+    generalized_log_determinant_penalty: Tensor
+    log_determinant_penalized_information: Tensor
+    penalty_ranks: tuple[int, ...]
+    combined_penalty_rank: int
+    unpenalized_dimension: int
+    constraint_rank: int
+    effective_degrees_of_freedom: Tensor
+    penalty_degrees_of_freedom: Tensor
+    linear_coefficient_slices: Mapping[str, slice] = field(default_factory=dict)
     smooth_coefficient_slices: Mapping[tuple[str, str], slice] = field(
         default_factory=dict
     )
@@ -159,6 +203,44 @@ class _ProfileEvaluation:
     inner_gradient_max: float
 
 
+@dataclass(frozen=True)
+class _GAMLSSProfileEvaluation:
+    objective: Tensor
+    reduced_coefficients: Tensor
+    coefficients: Tensor
+    parameter_coefficients: Mapping[str, Tensor]
+    linear_predictors: Mapping[str, Tensor]
+    fitted_parameters: Mapping[str, Tensor]
+    log_likelihood: Tensor
+    penalized_negative_log_likelihood: Tensor
+    observed_information: Tensor
+    penalized_information: Tensor
+    combined_penalty: Tensor
+    reduced_combined_penalty: Tensor
+    log_determinant_penalty: Tensor
+    log_determinant_information: Tensor
+    combined_penalty_rank: int
+    unpenalized_dimension: int
+    effective_degrees_of_freedom: Tensor
+    penalty_degrees_of_freedom: Tensor
+    inner_iterations: int
+    inner_gradient_max: float
+
+
+@dataclass(frozen=True)
+class _OuterOptimization:
+    profile: _ProfileEvaluation | _GAMLSSProfileEvaluation
+    log_smoothing_parameters: Tensor
+    smoothing_parameters: Tensor
+    gradient: Tensor
+    hessian: Tensor
+    hessian_condition_number: Tensor
+    boundary_status: tuple[str, ...]
+    converged: bool
+    iterations: int
+    history: tuple[LAMLHistoryEntry, ...]
+
+
 class _NormalProfileEvaluator:
     def __init__(
         self,
@@ -190,9 +272,7 @@ class _NormalProfileEvaluator:
         self.sigma_floor = sigma_floor
         self.control = control
         self.mu_count = mu_design.shape[1]
-        self.free_indices = tuple(
-            index for index, free in enumerate(estimated) if free
-        )
+        self.free_indices = tuple(index for index, free in enumerate(estimated) if free)
         self.fixed_log_parameters = initial_smoothing_parameters.log()
         self.cache: dict[tuple[float, ...], _ProfileEvaluation] = {}
 
@@ -256,15 +336,11 @@ class _NormalProfileEvaluator:
             coefficient_value,
         )
         observed_information = _symmetrize(observed_information).detach()
-        penalized_information = _symmetrize(
-            observed_information + reduced_penalty
-        )
+        penalized_information = _symmetrize(observed_information + reduced_penalty)
         information_eigenvalues = torch.linalg.eigvalsh(penalized_information)
         information_tolerance = _matrix_tolerance(penalized_information)
         if float(information_eigenvalues.detach().min()) <= information_tolerance:
-            raise RuntimeError(
-                "inner penalized information is not positive definite"
-            )
+            raise RuntimeError("inner penalized information is not positive definite")
         log_determinant_information = information_eigenvalues.log().sum()
         (
             log_determinant_penalty,
@@ -273,9 +349,7 @@ class _NormalProfileEvaluator:
         unpenalized_dimension = reduced_penalty.shape[0] - combined_rank
 
         penalty_value = 0.5 * (
-            coefficient_value.detach()
-            @ reduced_penalty
-            @ coefficient_value.detach()
+            coefficient_value.detach() @ reduced_penalty @ coefficient_value.detach()
         )
         penalized_negative_log_likelihood = (
             negative_log_likelihood.detach() + penalty_value
@@ -292,10 +366,7 @@ class _NormalProfileEvaluator:
         )
         penalty_degrees_of_freedom = torch.stack(
             tuple(
-                torch.trace(
-                    information_inverse
-                    @ (smoothing_parameter * component)
-                )
+                torch.trace(information_inverse @ (smoothing_parameter * component))
                 for smoothing_parameter, component in zip(
                     smoothing_parameters,
                     reduced_components,
@@ -330,9 +401,7 @@ class _NormalProfileEvaluator:
             log_determinant_information=log_determinant_information.detach(),
             combined_penalty_rank=combined_rank,
             unpenalized_dimension=unpenalized_dimension,
-            effective_degrees_of_freedom=(
-                effective_degrees_of_freedom.detach()
-            ),
+            effective_degrees_of_freedom=(effective_degrees_of_freedom.detach()),
             penalty_degrees_of_freedom=penalty_degrees_of_freedom.detach(),
             inner_iterations=iterations,
             inner_gradient_max=gradient_max,
@@ -346,10 +415,7 @@ class _NormalProfileEvaluator:
         nearest_key = min(
             self.cache,
             key=lambda key: sum(
-                (
-                    float(value) - key_value
-                )
-                ** 2
+                (float(value) - key_value) ** 2
                 for value, key_value in zip(
                     free_log_parameters.detach().cpu(),
                     key,
@@ -368,9 +434,7 @@ class _NormalProfileEvaluator:
         sigma = self.sigma_floor + eta_sigma.exp()
         standardized = (self.response - eta_mu) / sigma
         losses = (
-            sigma.log()
-            + 0.5 * standardized.square()
-            + 0.5 * math.log(2.0 * math.pi)
+            sigma.log() + 0.5 * standardized.square() + 0.5 * math.log(2.0 * math.pi)
         )
         return (self.weights * losses).sum()
 
@@ -416,10 +480,7 @@ class _NormalProfileEvaluator:
                 torch.finfo(hessian.dtype).eps,
             )
             inverse_curvature = eigenvalues.clamp_min(curvature_floor).reciprocal()
-            step = -(
-                eigenvectors
-                @ (inverse_curvature * (eigenvectors.mT @ gradient))
-            )
+            step = -(eigenvectors @ (inverse_curvature * (eigenvectors.mT @ gradient)))
             maximum_step = 5.0 * (1.0 + float(current.detach().norm()))
             step_norm = float(step.detach().norm())
             if step_norm > maximum_step:
@@ -437,8 +498,7 @@ class _NormalProfileEvaluator:
                 trial = current.detach() + scale * step
                 trial_value = objective(trial)
                 sufficient_decrease = (
-                    current_value
-                    + 1e-4 * scale * directional_derivative
+                    current_value + 1e-4 * scale * directional_derivative
                 )
                 if (
                     bool(torch.isfinite(trial_value).detach())
@@ -451,8 +511,7 @@ class _NormalProfileEvaluator:
             if not accepted:
                 if (
                     gradient_max
-                    <= self.control.inner_relaxed_gradient_multiplier
-                    * threshold
+                    <= self.control.inner_relaxed_gradient_multiplier * threshold
                 ):
                     coefficients = current.detach()
                     converged = True
@@ -489,6 +548,200 @@ class _NormalProfileEvaluator:
                 f"gradient max={gradient_max:.6g}"
             )
         return coefficients, last_iteration, gradient_max
+
+
+class _GAMLSSProfileEvaluator(_NormalProfileEvaluator):
+    """Evaluate a profiled LAML criterion through the public Family contract."""
+
+    def __init__(
+        self,
+        family: Family,
+        response: Tensor,
+        design_matrices: Mapping[str, Tensor],
+        coefficient_slices: Mapping[str, slice],
+        penalty_matrices: tuple[Tensor, ...],
+        initial_smoothing_parameters: Tensor,
+        estimated: tuple[bool, ...],
+        weights: Tensor,
+        offsets: Mapping[str, Tensor],
+        transform: Tensor,
+        initial_reduced_coefficients: Tensor,
+        control: LAMLControl,
+    ) -> None:
+        self.family = family
+        self.response = response
+        self.design_matrices = dict(design_matrices)
+        self.coefficient_slices = dict(coefficient_slices)
+        self.penalty_matrices = penalty_matrices
+        self.initial_smoothing_parameters = initial_smoothing_parameters
+        self.estimated = estimated
+        self.weights = weights
+        self.offsets = dict(offsets)
+        self.transform = transform
+        self.initial_reduced_coefficients = initial_reduced_coefficients
+        self.control = control
+        self.free_indices = tuple(index for index, free in enumerate(estimated) if free)
+        self.fixed_log_parameters = initial_smoothing_parameters.log()
+        self.cache: dict[
+            tuple[float, ...],
+            _GAMLSSProfileEvaluation,
+        ] = {}
+
+    def evaluate(
+        self,
+        free_log_parameters: Tensor,
+        *,
+        start: Tensor | None = None,
+    ) -> _GAMLSSProfileEvaluation:
+        key = tuple(float(value) for value in free_log_parameters.detach().cpu())
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached
+        if start is None:
+            start = self._nearest_start(free_log_parameters)
+        full_log_parameters = self.full_log_parameters(free_log_parameters)
+        smoothing_parameters = full_log_parameters.exp()
+        combined_penalty = sum(
+            (
+                smoothing_parameter * penalty
+                for smoothing_parameter, penalty in zip(
+                    smoothing_parameters,
+                    self.penalty_matrices,
+                    strict=True,
+                )
+            ),
+            torch.zeros_like(self.penalty_matrices[0]),
+        )
+        combined_penalty = _symmetrize(combined_penalty)
+        reduced_penalty = _symmetrize(
+            self.transform.mT @ combined_penalty @ self.transform
+        )
+        reduced_components = tuple(
+            _symmetrize(self.transform.mT @ penalty @ self.transform)
+            for penalty in self.penalty_matrices
+        )
+
+        coefficients, iterations, gradient_max = self._fit_inner(
+            reduced_penalty,
+            start,
+        )
+        coefficient_value = coefficients.detach().requires_grad_(True)
+        negative_log_likelihood = self._negative_log_likelihood(coefficient_value)
+        observed_information = torch.autograd.functional.hessian(
+            self._negative_log_likelihood,
+            coefficient_value,
+        )
+        observed_information = _symmetrize(observed_information).detach()
+        penalized_information = _symmetrize(observed_information + reduced_penalty)
+        information_eigenvalues = torch.linalg.eigvalsh(penalized_information)
+        information_tolerance = _matrix_tolerance(penalized_information)
+        if float(information_eigenvalues.detach().min()) <= information_tolerance:
+            raise RuntimeError("inner penalized information is not positive definite")
+        log_determinant_information = information_eigenvalues.log().sum()
+        (
+            log_determinant_penalty,
+            combined_rank,
+        ) = _generalized_log_determinant(reduced_penalty)
+        unpenalized_dimension = reduced_penalty.shape[0] - combined_rank
+
+        penalty_value = 0.5 * (
+            coefficient_value.detach() @ reduced_penalty @ coefficient_value.detach()
+        )
+        penalized_negative_log_likelihood = (
+            negative_log_likelihood.detach() + penalty_value
+        )
+        objective = (
+            penalized_negative_log_likelihood
+            - 0.5 * log_determinant_penalty
+            + 0.5 * log_determinant_information
+            - 0.5 * unpenalized_dimension * math.log(2.0 * math.pi)
+        )
+        information_inverse = torch.linalg.inv(penalized_information)
+        effective_degrees_of_freedom = torch.trace(
+            information_inverse @ observed_information
+        )
+        penalty_degrees_of_freedom = torch.stack(
+            tuple(
+                torch.trace(information_inverse @ (smoothing_parameter * component))
+                for smoothing_parameter, component in zip(
+                    smoothing_parameters,
+                    reduced_components,
+                    strict=True,
+                )
+            )
+        )
+
+        full_coefficients = self.transform @ coefficient_value.detach()
+        parameter_coefficients = {
+            parameter: full_coefficients[self.coefficient_slices[parameter]]
+            for parameter in self.family.parameter_names
+        }
+        linear_predictors = {
+            parameter: (
+                self.design_matrices[parameter] @ parameter_coefficients[parameter]
+                + self.offsets[parameter]
+            )
+            for parameter in self.family.parameter_names
+        }
+        fitted_parameters = self.family.parameters_from_predictors(linear_predictors)
+        profile = _GAMLSSProfileEvaluation(
+            objective=objective.detach(),
+            reduced_coefficients=coefficient_value.detach(),
+            coefficients=full_coefficients.detach(),
+            parameter_coefficients={
+                name: value.detach() for name, value in parameter_coefficients.items()
+            },
+            linear_predictors={
+                name: value.detach() for name, value in linear_predictors.items()
+            },
+            fitted_parameters={
+                name: value.detach() for name, value in fitted_parameters.items()
+            },
+            log_likelihood=(-negative_log_likelihood).detach(),
+            penalized_negative_log_likelihood=(
+                penalized_negative_log_likelihood.detach()
+            ),
+            observed_information=observed_information,
+            penalized_information=penalized_information.detach(),
+            combined_penalty=combined_penalty.detach(),
+            reduced_combined_penalty=reduced_penalty.detach(),
+            log_determinant_penalty=log_determinant_penalty.detach(),
+            log_determinant_information=log_determinant_information.detach(),
+            combined_penalty_rank=combined_rank,
+            unpenalized_dimension=unpenalized_dimension,
+            effective_degrees_of_freedom=(effective_degrees_of_freedom.detach()),
+            penalty_degrees_of_freedom=penalty_degrees_of_freedom.detach(),
+            inner_iterations=iterations,
+            inner_gradient_max=gradient_max,
+        )
+        self.cache[key] = profile
+        return profile
+
+    def _negative_log_likelihood(
+        self,
+        reduced_coefficients: Tensor,
+    ) -> Tensor:
+        full_coefficients = self.transform @ reduced_coefficients
+        predictors = {
+            parameter: (
+                self.design_matrices[parameter]
+                @ full_coefficients[self.coefficient_slices[parameter]]
+                + self.offsets[parameter]
+            )
+            for parameter in self.family.parameter_names
+        }
+        parameters = self.family.parameters_from_predictors(predictors)
+        log_probabilities = self.family.log_prob(self.response, parameters)
+        if log_probabilities.shape != self.response.shape:
+            raise RuntimeError(
+                f"{self.family.name} log_prob must return one value per response"
+            )
+        losses = -log_probabilities
+        if not bool(torch.isfinite(losses).all().detach()):
+            raise RuntimeError(
+                f"{self.family.name} negative log-likelihood is not finite"
+            )
+        return (self.weights * losses).sum()
 
 
 def fit_normal_laml(
@@ -541,12 +794,9 @@ def fit_normal_laml(
     )
     estimated = _normalize_estimated(estimate_smoothing, len(penalties))
     if any(
-        free and rank == 0
-        for free, rank in zip(estimated, penalty_ranks, strict=True)
+        free and rank == 0 for free, rank in zip(estimated, penalty_ranks, strict=True)
     ):
-        raise ValueError(
-            "an estimated smoothing parameter requires a nonzero penalty"
-        )
+        raise ValueError("an estimated smoothing parameter requires a nonzero penalty")
     observation_weights = _observation_vector(
         response,
         weights,
@@ -599,6 +849,479 @@ def fit_normal_laml(
         control,
     )
 
+    optimization = _optimize_profile(
+        evaluator,
+        response,
+        initial_parameters,
+        estimated,
+        control,
+    )
+    current = optimization.profile
+    assert isinstance(current, _ProfileEvaluation)
+    mu_count = mu_design.shape[1]
+    return NormalLAMLResult(
+        coefficients=current.coefficients,
+        mu_coefficients=current.coefficients[:mu_count],
+        sigma_coefficients=current.coefficients[mu_count:],
+        linear_predictor_mu=current.linear_predictor_mu,
+        linear_predictor_sigma=current.linear_predictor_sigma,
+        fitted_mu=current.fitted_mu,
+        fitted_sigma=current.fitted_sigma,
+        log_smoothing_parameters=optimization.log_smoothing_parameters,
+        smoothing_parameters=optimization.smoothing_parameters,
+        estimated_smoothing_parameters=estimated,
+        objective=current.objective,
+        log_likelihood=current.log_likelihood,
+        penalized_negative_log_likelihood=(current.penalized_negative_log_likelihood),
+        outer_gradient=optimization.gradient,
+        outer_hessian=optimization.hessian,
+        outer_hessian_condition_number=(optimization.hessian_condition_number),
+        boundary_status=optimization.boundary_status,
+        outer_converged=optimization.converged,
+        outer_iterations=optimization.iterations,
+        inner_converged=True,
+        inner_iterations=current.inner_iterations,
+        inner_gradient_max=current.inner_gradient_max,
+        history=optimization.history,
+        coefficient_transform=transform,
+        reduced_observed_information=current.observed_information,
+        reduced_penalized_information=current.penalized_information,
+        combined_penalty_matrix=current.combined_penalty,
+        reduced_combined_penalty_matrix=(current.reduced_combined_penalty),
+        generalized_log_determinant_penalty=(current.log_determinant_penalty),
+        log_determinant_penalized_information=(current.log_determinant_information),
+        penalty_ranks=penalty_ranks,
+        combined_penalty_rank=current.combined_penalty_rank,
+        unpenalized_dimension=current.unpenalized_dimension,
+        constraint_rank=constraint_rank,
+        effective_degrees_of_freedom=(current.effective_degrees_of_freedom),
+        penalty_degrees_of_freedom=current.penalty_degrees_of_freedom,
+    )
+
+
+def fit_gamlss_laml(
+    family: Family,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    penalty_matrices: Sequence[Tensor],
+    smoothing_parameters: Sequence[float | Tensor],
+    *,
+    estimate_smoothing: Sequence[bool] | bool = True,
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    constraints: Tensor | None = None,
+    initial_coefficients: Tensor | None = None,
+    control: LAMLControl | None = None,
+) -> GAMLSSLAMLResult:
+    """Fit a smooth additive family model by nested LAML optimization.
+
+    Designs and coefficients follow ``family.parameter_names`` order. The
+    likelihood is evaluated only through the public ``Family`` contract, so
+    links and differentiable log densities remain family-specific while the
+    penalized inner Newton fit and outer smoothing selection are shared.
+    """
+    control = control or LAMLControl()
+    _validate_family_inputs(family, response, design_matrices)
+    parameter_names = family.parameter_names
+    coefficient_slices: dict[str, slice] = {}
+    coefficient_count = 0
+    for parameter in parameter_names:
+        start = coefficient_count
+        coefficient_count += design_matrices[parameter].shape[1]
+        coefficient_slices[parameter] = slice(start, coefficient_count)
+
+    penalties, initial_parameters, penalty_ranks = _validate_penalties(
+        response,
+        coefficient_count,
+        penalty_matrices,
+        smoothing_parameters,
+    )
+    estimated = _normalize_estimated(estimate_smoothing, len(penalties))
+    if any(
+        free and rank == 0 for free, rank in zip(estimated, penalty_ranks, strict=True)
+    ):
+        raise ValueError("an estimated smoothing parameter requires a nonzero penalty")
+    observation_weights = _observation_vector(
+        response,
+        weights,
+        default=1.0,
+        name="weights",
+        non_negative=True,
+    )
+    if float(observation_weights.sum()) <= 0:
+        raise ValueError("at least one weight must be positive")
+    supplied_offsets = offsets or {}
+    extra_offsets = set(supplied_offsets).difference(parameter_names)
+    if extra_offsets:
+        raise ValueError(f"offsets contain unknown parameters: {sorted(extra_offsets)}")
+    parameter_offsets = {
+        parameter: _observation_vector(
+            response,
+            supplied_offsets.get(parameter),
+            default=0.0,
+            name=f"{parameter}_offset",
+        )
+        for parameter in parameter_names
+    }
+    constraint_rank, transform = _constraint_transform(
+        response,
+        coefficient_count,
+        constraints,
+    )
+    starting_coefficients = _initial_family_coefficients(
+        family,
+        response,
+        design_matrices,
+        coefficient_slices,
+        parameter_offsets,
+        transform,
+        initial_coefficients,
+    )
+    evaluator = _GAMLSSProfileEvaluator(
+        family,
+        response,
+        design_matrices,
+        coefficient_slices,
+        penalties,
+        initial_parameters,
+        estimated,
+        observation_weights,
+        parameter_offsets,
+        transform,
+        starting_coefficients,
+        control,
+    )
+    optimization = _optimize_profile(
+        evaluator,
+        response,
+        initial_parameters,
+        estimated,
+        control,
+    )
+    current = optimization.profile
+    assert isinstance(current, _GAMLSSProfileEvaluation)
+    return GAMLSSLAMLResult(
+        family=family.name,
+        parameter_names=parameter_names,
+        coefficients=current.coefficients,
+        parameter_coefficients=current.parameter_coefficients,
+        coefficient_slices=dict(coefficient_slices),
+        linear_predictors=current.linear_predictors,
+        fitted_parameters=current.fitted_parameters,
+        log_smoothing_parameters=optimization.log_smoothing_parameters,
+        smoothing_parameters=optimization.smoothing_parameters,
+        estimated_smoothing_parameters=estimated,
+        objective=current.objective,
+        log_likelihood=current.log_likelihood,
+        penalized_negative_log_likelihood=(current.penalized_negative_log_likelihood),
+        outer_gradient=optimization.gradient,
+        outer_hessian=optimization.hessian,
+        outer_hessian_condition_number=(optimization.hessian_condition_number),
+        boundary_status=optimization.boundary_status,
+        outer_converged=optimization.converged,
+        outer_iterations=optimization.iterations,
+        inner_converged=True,
+        inner_iterations=current.inner_iterations,
+        inner_gradient_max=current.inner_gradient_max,
+        history=optimization.history,
+        coefficient_transform=transform,
+        reduced_observed_information=current.observed_information,
+        reduced_penalized_information=current.penalized_information,
+        combined_penalty_matrix=current.combined_penalty,
+        reduced_combined_penalty_matrix=current.reduced_combined_penalty,
+        generalized_log_determinant_penalty=(current.log_determinant_penalty),
+        log_determinant_penalized_information=(current.log_determinant_information),
+        penalty_ranks=penalty_ranks,
+        combined_penalty_rank=current.combined_penalty_rank,
+        unpenalized_dimension=current.unpenalized_dimension,
+        constraint_rank=constraint_rank,
+        effective_degrees_of_freedom=current.effective_degrees_of_freedom,
+        penalty_degrees_of_freedom=current.penalty_degrees_of_freedom,
+    )
+
+
+def fit_gamlss_model_laml(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    control: LAMLControl | None = None,
+    warm_start: bool = False,
+) -> NormalLAMLResult | GAMLSSLAMLResult:
+    """Fit a supported complete additive model and update its Torch state.
+
+    Linear columns and every smooth design are assembled parameter by
+    parameter. Each coefficient-space penalty contributes its own lambda to
+    the outer LAML problem, so a tensor term contributes one free coordinate
+    per marginal direction. Exact unidentifiable directions are removed by
+    null-space constraints before the nested optimization.
+    """
+    from torchgamlss.families import Normal, Poisson
+    from torchgamlss.links import IdentityLink, LogLink
+
+    is_normal = isinstance(model.family, Normal)
+    is_poisson = isinstance(model.family, Poisson)
+    if not is_normal and not is_poisson:
+        raise ValueError(
+            "whole-model LAML currently supports Normal and Poisson families"
+        )
+    if is_normal and (
+        not isinstance(model.family.links["mu"], IdentityLink)
+        or not isinstance(model.family.links["sigma"], LogLink)
+    ):
+        raise ValueError(
+            "whole-model Normal LAML requires identity mu and log sigma links"
+        )
+    if is_poisson and not isinstance(model.family.links["mu"], LogLink):
+        raise ValueError("whole-model Poisson LAML requires a log mu link")
+    if model.neural_predictors or model.shared_predictor is not None:
+        raise ValueError(
+            "whole-model LAML does not support neural or shared predictors"
+        )
+    if not any(terms for terms in model.smooth_terms.values()):
+        raise ValueError("whole-model LAML requires at least one smooth term")
+
+    model.family.validate_response(response, context="LAML")
+    contributions = model.term_contributions(
+        design_matrices,
+        offsets,
+        smooth_covariates=smooth_covariates,
+    )
+    observation_weights = model._validated_weights(response, weights)
+
+    parameter_designs: dict[str, Tensor] = {}
+    local_linear_slices: dict[str, slice] = {}
+    local_smooth_slices: dict[tuple[str, str], slice] = {}
+    parameter_penalties: dict[str, Tensor] = {}
+    for parameter in model.family.parameter_names:
+        linear_design = design_matrices[parameter]
+        local_linear_slices[parameter] = slice(0, linear_design.shape[1])
+        components = [linear_design]
+        cursor = linear_design.shape[1]
+        for term_name, term in model.smooth_terms[parameter].items():
+            covariate = smooth_covariates[parameter][term_name]
+            basis = term.design(covariate)
+            stop = cursor + basis.shape[1]
+            local_smooth_slices[(parameter, term_name)] = slice(
+                cursor,
+                stop,
+            )
+            components.append(basis)
+            cursor = stop
+        parameter_design = torch.cat(components, dim=1)
+        parameter_designs[parameter] = parameter_design
+        parameter_penalties[parameter] = response.new_zeros((cursor, cursor))
+
+    parameter_offsets: dict[str, int] = {}
+    cursor = 0
+    for parameter in model.family.parameter_names:
+        parameter_offsets[parameter] = cursor
+        cursor += parameter_designs[parameter].shape[1]
+    coefficient_count = cursor
+
+    linear_slices: dict[str, slice] = {}
+    smooth_slices: dict[tuple[str, str], slice] = {}
+    for parameter in model.family.parameter_names:
+        offset = parameter_offsets[parameter]
+        local = local_linear_slices[parameter]
+        linear_slices[parameter] = slice(
+            offset + local.start,
+            offset + local.stop,
+        )
+        for term_name in model.smooth_terms[parameter]:
+            local = local_smooth_slices[(parameter, term_name)]
+            smooth_slices[(parameter, term_name)] = slice(
+                offset + local.start,
+                offset + local.stop,
+            )
+
+    penalties: list[Tensor] = []
+    smoothing_parameters: list[float] = []
+    estimated: list[bool] = []
+    smoothing_labels: list[tuple[str, str, int]] = []
+    smoothing_slices: dict[tuple[str, str], slice] = {}
+    constraint_rows: list[Tensor] = []
+    penalty_cursor = 0
+    for parameter in model.family.parameter_names:
+        parameter_offset = parameter_offsets[parameter]
+        for term_name, term in model.smooth_terms[parameter].items():
+            term_penalties = term.penalty_matrices()
+            term_smoothing = term.smoothing_parameters
+            term_estimated = term.estimated_smoothing_parameters
+            if not (len(term_penalties) == len(term_smoothing) == len(term_estimated)):
+                raise RuntimeError(
+                    f"smooth term {parameter!r}.{term_name} has inconsistent "
+                    "penalty metadata"
+                )
+            local_slice = local_smooth_slices[(parameter, term_name)]
+            global_slice = smooth_slices[(parameter, term_name)]
+            smoothing_slices[(parameter, term_name)] = slice(
+                penalty_cursor,
+                penalty_cursor + len(term_penalties),
+            )
+            for penalty_index, (
+                penalty,
+                smoothing_parameter,
+                estimate,
+            ) in enumerate(
+                zip(
+                    term_penalties,
+                    term_smoothing,
+                    term_estimated,
+                    strict=True,
+                )
+            ):
+                full_penalty = response.new_zeros(
+                    (coefficient_count, coefficient_count)
+                )
+                full_penalty[global_slice, global_slice] = penalty
+                penalties.append(full_penalty)
+                parameter_penalties[parameter][
+                    local_slice,
+                    local_slice,
+                ] += penalty
+                smoothing_parameters.append(smoothing_parameter)
+                estimated.append(estimate)
+                smoothing_labels.append((parameter, term_name, penalty_index))
+                penalty_cursor += 1
+
+            explicit = term.constraints(smooth_covariates[parameter][term_name])
+            if explicit.shape[0]:
+                embedded = response.new_zeros((explicit.shape[0], coefficient_count))
+                embedded[:, global_slice] = explicit
+                constraint_rows.append(embedded)
+
+        weighted_design = parameter_designs[parameter] * (
+            observation_weights.sqrt().unsqueeze(-1)
+        )
+        identifiability_system = _symmetrize(
+            weighted_design.mT @ weighted_design + parameter_penalties[parameter]
+        )
+        unidentified = _null_directions(identifiability_system)
+        if unidentified.shape[1]:
+            embedded = response.new_zeros((unidentified.shape[1], coefficient_count))
+            start = parameter_offset
+            stop = start + parameter_designs[parameter].shape[1]
+            embedded[:, start:stop] = unidentified.mT
+            constraint_rows.append(embedded)
+
+    constraints = torch.cat(constraint_rows, dim=0) if constraint_rows else None
+    initial_coefficients = None
+    if warm_start:
+        initial_coefficients = response.new_empty(coefficient_count)
+        for parameter in model.family.parameter_names:
+            initial_coefficients[linear_slices[parameter]] = model.coefficients[
+                parameter
+            ].detach()
+            for term_name, term in model.smooth_terms[parameter].items():
+                initial_coefficients[smooth_slices[(parameter, term_name)]] = (
+                    term.coefficients.detach()
+                )
+    if is_normal:
+        result = fit_normal_laml(
+            response,
+            parameter_designs["mu"],
+            parameter_designs["sigma"],
+            penalties,
+            smoothing_parameters,
+            estimate_smoothing=estimated,
+            weights=observation_weights,
+            mu_offset=contributions["mu"].offset,
+            sigma_offset=contributions["sigma"].offset,
+            constraints=constraints,
+            initial_coefficients=initial_coefficients,
+            control=control,
+        )
+    else:
+        result = fit_gamlss_laml(
+            model.family,
+            response,
+            parameter_designs,
+            penalties,
+            smoothing_parameters,
+            estimate_smoothing=estimated,
+            weights=observation_weights,
+            offsets={
+                parameter: contributions[parameter].offset
+                for parameter in model.family.parameter_names
+            },
+            constraints=constraints,
+            initial_coefficients=initial_coefficients,
+            control=control,
+        )
+    result = replace(
+        result,
+        linear_coefficient_slices=dict(linear_slices),
+        smooth_coefficient_slices=dict(smooth_slices),
+        smoothing_parameter_labels=tuple(smoothing_labels),
+        smoothing_parameter_slices=dict(smoothing_slices),
+    )
+
+    with torch.no_grad():
+        for parameter in model.family.parameter_names:
+            model.coefficients[parameter].copy_(
+                result.coefficients[linear_slices[parameter]]
+            )
+            for term_name, term in model.smooth_terms[parameter].items():
+                term.coefficients.copy_(
+                    result.coefficients[smooth_slices[(parameter, term_name)]]
+                )
+                parameter_slice = smoothing_slices[(parameter, term_name)]
+                selected = result.smoothing_parameters[parameter_slice].detach()
+                retained = tuple(
+                    (float(value) if estimate else current)
+                    for value, estimate, current in zip(
+                        selected,
+                        term.estimated_smoothing_parameters,
+                        term.smoothing_parameters,
+                        strict=True,
+                    )
+                )
+                term._set_fitted_smoothing_parameters(retained)
+    return result
+
+
+def fit_normal_gamlss_laml(
+    model: GAMLSS,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    *,
+    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
+    weights: Tensor | None = None,
+    offsets: Mapping[str, Tensor] | None = None,
+    control: LAMLControl | None = None,
+    warm_start: bool = False,
+) -> NormalLAMLResult:
+    """Backward-compatible whole-model Normal LAML entry point."""
+    from torchgamlss.families import Normal
+
+    if not isinstance(model.family, Normal):
+        raise ValueError("fit_normal_gamlss_laml requires a Normal family model")
+    result = fit_gamlss_model_laml(
+        model,
+        response,
+        design_matrices,
+        smooth_covariates=smooth_covariates,
+        weights=weights,
+        offsets=offsets,
+        control=control,
+        warm_start=warm_start,
+    )
+    assert isinstance(result, NormalLAMLResult)
+    return result
+
+
+def _optimize_profile(
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
+    response: Tensor,
+    initial_parameters: Tensor,
+    estimated: tuple[bool, ...],
+    control: LAMLControl,
+) -> _OuterOptimization:
+    """Optimize the profiled Laplace criterion over free log lambdas."""
     free_indices = evaluator.free_indices
     free_log_parameters = initial_parameters[
         torch.tensor(free_indices, dtype=torch.long, device=response.device)
@@ -643,8 +1366,7 @@ def fit_normal_laml(
         accepted_iterations = 0
 
         while (
-            not outer_converged
-            and accepted_iterations < control.outer_max_iterations
+            not outer_converged and accepted_iterations < control.outer_max_iterations
         ):
             direction = -(inverse_hessian @ projected)
             if float(gradient @ direction) >= 0:
@@ -663,9 +1385,7 @@ def fit_normal_laml(
                 candidate_log_parameters = (
                     free_log_parameters + scale * direction
                 ).clamp(lower, upper)
-                candidate_delta = (
-                    candidate_log_parameters - free_log_parameters
-                )
+                candidate_delta = candidate_log_parameters - free_log_parameters
                 if float(candidate_delta.abs().max()) == 0.0:
                     scale *= 0.5
                     continue
@@ -716,9 +1436,8 @@ def fit_normal_laml(
                 rho = 1.0 / curvature
                 left = identity - rho * torch.outer(delta, difference)
                 right = identity - rho * torch.outer(difference, delta)
-                inverse_hessian = (
-                    left @ inverse_hessian @ right
-                    + rho * torch.outer(delta, delta)
+                inverse_hessian = left @ inverse_hessian @ right + rho * torch.outer(
+                    delta, delta
                 )
                 inverse_hessian = _symmetrize(inverse_hessian)
             else:
@@ -748,11 +1467,8 @@ def fit_normal_laml(
             outer_converged = float(projected.abs().max()) <= (
                 control.outer_gradient_tolerance
             )
-            if (
-                not outer_converged
-                and step_norm
-                <= control.outer_step_tolerance
-                * (1.0 + float(free_log_parameters.norm()))
+            if not outer_converged and step_norm <= control.outer_step_tolerance * (
+                1.0 + float(free_log_parameters.norm())
             ):
                 break
 
@@ -782,8 +1498,10 @@ def fit_normal_laml(
 
     full_log_parameters = evaluator.full_log_parameters(free_log_parameters)
     full_smoothing_parameters = full_log_parameters.exp()
-    outer_gradient = response.new_zeros(len(penalties))
-    outer_hessian = response.new_zeros((len(penalties), len(penalties)))
+    outer_gradient = response.new_zeros(initial_parameters.numel())
+    outer_hessian = response.new_zeros(
+        (initial_parameters.numel(), initial_parameters.numel())
+    )
     if free_indices:
         index = torch.tensor(
             free_indices,
@@ -791,9 +1509,7 @@ def fit_normal_laml(
             device=response.device,
         )
         outer_gradient[index] = outer_gradient_free
-        outer_hessian[index.unsqueeze(1), index.unsqueeze(0)] = (
-            outer_hessian_free
-        )
+        outer_hessian[index.unsqueeze(1), index.unsqueeze(0)] = outer_hessian_free
         hessian_condition = torch.linalg.cond(outer_hessian_free)
     else:
         hessian_condition = response.new_tensor(1.0)
@@ -811,312 +1527,24 @@ def fit_normal_laml(
             strict=True,
         )
     )
-    mu_count = mu_design.shape[1]
-    return NormalLAMLResult(
-        coefficients=current.coefficients,
-        mu_coefficients=current.coefficients[:mu_count],
-        sigma_coefficients=current.coefficients[mu_count:],
-        linear_predictor_mu=current.linear_predictor_mu,
-        linear_predictor_sigma=current.linear_predictor_sigma,
-        fitted_mu=current.fitted_mu,
-        fitted_sigma=current.fitted_sigma,
+    return _OuterOptimization(
+        profile=current,
         log_smoothing_parameters=full_log_parameters.detach(),
         smoothing_parameters=full_smoothing_parameters.detach(),
-        estimated_smoothing_parameters=estimated,
-        objective=current.objective,
-        log_likelihood=current.log_likelihood,
-        penalized_negative_log_likelihood=(
-            current.penalized_negative_log_likelihood
-        ),
-        outer_gradient=outer_gradient,
-        outer_hessian=outer_hessian,
-        outer_hessian_condition_number=hessian_condition.detach(),
+        gradient=outer_gradient,
+        hessian=outer_hessian,
+        hessian_condition_number=hessian_condition.detach(),
         boundary_status=boundary_status,
-        outer_converged=outer_converged,
-        outer_iterations=accepted_iterations,
-        inner_converged=True,
-        inner_iterations=current.inner_iterations,
-        inner_gradient_max=current.inner_gradient_max,
+        converged=outer_converged,
+        iterations=accepted_iterations,
         history=tuple(history),
-        coefficient_transform=transform,
-        reduced_observed_information=current.observed_information,
-        reduced_penalized_information=current.penalized_information,
-        combined_penalty_matrix=current.combined_penalty,
-        reduced_combined_penalty_matrix=(
-            current.reduced_combined_penalty
-        ),
-        generalized_log_determinant_penalty=(
-            current.log_determinant_penalty
-        ),
-        log_determinant_penalized_information=(
-            current.log_determinant_information
-        ),
-        penalty_ranks=penalty_ranks,
-        combined_penalty_rank=current.combined_penalty_rank,
-        unpenalized_dimension=current.unpenalized_dimension,
-        constraint_rank=constraint_rank,
-        effective_degrees_of_freedom=(
-            current.effective_degrees_of_freedom
-        ),
-        penalty_degrees_of_freedom=current.penalty_degrees_of_freedom,
     )
-
-
-def fit_normal_gamlss_laml(
-    model: GAMLSS,
-    response: Tensor,
-    design_matrices: Mapping[str, Tensor],
-    *,
-    smooth_covariates: Mapping[str, Mapping[str, Tensor]],
-    weights: Tensor | None = None,
-    offsets: Mapping[str, Tensor] | None = None,
-    control: LAMLControl | None = None,
-    warm_start: bool = False,
-) -> NormalLAMLResult:
-    """Fit a complete additive Normal model and update its Torch state.
-
-    Linear columns and every smooth design are assembled parameter by
-    parameter. Each coefficient-space penalty contributes its own lambda to
-    the outer LAML problem, so a tensor term contributes one free coordinate
-    per marginal direction. Exact unidentifiable directions are removed by
-    null-space constraints before the nested optimization.
-    """
-    from torchgamlss.families import Normal
-    from torchgamlss.links import IdentityLink, LogLink
-
-    if not isinstance(model.family, Normal):
-        raise ValueError(
-            "whole-model LAML currently supports only the Normal family"
-        )
-    if not isinstance(model.family.links["mu"], IdentityLink) or not isinstance(
-        model.family.links["sigma"],
-        LogLink,
-    ):
-        raise ValueError(
-            "whole-model Normal LAML requires identity mu and log sigma links"
-        )
-    if model.neural_predictors or model.shared_predictor is not None:
-        raise ValueError(
-            "whole-model LAML does not support neural or shared predictors"
-        )
-    if not any(terms for terms in model.smooth_terms.values()):
-        raise ValueError("whole-model LAML requires at least one smooth term")
-
-    model.family.validate_response(response, context="LAML")
-    contributions = model.term_contributions(
-        design_matrices,
-        offsets,
-        smooth_covariates=smooth_covariates,
-    )
-    observation_weights = model._validated_weights(response, weights)
-
-    parameter_designs: dict[str, Tensor] = {}
-    local_linear_slices: dict[str, slice] = {}
-    local_smooth_slices: dict[tuple[str, str], slice] = {}
-    parameter_penalties: dict[str, Tensor] = {}
-    for parameter in model.family.parameter_names:
-        linear_design = design_matrices[parameter]
-        local_linear_slices[parameter] = slice(0, linear_design.shape[1])
-        components = [linear_design]
-        cursor = linear_design.shape[1]
-        for term_name, term in model.smooth_terms[parameter].items():
-            covariate = smooth_covariates[parameter][term_name]
-            basis = term.design(covariate)
-            stop = cursor + basis.shape[1]
-            local_smooth_slices[(parameter, term_name)] = slice(
-                cursor,
-                stop,
-            )
-            components.append(basis)
-            cursor = stop
-        parameter_design = torch.cat(components, dim=1)
-        parameter_designs[parameter] = parameter_design
-        parameter_penalties[parameter] = response.new_zeros(
-            (cursor, cursor)
-        )
-
-    parameter_offsets: dict[str, int] = {}
-    cursor = 0
-    for parameter in model.family.parameter_names:
-        parameter_offsets[parameter] = cursor
-        cursor += parameter_designs[parameter].shape[1]
-    coefficient_count = cursor
-
-    linear_slices: dict[str, slice] = {}
-    smooth_slices: dict[tuple[str, str], slice] = {}
-    for parameter in model.family.parameter_names:
-        offset = parameter_offsets[parameter]
-        local = local_linear_slices[parameter]
-        linear_slices[parameter] = slice(
-            offset + local.start,
-            offset + local.stop,
-        )
-        for term_name in model.smooth_terms[parameter]:
-            local = local_smooth_slices[(parameter, term_name)]
-            smooth_slices[(parameter, term_name)] = slice(
-                offset + local.start,
-                offset + local.stop,
-            )
-
-    penalties: list[Tensor] = []
-    smoothing_parameters: list[float] = []
-    estimated: list[bool] = []
-    smoothing_labels: list[tuple[str, str, int]] = []
-    smoothing_slices: dict[tuple[str, str], slice] = {}
-    constraint_rows: list[Tensor] = []
-    penalty_cursor = 0
-    for parameter in model.family.parameter_names:
-        parameter_offset = parameter_offsets[parameter]
-        for term_name, term in model.smooth_terms[parameter].items():
-            term_penalties = term.penalty_matrices()
-            term_smoothing = term.smoothing_parameters
-            term_estimated = term.estimated_smoothing_parameters
-            if not (
-                len(term_penalties)
-                == len(term_smoothing)
-                == len(term_estimated)
-            ):
-                raise RuntimeError(
-                    f"smooth term {parameter!r}.{term_name} has inconsistent "
-                    "penalty metadata"
-                )
-            local_slice = local_smooth_slices[(parameter, term_name)]
-            global_slice = smooth_slices[(parameter, term_name)]
-            smoothing_slices[(parameter, term_name)] = slice(
-                penalty_cursor,
-                penalty_cursor + len(term_penalties),
-            )
-            for penalty_index, (
-                penalty,
-                smoothing_parameter,
-                estimate,
-            ) in enumerate(
-                zip(
-                    term_penalties,
-                    term_smoothing,
-                    term_estimated,
-                    strict=True,
-                )
-            ):
-                full_penalty = response.new_zeros(
-                    (coefficient_count, coefficient_count)
-                )
-                full_penalty[global_slice, global_slice] = penalty
-                penalties.append(full_penalty)
-                parameter_penalties[parameter][
-                    local_slice,
-                    local_slice,
-                ] += penalty
-                smoothing_parameters.append(smoothing_parameter)
-                estimated.append(estimate)
-                smoothing_labels.append(
-                    (parameter, term_name, penalty_index)
-                )
-                penalty_cursor += 1
-
-            explicit = term.constraints(
-                smooth_covariates[parameter][term_name]
-            )
-            if explicit.shape[0]:
-                embedded = response.new_zeros(
-                    (explicit.shape[0], coefficient_count)
-                )
-                embedded[:, global_slice] = explicit
-                constraint_rows.append(embedded)
-
-        weighted_design = parameter_designs[parameter] * (
-            observation_weights.sqrt().unsqueeze(-1)
-        )
-        identifiability_system = _symmetrize(
-            weighted_design.mT @ weighted_design
-            + parameter_penalties[parameter]
-        )
-        unidentified = _null_directions(identifiability_system)
-        if unidentified.shape[1]:
-            embedded = response.new_zeros(
-                (unidentified.shape[1], coefficient_count)
-            )
-            start = parameter_offset
-            stop = start + parameter_designs[parameter].shape[1]
-            embedded[:, start:stop] = unidentified.mT
-            constraint_rows.append(embedded)
-
-    constraints = (
-        torch.cat(constraint_rows, dim=0)
-        if constraint_rows
-        else None
-    )
-    initial_coefficients = None
-    if warm_start:
-        initial_coefficients = response.new_empty(coefficient_count)
-        for parameter in model.family.parameter_names:
-            initial_coefficients[linear_slices[parameter]] = (
-                model.coefficients[parameter].detach()
-            )
-            for term_name, term in model.smooth_terms[parameter].items():
-                initial_coefficients[smooth_slices[(parameter, term_name)]] = (
-                    term.coefficients.detach()
-                )
-    result = fit_normal_laml(
-        response,
-        parameter_designs["mu"],
-        parameter_designs["sigma"],
-        penalties,
-        smoothing_parameters,
-        estimate_smoothing=estimated,
-        weights=observation_weights,
-        mu_offset=contributions["mu"].offset,
-        sigma_offset=contributions["sigma"].offset,
-        constraints=constraints,
-        initial_coefficients=initial_coefficients,
-        control=control,
-    )
-    result = replace(
-        result,
-        linear_coefficient_slices=dict(linear_slices),
-        smooth_coefficient_slices=dict(smooth_slices),
-        smoothing_parameter_labels=tuple(smoothing_labels),
-        smoothing_parameter_slices=dict(smoothing_slices),
-    )
-
-    with torch.no_grad():
-        for parameter in model.family.parameter_names:
-            model.coefficients[parameter].copy_(
-                result.coefficients[linear_slices[parameter]]
-            )
-            for term_name, term in model.smooth_terms[parameter].items():
-                term.coefficients.copy_(
-                    result.coefficients[
-                        smooth_slices[(parameter, term_name)]
-                    ]
-                )
-                parameter_slice = smoothing_slices[
-                    (parameter, term_name)
-                ]
-                selected = result.smoothing_parameters[
-                    parameter_slice
-                ].detach()
-                retained = tuple(
-                    (
-                        float(value)
-                        if estimate
-                        else current
-                    )
-                    for value, estimate, current in zip(
-                        selected,
-                        term.estimated_smoothing_parameters,
-                        term.smoothing_parameters,
-                        strict=True,
-                    )
-                )
-                term._set_fitted_smoothing_parameters(retained)
-    return result
 
 
 def _profile_gradient(
-    evaluator: _NormalProfileEvaluator,
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
     log_parameters: Tensor,
-    central: _ProfileEvaluation,
+    central: _ProfileEvaluation | _GAMLSSProfileEvaluation,
     step_size: float,
 ) -> Tensor:
     values: list[Tensor] = []
@@ -1137,16 +1565,14 @@ def _profile_gradient(
 
 
 def _profile_hessian(
-    evaluator: _NormalProfileEvaluator,
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
     log_parameters: Tensor,
-    central: _ProfileEvaluation,
+    central: _ProfileEvaluation | _GAMLSSProfileEvaluation,
     step_size: float,
 ) -> Tensor:
     count = log_parameters.numel()
     hessian = log_parameters.new_zeros((count, count))
-    steps = tuple(
-        step_size * max(1.0, abs(float(value))) for value in log_parameters
-    )
+    steps = tuple(step_size * max(1.0, abs(float(value))) for value in log_parameters)
     for left in range(count):
         left_step = torch.zeros_like(log_parameters)
         left_step[left] = steps[left]
@@ -1199,19 +1625,15 @@ def _projected_gradient(
 ) -> Tensor:
     projected = gradient.clone()
     tolerance = 10.0 * torch.finfo(log_parameters.dtype).eps
-    projected[
-        (log_parameters <= lower + tolerance) & (gradient > 0)
-    ] = 0
-    projected[
-        (log_parameters >= upper - tolerance) & (gradient < 0)
-    ] = 0
+    projected[(log_parameters <= lower + tolerance) & (gradient > 0)] = 0
+    projected[(log_parameters >= upper - tolerance) & (gradient < 0)] = 0
     return projected
 
 
 def _history_entry(
-    evaluator: _NormalProfileEvaluator,
+    evaluator: _NormalProfileEvaluator | _GAMLSSProfileEvaluator,
     iteration: int,
-    profile: _ProfileEvaluation,
+    profile: _ProfileEvaluation | _GAMLSSProfileEvaluation,
     free_log_parameters: Tensor,
     free_gradient: Tensor,
     projected_gradient: Tensor,
@@ -1227,9 +1649,7 @@ def _history_entry(
         )
         full_gradient[indices] = free_gradient
     projected_max = (
-        float(projected_gradient.abs().max())
-        if projected_gradient.numel()
-        else 0.0
+        float(projected_gradient.abs().max()) if projected_gradient.numel() else 0.0
     )
     return LAMLHistoryEntry(
         iteration=iteration,
@@ -1242,6 +1662,42 @@ def _history_entry(
         inner_iterations=profile.inner_iterations,
         inner_gradient_max=profile.inner_gradient_max,
     )
+
+
+def _validate_family_inputs(
+    family: Family,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+) -> None:
+    if response.ndim != 1 or response.numel() < 2:
+        raise ValueError("response must be one-dimensional with at least 2 values")
+    if not response.is_floating_point() or not torch.isfinite(response).all():
+        raise ValueError("response must use a finite floating-point dtype")
+    family.validate_response(response, context="LAML")
+    missing = set(family.parameter_names).difference(design_matrices)
+    extra = set(design_matrices).difference(family.parameter_names)
+    if missing or extra:
+        raise ValueError(
+            "design_matrices do not match family parameters: "
+            f"missing={sorted(missing)}, extra={sorted(extra)}"
+        )
+    for parameter in family.parameter_names:
+        design = design_matrices[parameter]
+        if (
+            design.ndim != 2
+            or design.shape[0] != response.numel()
+            or design.shape[1] < 1
+        ):
+            raise ValueError(
+                f"{parameter!r} design must be two-dimensional with one "
+                "row per response and at least one column"
+            )
+        if design.dtype != response.dtype or design.device != response.device:
+            raise ValueError(
+                f"{parameter!r} design must match the response dtype and device"
+            )
+        if not torch.isfinite(design).all():
+            raise ValueError(f"{parameter!r} design must be finite")
 
 
 def _validate_inputs(
@@ -1320,9 +1776,7 @@ def _validate_penalties(
         symmetric = _symmetrize(penalty)
         eigenvalues = torch.linalg.eigvalsh(symmetric)
         if float(eigenvalues.min()) < -tolerance:
-            raise ValueError(
-                f"penalty matrix {index} must be positive semidefinite"
-            )
+            raise ValueError(f"penalty matrix {index} must be positive semidefinite")
         validated.append(symmetric)
         ranks.append(int((eigenvalues > tolerance).sum()))
 
@@ -1344,9 +1798,7 @@ def _validate_penalties(
                     f"smoothing parameter {index} must be scalar"
                 ) from error
         if not bool(torch.isfinite(value)) or float(value) <= 0:
-            raise ValueError(
-                f"smoothing parameter {index} must be finite and positive"
-            )
+            raise ValueError(f"smoothing parameter {index} must be finite and positive")
         smoothing_values.append(value)
     return (
         tuple(validated),
@@ -1363,9 +1815,7 @@ def _normalize_estimated(
         return (estimate_smoothing,) * count
     values = tuple(estimate_smoothing)
     if len(values) != count or any(not isinstance(value, bool) for value in values):
-        raise ValueError(
-            "estimate_smoothing must contain one boolean per penalty"
-        )
+        raise ValueError("estimate_smoothing must contain one boolean per penalty")
     return values
 
 
@@ -1409,13 +1859,8 @@ def _constraint_transform(
                 device=response.device,
             ),
         )
-    if (
-        constraints.ndim != 2
-        or constraints.shape[1] != coefficient_count
-    ):
-        raise ValueError(
-            f"constraints must have shape (q, {coefficient_count})"
-        )
+    if constraints.ndim != 2 or constraints.shape[1] != coefficient_count:
+        raise ValueError(f"constraints must have shape (q, {coefficient_count})")
     if constraints.dtype != response.dtype or constraints.device != response.device:
         raise ValueError("constraints must match the response dtype and device")
     if not torch.isfinite(constraints).all():
@@ -1434,11 +1879,7 @@ def _constraint_transform(
         full_matrices=True,
     )
     largest = float(singular_values.max()) if singular_values.numel() else 0.0
-    tolerance = (
-        max(constraints.shape)
-        * torch.finfo(response.dtype).eps
-        * largest
-    )
+    tolerance = max(constraints.shape) * torch.finfo(response.dtype).eps * largest
     rank = int((singular_values > tolerance).sum())
     if rank >= coefficient_count:
         raise ValueError("constraints must leave at least one coefficient free")
@@ -1470,20 +1911,55 @@ def _initial_coefficients(
             raise ValueError("initial_coefficients must be finite")
         full = initial_coefficients
     else:
-        mu_coefficients = torch.linalg.pinv(mu_design) @ (
-            response - mu_offset
-        )
+        mu_coefficients = torch.linalg.pinv(mu_design) @ (response - mu_offset)
         residual = response - mu_offset - mu_design @ mu_coefficients
         residual_scale = max(
             float(residual.std(correction=1)),
             math.sqrt(torch.finfo(response.dtype).eps),
         )
-        adjusted = (residual.abs() - sigma_floor).clamp_min(
-            residual_scale * 1e-3
-        )
+        adjusted = (residual.abs() - sigma_floor).clamp_min(residual_scale * 1e-3)
         sigma_target = adjusted.log() - sigma_offset
         sigma_coefficients = torch.linalg.pinv(sigma_design) @ sigma_target
         full = torch.cat((mu_coefficients, sigma_coefficients))
+    return transform.mT @ full
+
+
+def _initial_family_coefficients(
+    family: Family,
+    response: Tensor,
+    design_matrices: Mapping[str, Tensor],
+    coefficient_slices: Mapping[str, slice],
+    offsets: Mapping[str, Tensor],
+    transform: Tensor,
+    initial_coefficients: Tensor | None,
+) -> Tensor:
+    coefficient_count = sum(
+        design_matrices[parameter].shape[1] for parameter in family.parameter_names
+    )
+    if initial_coefficients is not None:
+        if (
+            initial_coefficients.ndim != 1
+            or initial_coefficients.numel() != coefficient_count
+            or initial_coefficients.dtype != response.dtype
+            or initial_coefficients.device != response.device
+        ):
+            raise ValueError(
+                "initial_coefficients must match the complete coefficient vector"
+            )
+        if not torch.isfinite(initial_coefficients).all():
+            raise ValueError("initial_coefficients must be finite")
+        full = initial_coefficients
+    else:
+        initial_parameters = family.initial_parameters(response)
+        full = response.new_empty(coefficient_count)
+        for parameter in family.parameter_names:
+            target = (
+                family.links[parameter](initial_parameters[parameter])
+                - offsets[parameter]
+            )
+            full[coefficient_slices[parameter]] = (
+                torch.linalg.pinv(design_matrices[parameter]) @ target
+            )
     return transform.mT @ full
 
 
@@ -1500,12 +1976,7 @@ def _generalized_log_determinant(matrix: Tensor) -> tuple[Tensor, int]:
 
 def _matrix_tolerance(matrix: Tensor) -> float:
     scale = max(float(matrix.detach().abs().max()), 1.0)
-    return (
-        100.0
-        * torch.finfo(matrix.dtype).eps
-        * max(matrix.shape)
-        * scale
-    )
+    return 100.0 * torch.finfo(matrix.dtype).eps * max(matrix.shape) * scale
 
 
 def _null_directions(matrix: Tensor) -> Tensor:

@@ -47,9 +47,10 @@ from torchgamlss.inference import (
     smooth_term_inference,
 )
 from torchgamlss.laml import (
+    GAMLSSLAMLResult,
     LAMLControl,
     NormalLAMLResult,
-    fit_normal_gamlss_laml,
+    fit_gamlss_model_laml,
 )
 from torchgamlss.optimization import (
     MiniBatchControl,
@@ -203,9 +204,7 @@ def _formula_marginal_option(
             )
         value = value[index]
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(
-            f"{function_name}() {name} values must be integers"
-        )
+        raise ValueError(f"{function_name}() {name} values must be integers")
     return value
 
 
@@ -479,8 +478,8 @@ class GAMLSS(nn.Module):
         *,
         weights: Any = None,
         control: LAMLControl | None = None,
-    ) -> NormalLAMLResult:
-        """Fit a formula Normal model with whole-model LAML selection."""
+    ) -> NormalLAMLResult | GAMLSSLAMLResult:
+        """Fit a supported formula model with whole-model LAML selection."""
         prepared = self.prepare_formula_data(data, include_response=True)
         assert prepared.response is not None
         case_weights = self._formula_tensor(data, weights, context="weights")
@@ -1685,10 +1684,10 @@ class GAMLSS(nn.Module):
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
         control: LAMLControl | None = None,
-    ) -> NormalLAMLResult:
-        """Fit a complete additive Normal model by nested LAML."""
+    ) -> NormalLAMLResult | GAMLSSLAMLResult:
+        """Fit a supported complete additive model by nested LAML."""
         self._require_no_neural_predictors("fit_laml()")
-        return fit_normal_gamlss_laml(
+        return fit_gamlss_model_laml(
             self,
             response,
             design_matrices,

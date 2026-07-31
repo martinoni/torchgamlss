@@ -87,10 +87,10 @@ The current implementation contains:
 - full tensor-product smooths and highest-order ANOVA tensor interactions,
   with one penalty per marginal direction, explicit identifiability
   constraints, and `mgcv` algebraic parity;
-- dense whole-model LAML for additive Normal location-scale models, including
-  formula `fit_laml_data()`, automatic scalar and tensor lambdas, null-space
-  constraints, outer diagnostics, CPU/CUDA execution, and direct
-  `mgcv::gaulss(method="REML")` tensor parity;
+- dense whole-model LAML for additive Normal location-scale and Poisson
+  log-mean models, including formula `fit_laml_data()`, automatic scalar and
+  tensor lambdas, null-space constraints, outer diagnostics, CPU/CUDA
+  execution, and direct `mgcv` REML parity;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
 - target-EDF P-splines compatible with `pb(x, df=...)`;
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with
@@ -107,9 +107,9 @@ The current implementation contains:
   coefficients, smooth terms, and distribution parameters, including
   multiply penalized tensor surfaces;
 - fixed-design parametric bootstrap intervals, cross-smooth covariance, and
-  joint bands that refit RS, CG, or whole-model Normal LAML, repeat available
-  smoothing-parameter selection, and retain one lambda column per tensor
-  penalty;
+  joint bands that refit RS, CG, or supported whole-model LAML models, repeat
+  available smoothing-parameter selection, and retain one lambda column per
+  tensor penalty;
 - aligned bootstrap inference for smooth contrasts, differences, derivatives,
   extrema, and linearly interpolated crossings;
 - fixed-design bootstrap intervals and joint bands for response-scale centile
@@ -203,11 +203,11 @@ or neural contribution. See
 [`docs/R_TO_PYTHON.md`](docs/R_TO_PYTHON.md) for a complete mapping from an R
 workflow. Formula `te()` and `ti()` terms can be fitted with fixed lambdas
 through RS, CG, L-BFGS, or mini-batch Adam, or with jointly selected marginal
-lambdas through `fit_laml_data()` for Normal location-scale models. Their
-parametric bootstrap stores one value per marginal lambda while preserving the
-scalar `pb()` API; `algorithm="laml"` repeats automatic joint tensor
-selection in every successful bootstrap replicate. The generic tensor-product
-API, examples, and current limitations are documented in
+lambdas through `fit_laml_data()` for Normal location-scale and Poisson
+log-mean models. Their parametric bootstrap stores one value per marginal
+lambda while preserving the scalar `pb()` API; `algorithm="laml"` repeats
+automatic joint tensor selection in every successful bootstrap replicate. The
+generic tensor-product API, examples, and current limitations are documented in
 [`docs/TENSOR_SMOOTHS.md`](docs/TENSOR_SMOOTHS.md).
 
 ## Development

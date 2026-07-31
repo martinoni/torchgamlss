@@ -373,9 +373,9 @@ Response-scale centile bootstrap bands are a simulate-and-refit extension over
 these parity-tested quantiles.
 
 Parametric smooth bootstrap is also an extension: it composes the
-parity-tested family distributions, RS/CG fitting or whole-model Normal LAML,
-and smoothing-selection updates rather than reproducing a single `gamlss`
-return value. Seeded
+parity-tested family distributions, RS/CG fitting or supported whole-model
+LAML fitting, and smoothing-selection updates rather than reproducing a single
+`gamlss` return value. Seeded
 samplers for BCCG, BCT, BCPE, TF, and PE are checked through their fitted CDFs
 using the probability integral transform. Joint bootstrap covariance and
 multi-smooth max-|t| bands reuse the same aligned refits; they do not claim a
@@ -476,6 +476,13 @@ The separate tensor LAML fixture is a whole-model numerical check against
 both directional penalties, then compares the negative LAML objective,
 lambdas, EDF, every coefficient, fitted location and scale, and the outer
 Hessian.
+
+The Poisson LAML fixture is the first family-driven non-Normal check. It uses
+`mgcv::gam(..., family=poisson(), method="REML")`, exports the exact design and
+coefficient-space penalty, and compares the negative LAML objective, selected
+lambda, EDF, every coefficient, link predictor, fitted mean, and outer
+Hessian. The same Torch core is covered through formula fitting, parametric
+smooth bootstrap, and local CUDA execution.
 
 Fixed tensor lambdas can also be fitted with the generic
 dense solver or constructed through formula `te()`/`ti()` terms for

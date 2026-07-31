@@ -256,6 +256,118 @@ tensor_fitted_reference <- data.frame(
   sigma = 1 / tensor_response_prediction[, 2]
 )
 
+poisson_design_path <- file.path(
+  reference_dir,
+  "mgcv_poisson_laml_design.csv"
+)
+poisson_penalty_path <- file.path(
+  reference_dir,
+  "mgcv_poisson_laml_penalties.csv"
+)
+poisson_summary_path <- file.path(
+  reference_dir,
+  "mgcv_poisson_laml_reference.csv"
+)
+poisson_coefficient_path <- file.path(
+  reference_dir,
+  "mgcv_poisson_laml_coefficient_reference.csv"
+)
+poisson_fitted_path <- file.path(
+  reference_dir,
+  "mgcv_poisson_laml_fitted_reference.csv"
+)
+
+poisson_observation_count <- 160
+poisson_x <- seq(
+  -1,
+  1,
+  length.out = poisson_observation_count
+)
+set.seed(20260801)
+poisson_y <- rpois(
+  poisson_observation_count,
+  exp(0.3 + sin(pi * poisson_x) + 0.25 * poisson_x)
+)
+poisson_data <- data.frame(y = poisson_y, x = poisson_x)
+poisson_setup <- gam(
+  y ~ s(x, bs = "ps", k = 8),
+  data = poisson_data,
+  family = poisson(),
+  method = "REML",
+  fit = FALSE
+)
+poisson_fit <- gam(G = poisson_setup, method = "REML")
+poisson_design <- poisson_setup$X
+colnames(poisson_design) <- paste0(
+  "mu_",
+  seq_len(ncol(poisson_design))
+)
+poisson_design_reference <- data.frame(
+  response = poisson_setup$y,
+  weight = poisson_setup$w,
+  poisson_design,
+  check.names = FALSE
+)
+poisson_coefficient_count <- ncol(poisson_design)
+poisson_penalty_references <- lapply(
+  seq_along(poisson_setup$S),
+  function(penalty_index) {
+    full_penalty <- matrix(
+      0,
+      nrow = poisson_coefficient_count,
+      ncol = poisson_coefficient_count
+    )
+    start <- poisson_setup$off[penalty_index]
+    term_indices <- start:(
+      start + nrow(poisson_setup$S[[penalty_index]]) - 1
+    )
+    full_penalty[term_indices, term_indices] <- (
+      poisson_setup$S[[penalty_index]]
+    )
+    data.frame(
+      penalty = penalty_index,
+      row = rep(
+        seq_len(poisson_coefficient_count),
+        each = poisson_coefficient_count
+      ),
+      column = rep(
+        seq_len(poisson_coefficient_count),
+        poisson_coefficient_count
+      ),
+      value = as.vector(t(full_penalty))
+    )
+  }
+)
+poisson_penalty_reference <- do.call(
+  rbind,
+  poisson_penalty_references
+)
+poisson_outer_gradient <- as.numeric(
+  poisson_fit$outer.info$grad
+)
+poisson_outer_hessian <- poisson_fit$outer.info$hess
+poisson_summary_reference <- data.frame(
+  mgcv_version = as.character(packageVersion("mgcv")),
+  objective = as.numeric(poisson_fit$gcv.ubre),
+  log_likelihood = as.numeric(logLik(poisson_fit)),
+  lambda_mu = as.numeric(poisson_fit$sp[1]),
+  effective_degrees_of_freedom = sum(poisson_fit$edf),
+  outer_iterations = poisson_fit$outer.info$iter,
+  outer_convergence = poisson_fit$outer.info$conv,
+  gradient_mu = poisson_outer_gradient[1],
+  hessian_mu_mu = poisson_outer_hessian[1, 1],
+  coefficient_count = length(coef(poisson_fit))
+)
+poisson_coefficient_reference <- data.frame(
+  index = seq_along(coef(poisson_fit)),
+  coefficient = as.numeric(coef(poisson_fit)),
+  effective_degrees_of_freedom = as.numeric(poisson_fit$edf)
+)
+poisson_fitted_reference <- data.frame(
+  eta_mu = as.numeric(predict(poisson_fit, type = "link")),
+  mu = as.numeric(fitted(poisson_fit))
+)
+
 write_reference <- function(value, path) {
   connection <- file(path, open = "wb")
   on.exit(close(connection))
@@ -345,6 +457,26 @@ references <- list(
   tensor_fitted = list(
     value = tensor_fitted_reference,
     path = tensor_fitted_path
+  ),
+  poisson_design = list(
+    value = poisson_design_reference,
+    path = poisson_design_path
+  ),
+  poisson_penalty = list(
+    value = poisson_penalty_reference,
+    path = poisson_penalty_path
+  ),
+  poisson_summary = list(
+    value = poisson_summary_reference,
+    path = poisson_summary_path
+  ),
+  poisson_coefficient = list(
+    value = poisson_coefficient_reference,
+    path = poisson_coefficient_path
+  ),
+  poisson_fitted = list(
+    value = poisson_fitted_reference,
+    path = poisson_fitted_path
   )
 )
 

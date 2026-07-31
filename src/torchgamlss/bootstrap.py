@@ -9,9 +9,10 @@ from torch import Tensor
 
 from torchgamlss.fitting import CGControl, CGFitResult, RSControl, RSFitResult
 from torchgamlss.laml import (
+    GAMLSSLAMLResult,
     LAMLControl,
     NormalLAMLResult,
-    fit_normal_gamlss_laml,
+    fit_gamlss_model_laml,
 )
 
 if TYPE_CHECKING:
@@ -20,7 +21,9 @@ if TYPE_CHECKING:
 
 BootstrapAlgorithm: TypeAlias = Literal["rs", "cg", "laml"]
 BootstrapControl: TypeAlias = RSControl | CGControl | LAMLControl
-BootstrapFitResult: TypeAlias = RSFitResult | CGFitResult | NormalLAMLResult
+BootstrapFitResult: TypeAlias = (
+    RSFitResult | CGFitResult | NormalLAMLResult | GAMLSSLAMLResult
+)
 
 
 def validate_bootstrap_refit(
@@ -40,25 +43,28 @@ def validate_bootstrap_refit(
     }[normalized]
     if control is not None and not isinstance(control, expected_control):
         raise ValueError(
-            f"control must be {expected_control.__name__} when algorithm="
-            f"{normalized!r}"
+            f"control must be {expected_control.__name__} when algorithm={normalized!r}"
         )
 
     if normalized == "laml":
-        from torchgamlss.families import Normal
+        from torchgamlss.families import Normal, Poisson
         from torchgamlss.links import IdentityLink, LogLink
 
-        if not isinstance(model.family, Normal):
+        is_normal = isinstance(model.family, Normal)
+        is_poisson = isinstance(model.family, Poisson)
+        if not is_normal and not is_poisson:
             raise ValueError(
-                "LAML bootstrap currently supports only the Normal family"
+                "LAML bootstrap currently supports Normal and Poisson families"
             )
-        if not isinstance(
-            model.family.links["mu"],
-            IdentityLink,
-        ) or not isinstance(model.family.links["sigma"], LogLink):
+        if is_normal and (
+            not isinstance(model.family.links["mu"], IdentityLink)
+            or not isinstance(model.family.links["sigma"], LogLink)
+        ):
             raise ValueError(
-                "LAML bootstrap requires identity mu and log sigma links"
+                "Normal LAML bootstrap requires identity mu and log sigma links"
             )
+        if is_poisson and not isinstance(model.family.links["mu"], LogLink):
+            raise ValueError("Poisson LAML bootstrap requires a log mu link")
         if not any(model.smooth_terms.values()):
             raise ValueError("LAML bootstrap requires at least one smooth term")
         if model.neural_predictors or model.shared_predictor is not None:
@@ -105,7 +111,7 @@ def fit_bootstrap_model(
         raise ValueError(
             "LAML bootstrap requires smooth_covariates for every smooth term"
         )
-    return fit_normal_gamlss_laml(
+    return fit_gamlss_model_laml(
         model,
         response,
         design_matrices,
@@ -123,6 +129,6 @@ def bootstrap_fit_converged(
 ) -> bool:
     """Return the convergence state shared by classical and LAML fits."""
     if algorithm == "laml":
-        assert isinstance(result, NormalLAMLResult)
+        assert isinstance(result, (NormalLAMLResult, GAMLSSLAMLResult))
         return result.outer_converged and result.inner_converged
     return result.converged

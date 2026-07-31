@@ -1,7 +1,8 @@
 # Whole-model LAML
 
 TorchGAMLSS has a dense whole-model Laplace approximate marginal likelihood
-implementation for additive Normal location-scale models. Formula models use:
+implementation for additive Normal location-scale and Poisson log-mean
+models. A Normal formula model uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -21,7 +22,21 @@ Omitting the tensor lambdas requests LAML selection. `te()` and `ti()` each
 contribute one free log lambda per marginal direction. A scalar `pb()` keeps
 its existing fixed/automatic formula semantics. `fit_laml()` is the
 corresponding tensor-level model method, while `fit_normal_laml()` remains the
-low-level assembled-matrix API.
+specialized low-level Normal API. `fit_gamlss_laml()` is the family-driven
+low-level API used by the Poisson path.
+
+A Poisson model uses the same formula and fitting surface:
+
+```python
+from torchgamlss import GAMLSS, LAMLControl, Poisson
+
+model = GAMLSS.from_formula(
+    Poisson(),
+    {"mu": "count ~ pb(x, intervals=8)"},
+    data,
+)
+fit = model.fit_laml_data(data, control=LAMLControl())
+```
 
 The same estimator can be repeated inside fixed-design parametric bootstrap
 samples:
@@ -89,18 +104,25 @@ the generalized determinant over positive eigenvalues, and `M_p` is the
 dimension of the unpenalized coefficient subspace. This is the criterion in
 Wood, Pya, and Säfken (2016), expressed as a minimization objective.
 
+For Poisson, `eta_mu = X_mu beta_mu + offset_mu`,
+`mu = exp(eta_mu)`, and the inner likelihood is evaluated through
+`Poisson.log_prob()`. The generic path obtains links, starting parameters, and
+the differentiable observation-wise likelihood from the public `Family`
+interface; its smoothing optimizer is shared with the exact Normal path.
+
 ## Formula and model integration
 
 The high-level adapter:
 
-1. concatenates every linear and smooth design within `mu` and `sigma`;
+1. concatenates every linear and smooth design within each family parameter;
 2. embeds every coefficient-space penalty in the complete model;
 3. detects exact unidentifiable null-space directions and constrains them;
 4. optimizes all requested log lambdas together;
 5. writes coefficients and selected lambdas back to the `GAMLSS` object.
 
-`NormalLAMLResult.smoothing_parameter_labels` identifies flat lambda
-coordinates as `(parameter, term, penalty_index)`.
+`NormalLAMLResult.smoothing_parameter_labels` and
+`GAMLSSLAMLResult.smoothing_parameter_labels` identify flat lambda coordinates
+as `(parameter, term, penalty_index)`.
 `smoothing_parameter_slices`, `linear_coefficient_slices`, and
 `smooth_coefficient_slices` map the complete result back to model terms.
 Prediction therefore uses the selected state immediately:
@@ -179,6 +201,24 @@ If this creates redundant unpenalized columns, pass `constraints=C` for
 Inputs already centered and constrained by another system, such as the `mgcv`
 reference design, need no additional constraint.
 
+For a supported generic family, supply one design per family parameter:
+
+```python
+from torchgamlss import Poisson, fit_gamlss_laml
+
+fit = fit_gamlss_laml(
+    Poisson(),
+    counts,
+    {"mu": X_mu},
+    (S_mu,),
+    (10.0,),
+)
+
+fit.parameter_coefficients["mu"]
+fit.linear_predictors["mu"]
+fit.fitted_parameters["mu"]
+```
+
 Set `estimate_smoothing=False` to evaluate a fixed-lambda fit, or pass one
 boolean per penalty to mix fixed and estimated components:
 
@@ -208,7 +248,9 @@ The outer gradient and Hessian currently use central differences of the fully
 converged profile criterion. The implementation deliberately does not
 differentiate through an arbitrary number of inner iterations.
 
-`NormalLAMLResult` exposes:
+`NormalLAMLResult` and `GAMLSSLAMLResult` expose the common optimization,
+penalty, and smoothing diagnostics. The generic result additionally exposes
+parameter-keyed coefficient, predictor, and fitted-parameter mappings:
 
 - coefficients, predictors, fitted `mu`, and fitted `sigma`;
 - lambdas and log lambdas;
@@ -223,10 +265,12 @@ differentiate through an arbitrary number of inner iterations.
 
 ## `mgcv` reference gate
 
-`tools/generate_mgcv_laml_reference.R` builds both a two-smooth Gaussian
+`tools/generate_mgcv_laml_reference.R` builds a two-smooth Gaussian
 location-scale model and a two-penalty tensor-product model with
-`mgcv::gaulss(method="REML")`. It exports the exact model matrices and
-coefficient-space penalties and checks the committed reference files.
+`mgcv::gaulss(method="REML")`, plus a Poisson log-mean model with
+`mgcv::gam(..., family=poisson(), method="REML")`. It exports the exact model
+matrices and coefficient-space penalties and checks the committed reference
+files.
 
 For the current fixture:
 
@@ -246,10 +290,18 @@ For the tensor fixture:
 | lambda in the `z` direction | 54.0102 | 54.0103 |
 | total EDF | 19.127866 | 19.127862 |
 
+For the Poisson fixture:
+
+| Quantity | TorchGAMLSS | `mgcv` |
+|---|---:|---:|
+| negative LAML | 232.2074779663 | 232.2074779638 |
+| lambda for `mu` | 9.09069376 | 9.09059115 |
+| total EDF | 4.90660697 | 4.90661362 |
+
 The tests also compare every coefficient and every fitted location and scale,
-the outer Hessian, penalty ranks, the joint cross-information block, tensor
-penalty directions, and fixed-lambda results from the existing classical
-`GAMLSS.fit_rs()` path.
+the Poisson link and fitted mean, the outer Hessian, penalty ranks, the joint
+cross-information block, tensor penalty directions, and fixed-lambda results
+from the existing classical `GAMLSS.fit_rs()` path.
 
 Regenerate or verify the fixture with:
 
@@ -260,7 +312,9 @@ Rscript tools/generate_mgcv_laml_reference.R --check
 
 ## Current limits
 
-- only the Normal location-scale likelihood is connected;
+- whole-model integration currently accepts standard Normal identity/log and
+  Poisson log-link models; the low-level family-driven core is deliberately
+  exposed, but other families are not yet claimed as validated;
 - outer derivatives are numerical profile derivatives;
 - no sparse or discretized large-data backend is connected;
 - smoothing-parameter uncertainty is reported through the outer Hessian but
@@ -279,3 +333,5 @@ Rscript tools/generate_mgcv_laml_reference.R --check
   Models](https://doi.org/10.1080/01621459.2016.1180986).
 - [`mgcv::gaulss`
   documentation](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/gaulss.html).
+- [`mgcv::gam`
+  documentation](https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/gam.html).

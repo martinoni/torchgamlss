@@ -29,15 +29,15 @@ Development cycle toward the third alpha release.
 - RS/CG parametric smooth bootstrap for multiply penalized tensor terms, with
   backward-compatible scalar results, one replicate column per tensor
   penalty, penalty-level joint labels and slices, and multivariate tables.
-- Dense whole-model LAML for additive Normal location-scale models, with
-  formula and tensor-level `fit_laml` APIs, jointly selected scalar and tensor
-  log lambdas, structural null-space constraints, model-state updates,
-  penalty-level result labels, CPU/CUDA execution, and direct
-  `mgcv::gaulss(method="REML")` tensor-product parity.
-- Fixed-design LAML bootstrap refits for additive Normal models, including
-  joint scalar/tensor lambda reselection, aligned smooth covariance and bands,
-  response-quantile/centile inference, retry accounting, and CPU/CUDA
-  execution.
+- Dense whole-model LAML with a family-driven likelihood core for additive
+  Normal location-scale and Poisson log-mean models, formula and tensor-level
+  `fit_laml` APIs, jointly selected scalar and tensor log lambdas, structural
+  null-space constraints, model-state updates, penalty-level result labels,
+  CPU/CUDA execution, and direct `mgcv` REML parity.
+- Fixed-design LAML bootstrap refits for supported Normal and Poisson models,
+  including joint scalar/tensor lambda reselection, aligned smooth covariance
+  and bands, response-quantile/centile inference, retry accounting, and
+  CPU/CUDA execution.
 - Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
   `gamlss.dist` parity for density, CDF, quantiles, survival functions,
   hazards, moments, scores, working derivatives, and starting values.

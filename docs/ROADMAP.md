@@ -148,7 +148,12 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 - [x] Null-space reparameterization for sum-to-zero and point constraints
 - [x] First whole-model LAML prototype for Normal location-scale models and
   current one-dimensional P-splines
-- [ ] Generalize whole-model LAML beyond the first Normal prototype
+- [x] Generic family-driven LAML likelihood core and first non-Normal
+  vertical slice for Poisson log-mean models, including direct `mgcv`
+  Poisson REML parity and bootstrap refits
+- [ ] Extend whole-model LAML to the remaining multi-parameter families,
+  beginning with Gamma after resolving its scale parameterization against
+  the selected `mgcv` reference family
 - [x] Fixed-lambda tensor-product full smooths and ANOVA-style tensor
   interactions through the generic dense solver
 - [x] Fixed-lambda `te()`/`ti()` formula construction, prediction, L-BFGS,

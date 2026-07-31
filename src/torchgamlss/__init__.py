@@ -62,9 +62,11 @@ from torchgamlss.inference import (
     SmoothSimultaneousBand,
 )
 from torchgamlss.laml import (
+    GAMLSSLAMLResult,
     LAMLControl,
     LAMLHistoryEntry,
     NormalLAMLResult,
+    fit_gamlss_laml,
     fit_normal_laml,
 )
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
@@ -114,6 +116,7 @@ __all__ = [
     "FitResult",
     "FormulaData",
     "GAMLSS",
+    "GAMLSSLAMLResult",
     "Gamma",
     "GeneralizedGamma",
     "GG",
@@ -175,6 +178,7 @@ __all__ = [
     "WormPlotResult",
     "bucket_plot",
     "compare_models",
+    "fit_gamlss_laml",
     "fit_normal_laml",
     "row_tensor_product",
     "solve_penalized_least_squares",

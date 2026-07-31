@@ -284,7 +284,8 @@ For each successful replicate, TorchGAMLSS:
 
 Use the same `algorithm=` and `control=` settings as the original fit so the
 bootstrap distribution represents the estimator that produced the reported
-model. For a Normal model fitted with `fit_laml_data()`, use:
+model. For a supported Normal or Poisson model fitted with
+`fit_laml_data()`, use:
 
 ```python
 from torchgamlss import LAMLControl
@@ -301,10 +302,10 @@ bootstrap = model.smooth_joint_bootstrap_data(
 
 This repeats the complete nested LAML optimization in every successful
 replicate. Automatic `pb()`, `te()`, and `ti()` lambdas are selected jointly;
-fixed formula lambdas remain fixed. LAML bootstrap currently inherits the
-whole-model fit's Normal-family, identity-`mu`, log-`sigma`, additive-model
-scope. It is materially more expensive than RS or CG bootstrap, so use
-`max_attempts` and inspect `failure_rate`.
+fixed formula lambdas remain fixed. LAML bootstrap currently supports additive
+Normal models with identity-`mu`/log-`sigma` links and Poisson models with a
+log-`mu` link. It is materially more expensive than RS or CG bootstrap, so
+use `max_attempts` and inspect `failure_rate`.
 
 The reported pointwise intervals are percentile bootstrap intervals.
 `standard_errors` and `covariance_matrix` are empirical across the successful
@@ -556,7 +557,7 @@ additive RS and CG fits, including fixed-lambda `te()` and `ti()` terms.
 Fixed-lambda analytic inference provides joint covariance across linear
 coefficients, smooth coefficients, smooth terms, and distribution parameters.
 Parametric-bootstrap smooth inference supports scalar- and multiple-penalty
-terms with RS, CG, and whole-model Normal LAML refits. It repeats available
+terms with RS, CG, and supported whole-model LAML refits. It repeats available
 smoothing-parameter selection, stores one lambda column per penalty, and
 provides empirical joint covariance, simultaneous bands, and derived-curve
 functionals across fitted smooths. Tensor lambdas must be fixed for RS/CG
