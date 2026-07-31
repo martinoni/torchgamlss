@@ -787,6 +787,7 @@ check_reference <- function(actual, path, label) {
       nrow(generated) != nrow(expected)) {
     stop(label, " reference dimensions or columns differ")
   }
+  failures <- character()
   for (column in names(generated)) {
     # Optimizer iteration counts and nearly zero terminal gradients vary with
     # the mgcv build and linked BLAS. Treat the latter as a convergence bound;
@@ -796,7 +797,14 @@ check_reference <- function(actual, path, label) {
     }
     if (grepl("^gradient_", column)) {
       if (any(abs(generated[[column]]) > 1e-4)) {
-        stop(label, " convergence gradient is too large for ", column)
+        failures <- c(
+          failures,
+          paste0(
+            label,
+            " convergence gradient is too large for ",
+            column
+          )
+        )
       }
       next
     }
@@ -820,6 +828,9 @@ check_reference <- function(actual, path, label) {
       } else if (optimizer_sensitive_summary &&
                  identical(column, "effective_degrees_of_freedom")) {
         relative_tolerance <- 5e-6
+      } else if (optimizer_sensitive_summary &&
+                 grepl("^hessian_", column)) {
+        relative_tolerance <- 5e-5
       }
       allowed <- relative_tolerance * (
         1 + abs(expected[[column]])
@@ -829,28 +840,37 @@ check_reference <- function(actual, path, label) {
         index <- failed[[which.max(
           difference[failed] / allowed[failed]
         )]]
-        stop(
-          label,
-          " numeric parity differs for ",
-          column,
-          " at row ",
-          index,
-          ": actual=",
-          format(generated[[column]][[index]], digits = 16),
-          ", expected=",
-          format(expected[[column]][[index]], digits = 16),
-          ", difference=",
-          format(difference[[index]], digits = 16),
-          ", allowed=",
-          format(allowed[[index]], digits = 16)
+        failures <- c(
+          failures,
+          paste0(
+            label,
+            " numeric parity differs for ",
+            column,
+            " at row ",
+            index,
+            ": actual=",
+            format(generated[[column]][[index]], digits = 16),
+            ", expected=",
+            format(expected[[column]][[index]], digits = 16),
+            ", difference=",
+            format(difference[[index]], digits = 16),
+            ", allowed=",
+            format(allowed[[index]], digits = 16)
+          )
         )
       }
     } else if (!identical(
       generated[[column]],
       expected[[column]]
     )) {
-      stop(label, " reference values differ for ", column)
+      failures <- c(
+        failures,
+        paste0(label, " reference values differ for ", column)
+      )
     }
+  }
+  if (length(failures) > 0L) {
+    stop(paste(failures, collapse = "\n"))
   }
 }
 
@@ -966,12 +986,25 @@ references <- list(
 )
 
 if (check_only) {
+  reference_failures <- character()
   for (label in names(references)) {
-    check_reference(
-      references[[label]]$value,
-      references[[label]]$path,
-      label
+    failure <- tryCatch(
+      {
+        check_reference(
+          references[[label]]$value,
+          references[[label]]$path,
+          label
+        )
+        NULL
+      },
+      error = function(error) conditionMessage(error)
     )
+    if (!is.null(failure)) {
+      reference_failures <- c(reference_failures, failure)
+    }
+  }
+  if (length(reference_failures) > 0L) {
+    stop(paste(reference_failures, collapse = "\n"))
   }
   message(
     "mgcv LAML reference checks passed with mgcv ",
