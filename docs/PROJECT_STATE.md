@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | BCCG slice passed 645 local tests, CUDA, and all R gates; CI pending |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | BCCG implementation head `fe43741` passed 11/11 CI jobs, 645 local tests, CUDA, and all R gates |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -370,7 +370,9 @@ implementation now follows the validation protocol recorded after Phase 12K.
 - the isolated installed-wheel smoke test includes and passes a BCCG LAML fit;
 - all 645 Python tests pass without skips; all five R gates, Ruff, dependency
   and bytecode checks, package build, strict Twine validation, and the
-  installed-wheel smoke test pass.
+  installed-wheel smoke test pass;
+- GitHub Actions passed all 11/11 jobs on implementation head `fe43741`,
+  including Windows/Python 3.10 after the fixed-lambda parity warm start.
 
 ### Later slices
 
@@ -410,8 +412,9 @@ whose internal representation is already available.
 
 ## Resume point
 
-Publish the validated BCCG vertical to draft PR #13 and monitor every CI job.
 The next family extension should reuse the same
 fixed-lambda R parity plus derivative-audit protocol when no direct `mgcv`
-overlap exists. Rebase onto `main` only after stacked dependencies merge. Do
-not merge any existing draft PR without explicit user authorization.
+overlap exists; BCT is the next natural vertical because it extends BCCG with
+a fourth tail-shape predictor. Rebase onto `main` only after stacked
+dependencies merge. Do not merge any existing draft PR without explicit user
+authorization.
