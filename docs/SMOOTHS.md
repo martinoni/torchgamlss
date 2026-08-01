@@ -360,8 +360,9 @@ low-level row-product and penalty embedding are checked against
   directly, through fixed-lambda formula RS/CG/L-BFGS/mini-batch fitting, or
   through dense whole-model LAML for Normal location-scale, Poisson log-mean,
   NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
-  location/scale/shape, BCCG location/scale/shape, and BCT
-  location/scale/skewness/tail-shape models.
+  location/scale/shape, BCCG location/scale/shape, BCT
+  location/scale/skewness/tail-shape, and BCPE
+  location/scale/skewness/kurtosis models.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
   additive models, including fixed-lambda tensor terms. Analytic inference

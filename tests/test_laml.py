@@ -7,6 +7,7 @@ import torch
 
 from torchgamlss import (
     BCCG,
+    BCPE,
     BCT,
     GAMLSS,
     Beta,
@@ -768,6 +769,84 @@ def test_bct_implicit_outer_derivatives_match_finite_difference():
     for method in ("implicit", "finite_difference"):
         results[method] = fit_gamlss_laml(
             BCT(),
+            response,
+            {
+                "mu": mu_design,
+                "sigma": sigma_design,
+                "nu": nu_design,
+                "tau": tau_design,
+            },
+            (mu_penalty,),
+            (6.0,),
+            weights=torch.tensor(data["weight"].to_numpy(), dtype=dtype),
+            offsets={
+                "mu": torch.tensor(data["mu_offset"].to_numpy(), dtype=dtype),
+                "sigma": torch.tensor(
+                    data["sigma_offset"].to_numpy(), dtype=dtype
+                ),
+                "nu": torch.tensor(data["nu_offset"].to_numpy(), dtype=dtype),
+            },
+            initial_coefficients=initial_coefficients,
+            control=LAMLControl(
+                inner_gradient_tolerance=1e-7,
+                outer_max_iterations=1,
+                outer_derivative_method=method,
+            ),
+        )
+
+    implicit = results["implicit"]
+    finite_difference = results["finite_difference"]
+    torch.testing.assert_close(
+        implicit.history[0].gradient,
+        finite_difference.history[0].gradient,
+        rtol=5e-5,
+        atol=5e-6,
+    )
+    torch.testing.assert_close(
+        implicit.outer_gradient,
+        finite_difference.outer_gradient,
+        rtol=5e-5,
+        atol=5e-6,
+    )
+    torch.testing.assert_close(
+        implicit.outer_hessian,
+        finite_difference.outer_hessian,
+        rtol=8e-3,
+        atol=3e-4,
+    )
+    assert implicit.profile_evaluations < finite_difference.profile_evaluations
+
+
+def test_bcpe_implicit_outer_derivatives_match_finite_difference():
+    dtype = torch.float64
+    data = pd.read_csv(REFERENCE_DIR / "bcpe_fit_data.csv")
+    response = torch.tensor(data["y"].to_numpy(), dtype=dtype)
+    x = torch.tensor(data["x"].to_numpy(), dtype=dtype)
+    z = torch.tensor(data["z"].to_numpy(), dtype=dtype)
+    w = torch.tensor(data["w"].to_numpy(), dtype=dtype)
+    mu_design = torch.column_stack(
+        (torch.ones_like(x), x, x.square(), x.pow(3))
+    )
+    sigma_design = torch.column_stack((torch.ones_like(z), z))
+    nu_design = torch.column_stack((torch.ones_like(w), w))
+    tau_design = torch.ones((len(data), 1), dtype=dtype)
+    coefficient_count = (
+        mu_design.shape[1]
+        + sigma_design.shape[1]
+        + nu_design.shape[1]
+        + tau_design.shape[1]
+    )
+    mu_penalty = torch.zeros((coefficient_count, coefficient_count), dtype=dtype)
+    mu_penalty[2:4, 2:4] = torch.eye(2, dtype=dtype)
+    initial_coefficients = torch.tensor(
+        [3.0, 0.7, 0.0, 0.0, -1.5, 0.18, 0.35, 0.2, math.log(1.5)],
+        dtype=dtype,
+    )
+
+    results = {}
+    for method in ("implicit", "finite_difference"):
+        results[method] = fit_gamlss_laml(
+            BCPE(),
             response,
             {
                 "mu": mu_design,
@@ -1851,6 +1930,127 @@ def test_bct_fixed_lambda_laml_matches_r_gamlss_reference():
         )
 
 
+def test_formula_bcpe_laml_selects_lambda_and_bootstraps():
+    data = pd.read_csv(REFERENCE_DIR / "bcpe_fit_data.csv")
+    model = GAMLSS.from_formula(
+        BCPE(),
+        {
+            "mu": "y ~ pb(x, intervals=4)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+            "tau": "~ 1",
+        },
+        data,
+    )
+    control = LAMLControl(
+        inner_gradient_tolerance=1e-6,
+        outer_max_iterations=30,
+        outer_gradient_tolerance=5e-4,
+    )
+
+    rs_result = model.fit_rs_data(data, weights="weight")
+    result = model.fit_laml_data(
+        data,
+        weights="weight",
+        control=control,
+        warm_start=True,
+    )
+    prediction = model.predict_data(data)
+
+    assert rs_result.converged
+    assert isinstance(result, GAMLSSLAMLResult)
+    assert result.outer_converged
+    assert result.family == "BCPE"
+    assert result.parameter_names == ("mu", "sigma", "nu", "tau")
+    assert result.smoothing_parameter_labels == (("mu", "x", 0),)
+    assert result.smoothing_parameters[0] > 0
+    for parameter in result.parameter_names:
+        torch.testing.assert_close(
+            prediction[parameter],
+            result.fitted_parameters[parameter],
+        )
+
+    bootstrap = model.smooth_bootstrap_data(
+        data,
+        weights="weight",
+        new_data=data.iloc[::24].drop(columns="y"),
+        replicates=10,
+        max_attempts=40,
+        algorithm="laml",
+        control=control,
+        generator=torch.Generator().manual_seed(725),
+    )["mu"]["x"]
+
+    assert bootstrap.algorithm == "laml"
+    assert bootstrap.bootstrap_estimates.shape == (10, 7)
+    assert bootstrap.bootstrap_smoothing_parameters.shape == (10,)
+    assert (bootstrap.bootstrap_smoothing_parameters > 0).all()
+    assert torch.isfinite(bootstrap.bootstrap_smoothing_parameters).all()
+    assert torch.isfinite(bootstrap.bootstrap_estimates).all()
+
+
+def test_bcpe_fixed_lambda_laml_matches_r_gamlss_reference():
+    data = pd.read_csv(REFERENCE_DIR / "bcpe_fit_data.csv")
+    fitted_reference = pd.read_csv(
+        REFERENCE_DIR / "bcpe_laml_fixed_fitted_reference.csv"
+    )
+    fit_reference = pd.read_csv(
+        REFERENCE_DIR / "bcpe_laml_fixed_reference.csv"
+    ).iloc[0]
+    model = GAMLSS.from_formula(
+        BCPE(),
+        {
+            "mu": "y ~ pb(x, lambda_=10)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+            "tau": "~ 1",
+        },
+        data,
+    )
+    rs_result = model.fit_rs_data(
+        data,
+        weights="weight",
+        control=RSControl(
+            outer_tolerance=1e-8,
+            max_outer_iterations=300,
+            inner_tolerance=1e-8,
+            max_inner_iterations=300,
+            backfitting_tolerance=1e-8,
+            max_backfitting_iterations=300,
+        ),
+    )
+
+    result = model.fit_laml_data(
+        data,
+        weights="weight",
+        warm_start=True,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-8,
+            inner_max_iterations=200,
+        ),
+    )
+
+    assert rs_result.converged
+    assert result.outer_converged
+    assert result.inner_converged
+    assert result.outer_iterations == 0
+    assert result.boundary_status == ("fixed",)
+    assert float(-result.log_likelihood) == pytest.approx(
+        float(fit_reference["negative_log_likelihood"]),
+        rel=3e-6,
+        abs=3e-6,
+    )
+    for parameter in result.parameter_names:
+        relative_tolerance = 2e-5 if parameter == "tau" else 3e-6
+        absolute_tolerance = 1e-4 if parameter == "tau" else 3e-6
+        torch.testing.assert_close(
+            result.fitted_parameters[parameter],
+            torch.tensor(fitted_reference[parameter].to_numpy(), dtype=torch.float64),
+            rtol=relative_tolerance,
+            atol=absolute_tolerance,
+        )
+
+
 def test_formula_gamma_laml_selects_lambda_and_bootstraps():
     data = _formula_gamma_laml_data()
     model = GAMLSS.from_formula(
@@ -2477,6 +2677,44 @@ def test_formula_bct_laml_runs_on_cuda():
     data = pd.read_csv(REFERENCE_DIR / "bct_fit_data.csv")
     model = GAMLSS.from_formula(
         BCT(),
+        {
+            "mu": "y ~ pb(x, intervals=3)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+            "tau": "~ 1",
+        },
+        data,
+        device="cuda",
+    )
+
+    rs_result = model.fit_rs_data(data, weights="weight")
+    result = model.fit_laml_data(
+        data,
+        weights="weight",
+        warm_start=True,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=30,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+
+    assert rs_result.converged
+    assert result.outer_converged
+    assert result.coefficients.device.type == "cuda"
+    assert result.smoothing_parameters.device.type == "cuda"
+    assert result.outer_hessian.device.type == "cuda"
+    assert all(
+        parameter.device.type == "cuda"
+        for parameter in result.fitted_parameters.values()
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_formula_bcpe_laml_runs_on_cuda():
+    data = pd.read_csv(REFERENCE_DIR / "bcpe_fit_data.csv")
+    model = GAMLSS.from_formula(
+        BCPE(),
         {
             "mu": "y ~ pb(x, intervals=3)",
             "sigma": "~ 1",

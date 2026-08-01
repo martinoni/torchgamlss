@@ -89,8 +89,9 @@ The current implementation contains:
   constraints, and `mgcv` algebraic parity;
 - dense whole-model LAML for additive Normal location-scale, Poisson log-mean,
   NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
-  location/scale/shape, BCCG location/scale/shape, and BCT
-  location/scale/skewness/tail-shape models, including
+  location/scale/shape, BCCG location/scale/shape, BCT
+  location/scale/skewness/tail-shape, and BCPE
+  location/scale/skewness/kurtosis models, including
   formula `fit_laml_data()`, automatic scalar and tensor lambdas, null-space
   constraints, outer diagnostics, implicit outer gradients and Hessians,
   CPU/CUDA execution, direct `mgcv` REML parity where an overlapping family
@@ -210,8 +211,9 @@ workflow. Formula `te()` and `ti()` terms can be fitted with fixed lambdas
 through RS, CG, L-BFGS, or mini-batch Adam, or with jointly selected marginal
 lambdas through `fit_laml_data()` for Normal location-scale, Poisson log-mean,
 NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
-location/scale/shape, BCCG location/scale/shape, and BCT
-location/scale/skewness/tail-shape models. Their parametric
+location/scale/shape, BCCG location/scale/shape, BCT
+location/scale/skewness/tail-shape, and BCPE
+location/scale/skewness/kurtosis models. Their parametric
 bootstrap stores one value per
 marginal lambda while preserving the scalar `pb()` API; `algorithm="laml"`
 repeats automatic joint tensor selection in every successful bootstrap

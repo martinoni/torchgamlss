@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import torchgamlss
 from torchgamlss import (
     BCCG,
+    BCPE,
     BCT,
     GAMLSS,
     GG,
@@ -414,6 +415,44 @@ def main() -> None:
         raise RuntimeError("installed BCT LAML fit did not converge")
     if not torch.isfinite(bct_laml_fit.outer_hessian).all():
         raise RuntimeError("installed BCT LAML Hessian is non-finite")
+
+    bcpe_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    bcpe_mu = 3.0 + 0.45 * torch.sin(torch.pi * bcpe_x) + 0.1 * bcpe_x
+    bcpe_sigma = torch.full_like(bcpe_mu, 0.18)
+    bcpe_nu = torch.full_like(bcpe_mu, 0.3)
+    bcpe_tau = torch.full_like(bcpe_mu, 1.5)
+    bcpe_probability = (
+        torch.arange(80, dtype=torch.float64).mul(37).remainder(80) + 0.5
+    ) / 80
+    bcpe_y = BCPE().distribution(
+        {
+            "mu": bcpe_mu,
+            "sigma": bcpe_sigma,
+            "nu": bcpe_nu,
+            "tau": bcpe_tau,
+        }
+    ).icdf(bcpe_probability)
+    bcpe_frame = pd.DataFrame({"x": bcpe_x.numpy(), "y": bcpe_y.numpy()})
+    bcpe_laml_model = GAMLSS.from_formula(
+        BCPE(),
+        {
+            "mu": "y ~ pb(x, intervals=3, lambda_=10)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+            "tau": "~ 1",
+        },
+        bcpe_frame,
+    )
+    bcpe_rs_fit = bcpe_laml_model.fit_rs_data(bcpe_frame)
+    bcpe_laml_fit = bcpe_laml_model.fit_laml_data(bcpe_frame, warm_start=True)
+    if not bcpe_rs_fit.converged:
+        raise RuntimeError("installed BCPE RS warm start did not converge")
+    if not isinstance(bcpe_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed BCPE LAML result is invalid")
+    if not bcpe_laml_fit.outer_converged:
+        raise RuntimeError("installed BCPE LAML fit did not converge")
+    if not torch.isfinite(bcpe_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed BCPE LAML Hessian is non-finite")
 
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)

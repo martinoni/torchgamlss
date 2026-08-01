@@ -123,6 +123,12 @@ pe_cg_reference_path <- file.path(reference_dir, "pe_cg_reference.csv")
 bcpe_reference_path <- file.path(reference_dir, "bcpe_reference.csv")
 bcpe_fit_data_path <- file.path(reference_dir, "bcpe_fit_data.csv")
 bcpe_rs_reference_path <- file.path(reference_dir, "bcpe_rs_reference.csv")
+bcpe_laml_fixed_reference_path <- file.path(
+  reference_dir, "bcpe_laml_fixed_reference.csv"
+)
+bcpe_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "bcpe_laml_fixed_fitted_reference.csv"
+)
 inference_table_path <- file.path(reference_dir, "inference_table_reference.csv")
 inference_covariance_path <- file.path(
   reference_dir, "inference_covariance_reference.csv"
@@ -1718,6 +1724,45 @@ bcpe_rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+bcpe_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  tau.formula = ~ 1,
+  weights = weight,
+  family = BCPE(),
+  method = RS(),
+  data = bcpe_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+bcpe_laml_fixed_smooth <- getSmo(
+  bcpe_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+bcpe_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(bcpe_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(bcpe_laml_fixed_fit)),
+  smoothing_parameter = bcpe_laml_fixed_smooth$lambda,
+  outer_iterations = bcpe_laml_fixed_fit$iter,
+  converged = bcpe_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+bcpe_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(bcpe_laml_fixed_fit, what = "mu"),
+  sigma = fitted(bcpe_laml_fixed_fit, what = "sigma"),
+  nu = fitted(bcpe_laml_fixed_fit, what = "nu"),
+  tau = fitted(bcpe_laml_fixed_fit, what = "tau")
+)
+
 rs_fit_data <- read.csv(rs_fit_data_path)
 rs_fit <- gamlss(
   y ~ x + offset(mu_offset),
@@ -2923,6 +2968,16 @@ if (check_only) {
   assert_close(bcpe_fit_data, bcpe_fit_data_path, tolerance = 1e-12)
   assert_close(bcpe_rs_reference, bcpe_rs_reference_path, tolerance = 1e-6)
   assert_close(
+    bcpe_laml_fixed_reference,
+    bcpe_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    bcpe_laml_fixed_fitted_reference,
+    bcpe_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
     inference_table_reference, inference_table_path, tolerance = 1e-6
   )
   assert_close(
@@ -3120,6 +3175,11 @@ if (check_only) {
   write_csv_lf(bcpe_reference, bcpe_reference_path)
   write_csv_lf(bcpe_fit_data, bcpe_fit_data_path)
   write_csv_lf(bcpe_rs_reference, bcpe_rs_reference_path)
+  write_csv_lf(bcpe_laml_fixed_reference, bcpe_laml_fixed_reference_path)
+  write_csv_lf(
+    bcpe_laml_fixed_fitted_reference,
+    bcpe_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(inference_table_reference, inference_table_path)
   write_csv_lf(inference_covariance_reference, inference_covariance_path)
   write_csv_lf(

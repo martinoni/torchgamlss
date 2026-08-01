@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | BCT implementation head `31075e1` passed 11/11 CI jobs, 649 local tests, CUDA, all R gates, and the installed-wheel smoke test |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | BCT head `174d73f` passed 11/11 CI jobs; BCPE passes 653 local tests, CUDA, all R gates, and the installed-wheel smoke test |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -404,9 +404,34 @@ fixed-lambda-reference plus independent-derivative-audit protocol.
   ([run 30695264274](https://github.com/martinoni/torchgamlss/actions/runs/30695264274)),
   including Python 3.10--3.13 on Linux and Windows.
 
+### Phase 12N — BCPE LAML vertical implemented locally
+
+The four-parameter `gamlss.dist::BCPE` family now follows the same staged
+validation protocol as BCT.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts standard BCPE
+  identity-location/log-scale/identity-skewness/log-kurtosis models;
+- BCPE LAML bootstrap refits reselect automatic scalar or tensor lambdas;
+- a weighted fixed-lambda `mu` P-spline fit initialized from its compatible RS
+  state matches the committed `gamlss::gamlss()` negative log likelihood and
+  all 160 fitted `mu`, `sigma`, `nu`, and `tau` values within documented
+  tolerances;
+- R's BCPE RS working score uses a forward difference of `0.001` for part of
+  the `tau` derivative, while Torch LAML differentiates the actual
+  regularized-gamma CDF likelihood;
+- a separate weighted audit matches the implicit outer gradient and analytic
+  Hessian to the finite-difference profile implementation;
+- automatic formula selection estimates all four predictors, ten-replicate
+  bootstrap reselects lambda, and the complete path runs on local CUDA 12.8;
+- a compatible RS warm start is the documented high-level workflow;
+- the R generator and installed-wheel smoke test include BCPE LAML gates;
+- all 653 Python tests pass without skips; all five R gates, Ruff, dependency
+  and bytecode checks, package build, strict Twine validation, and the
+  installed-wheel smoke test pass locally.
+
 ### Later slices
 
-1. BCPE LAML validation using fixed-lambda R fits plus derivative audits,
+1. PE LAML validation using fixed-lambda R fits plus derivative audits,
    because no directly overlapping `mgcv` location-scale-shape family exists;
 2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
 3. discretized marginal bases and structured crossproducts;
@@ -442,7 +467,7 @@ whose internal representation is already available.
 ## Resume point
 
 The next family extension should reuse the same fixed-lambda R parity plus
-derivative-audit protocol for BCPE, the remaining four-parameter Box-Cox
-family without a direct `mgcv` overlap. Rebase onto `main` only after stacked
+derivative-audit protocol for PE, the three-parameter power-exponential family
+without a direct `mgcv` overlap. Rebase onto `main` only after stacked
 dependencies merge. Do not merge any existing draft PR without explicit user
 authorization.
