@@ -119,6 +119,12 @@ tf_cg_reference_path <- file.path(reference_dir, "tf_cg_reference.csv")
 pe_reference_path <- file.path(reference_dir, "pe_reference.csv")
 pe_fit_data_path <- file.path(reference_dir, "pe_fit_data.csv")
 pe_rs_reference_path <- file.path(reference_dir, "pe_rs_reference.csv")
+pe_laml_fixed_reference_path <- file.path(
+  reference_dir, "pe_laml_fixed_reference.csv"
+)
+pe_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "pe_laml_fixed_fitted_reference.csv"
+)
 pe_cg_reference_path <- file.path(reference_dir, "pe_cg_reference.csv")
 bcpe_reference_path <- file.path(reference_dir, "bcpe_reference.csv")
 bcpe_fit_data_path <- file.path(reference_dir, "bcpe_fit_data.csv")
@@ -1631,6 +1637,43 @@ pe_rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+pe_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  weights = weight,
+  family = PE(),
+  method = RS(),
+  data = pe_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+pe_laml_fixed_smooth <- getSmo(
+  pe_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+pe_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(pe_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pe_laml_fixed_fit)),
+  smoothing_parameter = pe_laml_fixed_smooth$lambda,
+  outer_iterations = pe_laml_fixed_fit$iter,
+  converged = pe_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pe_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(pe_laml_fixed_fit, what = "mu"),
+  sigma = fitted(pe_laml_fixed_fit, what = "sigma"),
+  nu = fitted(pe_laml_fixed_fit, what = "nu")
+)
+
 pe_cg_fit <- gamlss(
   y ~ x + offset(mu_offset),
   sigma.formula = ~ z + offset(sigma_offset),
@@ -2963,6 +3006,16 @@ if (check_only) {
   assert_close(pe_reference, pe_reference_path, tolerance = 1e-9)
   assert_close(pe_fit_data, pe_fit_data_path, tolerance = 1e-12)
   assert_close(pe_rs_reference, pe_rs_reference_path, tolerance = 1e-6)
+  assert_close(
+    pe_laml_fixed_reference,
+    pe_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    pe_laml_fixed_fitted_reference,
+    pe_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(pe_cg_reference, pe_cg_reference_path, tolerance = 1e-8)
   assert_close(bcpe_reference, bcpe_reference_path, tolerance = 1e-9)
   assert_close(bcpe_fit_data, bcpe_fit_data_path, tolerance = 1e-12)
@@ -3171,6 +3224,11 @@ if (check_only) {
   write_csv_lf(pe_reference, pe_reference_path)
   write_csv_lf(pe_fit_data, pe_fit_data_path)
   write_csv_lf(pe_rs_reference, pe_rs_reference_path)
+  write_csv_lf(pe_laml_fixed_reference, pe_laml_fixed_reference_path)
+  write_csv_lf(
+    pe_laml_fixed_fitted_reference,
+    pe_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(pe_cg_reference, pe_cg_reference_path)
   write_csv_lf(bcpe_reference, bcpe_reference_path)
   write_csv_lf(bcpe_fit_data, bcpe_fit_data_path)

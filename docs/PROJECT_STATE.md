@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | BCPE validation head `0f710ad` passed 11/11 CI jobs, 653 local tests, CUDA, all R gates, and the installed-wheel smoke test |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | PE validation passes 657 local tests, CUDA, all R gates, and the installed-wheel smoke test; remote CI is pending |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -435,10 +435,38 @@ validation protocol as BCT.
   ([run 30700920488](https://github.com/martinoni/torchgamlss/actions/runs/30700920488)),
   including Python 3.10--3.13 on Linux and Windows.
 
+### Phase 12O — PE LAML vertical implemented locally
+
+The three-parameter `gamlss.dist::PE` family now uses the family-driven nested
+LAML core with its standard identity/log/log links.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts PE
+  location/scale/tail-shape models on the whole real line;
+- PE LAML bootstrap refits reselect automatic scalar or tensor lambdas;
+- a weighted fixed-lambda `mu` P-spline fit initialized from its compatible RS
+  state matches the committed `gamlss::gamlss()` negative log likelihood and
+  all 160 fitted `mu`, `sigma`, and `nu` values within `3e-6` relative and
+  absolute tolerance;
+- because no directly overlapping `mgcv` location-scale-shape family exists,
+  the R fit validates the joint penalized estimator while a separate weighted
+  audit matches the implicit outer gradient and analytic Hessian to the
+  finite-difference profile implementation;
+- automatic formula selection estimates all three predictors, ten-replicate
+  bootstrap reselects lambda, and the complete path runs on local CUDA 12.8;
+- a compatible RS warm start is documented for strict R parity and data where
+  tail shape is weakly identified;
+- the R generator and installed-wheel smoke test include PE LAML gates;
+- all 657 Python tests pass without skips; all five R gates, Ruff, dependency
+  and bytecode checks, package build, strict Twine validation, and the
+  installed-wheel smoke test pass locally;
+- remote GitHub Actions validation remains pending for the PE implementation
+  commit.
+
 ### Later slices
 
-1. PE LAML validation using fixed-lambda R fits plus derivative audits,
-   because no directly overlapping `mgcv` location-scale-shape family exists;
+1. generalized Gamma (`GG`) log/log/identity LAML validation using
+   fixed-lambda R fits plus derivative audits, because no directly overlapping
+   `mgcv` location-scale-shape family exists;
 2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
 3. discretized marginal bases and structured crossproducts;
 4. unconditional inference and smoothing-uncertainty-aware information
@@ -474,7 +502,6 @@ whose internal representation is already available.
 ## Resume point
 
 The next family extension should reuse the same fixed-lambda R parity plus
-derivative-audit protocol for PE, the three-parameter power-exponential family
-without a direct `mgcv` overlap. Rebase onto `main` only after stacked
-dependencies merge. Do not merge any existing draft PR without explicit user
-authorization.
+derivative-audit protocol for generalized Gamma (`GG`) with its standard
+log/log/identity links. Rebase onto `main` only after stacked dependencies
+merge. Do not merge any existing draft PR without explicit user authorization.

@@ -56,6 +56,7 @@ def validate_bootstrap_refit(
             NegativeBinomial,
             Normal,
             Poisson,
+            PowerExponential,
             StudentT,
         )
         from torchgamlss.links import IdentityLink, LogitLink, LogLink
@@ -69,6 +70,7 @@ def validate_bootstrap_refit(
         is_bccg = isinstance(model.family, BoxCoxColeGreen)
         is_bct = isinstance(model.family, BoxCoxT)
         is_bcpe = isinstance(model.family, BoxCoxPowerExponential)
+        is_pe = isinstance(model.family, PowerExponential)
         if not (
             is_normal
             or is_poisson
@@ -79,10 +81,11 @@ def validate_bootstrap_refit(
             or is_bccg
             or is_bct
             or is_bcpe
+            or is_pe
         ):
             raise ValueError(
                 "LAML bootstrap currently supports Normal, Poisson, NBI, "
-                "Gamma, Beta, Student-t, BCCG, BCT, and BCPE families"
+                "Gamma, Beta, Student-t, BCCG, BCT, BCPE, and PE families"
             )
         if is_normal and (
             not isinstance(model.family.links["mu"], IdentityLink)
@@ -149,6 +152,15 @@ def validate_bootstrap_refit(
             raise ValueError(
                 "BCPE LAML bootstrap requires identity mu, log sigma, "
                 "identity nu, and log tau links"
+            )
+        if is_pe and (
+            not isinstance(model.family.links["mu"], IdentityLink)
+            or not isinstance(model.family.links["sigma"], LogLink)
+            or not isinstance(model.family.links["nu"], LogLink)
+        ):
+            raise ValueError(
+                "PE LAML bootstrap requires identity mu, log sigma, "
+                "and log nu links"
             )
         if not any(model.smooth_terms.values()):
             raise ValueError("LAML bootstrap requires at least one smooth term")

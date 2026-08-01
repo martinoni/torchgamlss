@@ -851,7 +851,7 @@ Important exclusions include:
   location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and
   Beta mean/dispersion, Student-t location/scale/shape, BCCG
   location/scale/shape, BCT location/scale/skewness/tail-shape, and BCPE
-  location/scale/skewness/kurtosis families;
+  location/scale/skewness/kurtosis, and PE location/scale/shape families;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;

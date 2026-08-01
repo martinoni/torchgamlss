@@ -454,6 +454,37 @@ def main() -> None:
     if not torch.isfinite(bcpe_laml_fit.outer_hessian).all():
         raise RuntimeError("installed BCPE LAML Hessian is non-finite")
 
+    pe_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    pe_mu = 1.5 + 0.45 * torch.sin(torch.pi * pe_x) + 0.1 * pe_x
+    pe_sigma = torch.full_like(pe_mu, 0.7)
+    pe_nu = torch.full_like(pe_mu, 1.6)
+    pe_probability = (
+        torch.arange(80, dtype=torch.float64).mul(37).remainder(80) + 0.5
+    ) / 80
+    pe_y = PE().distribution(
+        {"mu": pe_mu, "sigma": pe_sigma, "nu": pe_nu}
+    ).icdf(pe_probability)
+    pe_frame = pd.DataFrame({"x": pe_x.numpy(), "y": pe_y.numpy()})
+    pe_laml_model = GAMLSS.from_formula(
+        PE(),
+        {
+            "mu": "y ~ pb(x, intervals=3, lambda_=10)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+        },
+        pe_frame,
+    )
+    pe_rs_fit = pe_laml_model.fit_rs_data(pe_frame)
+    pe_laml_fit = pe_laml_model.fit_laml_data(pe_frame, warm_start=True)
+    if not pe_rs_fit.converged:
+        raise RuntimeError("installed PE RS warm start did not converge")
+    if not isinstance(pe_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed PE LAML result is invalid")
+    if not pe_laml_fit.outer_converged:
+        raise RuntimeError("installed PE LAML fit did not converge")
+    if not torch.isfinite(pe_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed PE LAML Hessian is non-finite")
+
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)
     bootstrap_y = (
