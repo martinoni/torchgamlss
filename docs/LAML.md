@@ -2,8 +2,8 @@
 
 TorchGAMLSS has a dense whole-model Laplace approximate marginal likelihood
 implementation for additive Normal location-scale, Poisson log-mean, Gamma
-mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion, and
-Student-t location/scale/shape models. A Normal
+mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion,
+Student-t location/scale/shape, and BCCG location/scale/shape models. A Normal
 formula model uses:
 
 ```python
@@ -81,6 +81,24 @@ from torchgamlss import GAMLSS, LAMLControl, StudentT
 
 model = GAMLSS.from_formula(
     StudentT(),
+    {
+        "mu": "y ~ pb(x, intervals=8)",
+        "sigma": "~ 1",
+        "nu": "~ 1",
+    },
+    data,
+)
+fit = model.fit_laml_data(data, control=LAMLControl())
+```
+
+A Box-Cox Cole-Green model uses identity/log/identity links for median-like
+location, scale, and skewness:
+
+```python
+from torchgamlss import BCCG, GAMLSS, LAMLControl
+
+model = GAMLSS.from_formula(
+    BCCG(),
     {
         "mu": "y ~ pb(x, intervals=8)",
         "sigma": "~ 1",
@@ -213,6 +231,14 @@ For Student-t, TorchGAMLSS follows `gamlss.dist::TF`, with
 `mgcv::scat`. The direct reference fixes `sigma` and `nu` in `mgcv` and fixes
 their Torch log-link predictors by offsets, leaving the identical location
 smooth. A regular formula fit estimates all three TF predictors jointly.
+
+For BCCG, TorchGAMLSS follows `gamlss.dist::BCCG` with identity `mu`, log
+`sigma`, and identity `nu` links. There is no directly overlapping `mgcv`
+location-scale-shape family, so validation deliberately separates two claims:
+the fixed-lambda penalized fit matches `gamlss::gamlss()` on the committed
+three-smooth reference, while the LAML outer gradient and Hessian match an
+independent finite-difference profile audit. A regular formula fit estimates
+all three predictors and selects scalar or tensor lambdas jointly.
 
 ## Formula and model integration
 
@@ -526,12 +552,26 @@ Rscript tools/generate_mgcv_laml_reference.R
 Rscript tools/generate_mgcv_laml_reference.R --check
 ```
 
+## BCCG reference and derivative gates
+
+The committed `examples/bccg_centile_curves` R reference fits `mu`, `sigma`,
+and `nu` with `gamlss::pb(x, lambda=10)`. The LAML test uses the identical
+Torch formula with all three lambdas fixed and compares the negative log
+likelihood and all 1,830 fitted parameter values to R. This checks the inner
+penalized estimator, not an R marginal-likelihood calculation.
+
+A separate two-lambda BCCG test compares the implicit outer gradient and full
+outer Hessian against the finite-difference profile implementation. Formula
+selection, ten-replicate parametric bootstrap, and CUDA tests then exercise
+the complete identity/log/identity path.
+
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
   Poisson log-link, NBI and Gamma log/log, Beta logit/logit, and Student-t
-  identity/log/log models; the low-level family-driven core is deliberately
-  exposed, but other families are not yet claimed as validated;
+  identity/log/log and BCCG identity/log/identity models; the low-level
+  family-driven core is deliberately exposed, but other families are not yet
+  claimed as validated;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
   it avoids repeated inner fits and finite-difference noise, but its local
   autograd work can be expensive for models with many coefficients or free

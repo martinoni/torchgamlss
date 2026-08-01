@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 import torchgamlss
 from torchgamlss import (
+    BCCG,
     GAMLSS,
     GG,
     IG,
@@ -346,6 +347,39 @@ def main() -> None:
         raise RuntimeError("installed Student-t LAML fit did not converge")
     if not torch.isfinite(tf_laml_fit.outer_hessian).all():
         raise RuntimeError("installed Student-t LAML Hessian is non-finite")
+
+    bccg_x = torch.linspace(-1.0, 1.0, 60, dtype=torch.float64)
+    bccg_mu = 3.0 + 0.5 * torch.sin(torch.pi * bccg_x)
+    bccg_sigma = torch.full_like(bccg_mu, 0.18)
+    bccg_nu = torch.full_like(bccg_mu, 0.35)
+    bccg_y = BCCG().sample(
+        {"mu": bccg_mu, "sigma": bccg_sigma, "nu": bccg_nu},
+        generator=torch.Generator().manual_seed(20260806),
+    )
+    bccg_frame = pd.DataFrame({"x": bccg_x.numpy(), "y": bccg_y.numpy()})
+    bccg_laml_model = GAMLSS.from_formula(
+        BCCG(),
+        {
+            "mu": "y ~ pb(x, intervals=4)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+        },
+        bccg_frame,
+    )
+    bccg_laml_fit = bccg_laml_model.fit_laml_data(
+        bccg_frame,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=30,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    if not isinstance(bccg_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed BCCG LAML result is invalid")
+    if not bccg_laml_fit.outer_converged:
+        raise RuntimeError("installed BCCG LAML fit did not converge")
+    if not torch.isfinite(bccg_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed BCCG LAML Hessian is non-finite")
 
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)

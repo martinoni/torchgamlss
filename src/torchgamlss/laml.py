@@ -15,6 +15,10 @@ if TYPE_CHECKING:
     from torchgamlss.model import GAMLSS
 
 
+class _NonFiniteLikelihoodError(RuntimeError):
+    """Signal a domain-invalid likelihood proposal to the line search."""
+
+
 @dataclass(frozen=True)
 class LAMLControl:
     """Numerical controls for the experimental nested LAML optimizer."""
@@ -513,7 +517,14 @@ class _NormalProfileEvaluator:
             candidate = current.detach()
             for _ in range(self.control.max_line_search_steps):
                 trial = current.detach() + scale * step
-                trial_value = objective(trial)
+                try:
+                    trial_value = objective(trial)
+                except (ValueError, _NonFiniteLikelihoodError):
+                    # Identity links can temporarily propose parameters outside
+                    # a family's support (for example BCCG mu <= 0). Treat
+                    # these as rejected line-search trials and shorten the step.
+                    scale *= 0.5
+                    continue
                 sufficient_decrease = (
                     current_value + 1e-4 * scale * directional_derivative
                 )
@@ -755,7 +766,7 @@ class _GAMLSSProfileEvaluator(_NormalProfileEvaluator):
             )
         losses = -log_probabilities
         if not bool(torch.isfinite(losses).all().detach()):
-            raise RuntimeError(
+            raise _NonFiniteLikelihoodError(
                 f"{self.family.name} negative log-likelihood is not finite"
             )
         return (self.weights * losses).sum()
@@ -1082,6 +1093,7 @@ def fit_gamlss_model_laml(
     """
     from torchgamlss.families import (
         Beta,
+        BoxCoxColeGreen,
         Gamma,
         NegativeBinomial,
         Normal,
@@ -1096,6 +1108,7 @@ def fit_gamlss_model_laml(
     is_gamma = isinstance(model.family, Gamma)
     is_beta = isinstance(model.family, Beta)
     is_student_t = isinstance(model.family, StudentT)
+    is_bccg = isinstance(model.family, BoxCoxColeGreen)
     if not (
         is_normal
         or is_poisson
@@ -1103,10 +1116,11 @@ def fit_gamlss_model_laml(
         or is_gamma
         or is_beta
         or is_student_t
+        or is_bccg
     ):
         raise ValueError(
             "whole-model LAML currently supports Normal, Poisson, NBI, "
-            "Gamma, Beta, and Student-t families"
+            "Gamma, Beta, Student-t, and BCCG families"
         )
     if is_normal and (
         not isinstance(model.family.links["mu"], IdentityLink)
@@ -1144,6 +1158,15 @@ def fit_gamlss_model_laml(
         raise ValueError(
             "whole-model Student-t LAML requires identity mu, log sigma, "
             "and log nu links"
+        )
+    if is_bccg and (
+        not isinstance(model.family.links["mu"], IdentityLink)
+        or not isinstance(model.family.links["sigma"], LogLink)
+        or not isinstance(model.family.links["nu"], IdentityLink)
+    ):
+        raise ValueError(
+            "whole-model BCCG LAML requires identity mu, log sigma, "
+            "and identity nu links"
         )
     if model.neural_predictors or model.shared_predictor is not None:
         raise ValueError(

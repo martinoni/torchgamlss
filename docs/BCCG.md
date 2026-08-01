@@ -46,6 +46,20 @@ model = GAMLSS.from_formula(
 fit = model.fit_rs_data(data, weights="weight")
 ```
 
+With the standard identity/log/identity links, the same model can select all
+automatic scalar or tensor smoothing parameters jointly by LAML:
+
+```python
+from torchgamlss import LAMLControl
+
+fit = model.fit_laml_data(data, control=LAMLControl())
+```
+
+The safeguarded Newton search shortens any trial step that would temporarily
+make `mu <= 0` or produce a non-finite BCCG likelihood. Fixed-design
+parametric bootstrap accepts `algorithm="laml"` and reselects automatic
+lambdas in every successful replicate.
+
 The default identity link for `mu` matches R. Because the parameter itself
 must remain positive, applications whose linear predictor could cross zero
 can choose a log link explicitly:
@@ -80,6 +94,10 @@ Committed R fixtures cover:
 - formula prediction, full-Hessian Wald inference, likelihood criteria, and
   quantile residuals;
 - response sampling and conditional quantiles matched to `qBCCG`.
+- fixed-lambda LAML inner-fit parity for three simultaneous `pb()` terms
+  against the end-to-end R reference;
+- implicit LAML gradient and Hessian agreement with profile finite
+  differences, plus formula bootstrap and CUDA execution.
 
 The complete
 [`bccg_centile_curves`](../examples/bccg_centile_curves/README.md) case

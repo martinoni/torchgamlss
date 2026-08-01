@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from torchgamlss import (
+    BCCG,
     GAMLSS,
     Beta,
     GAMLSSLAMLResult,
@@ -22,6 +23,7 @@ from torchgamlss import (
 )
 
 REFERENCE_DIR = Path(__file__).parent / "reference"
+BCCG_EXAMPLE_DIR = Path(__file__).parents[1] / "examples" / "bccg_centile_curves"
 
 
 def _mgcv_system():
@@ -667,6 +669,74 @@ def test_implicit_outer_derivatives_match_finite_difference_with_fewer_profiles(
     assert finite_difference.profile_evaluations == 18
 
 
+def test_bccg_implicit_outer_derivatives_match_finite_difference():
+    dtype = torch.float64
+    observation_count = 48
+    x = torch.linspace(-1.0, 1.0, observation_count, dtype=dtype)
+    mu = 3.0 + 0.45 * torch.sin(math.pi * x)
+    sigma = torch.exp(-1.7 + 0.12 * x)
+    nu = 0.3 + 0.08 * x
+    probabilities = (
+        torch.arange(observation_count, dtype=dtype).mul(17).remainder(
+            observation_count
+        )
+        + 0.5
+    ) / observation_count
+    response = BCCG().distribution(
+        {"mu": mu, "sigma": sigma, "nu": nu}
+    ).icdf(probabilities)
+    mu_design = torch.column_stack(
+        (torch.ones_like(x), x, x.square(), x.pow(3))
+    )
+    sigma_design = torch.column_stack((torch.ones_like(x), x))
+    nu_design = torch.column_stack((torch.ones_like(x), x))
+    coefficient_count = (
+        mu_design.shape[1] + sigma_design.shape[1] + nu_design.shape[1]
+    )
+    mu_penalty = torch.zeros((coefficient_count, coefficient_count), dtype=dtype)
+    sigma_penalty = torch.zeros_like(mu_penalty)
+    mu_penalty[2:4, 2:4] = torch.eye(2, dtype=dtype)
+    sigma_start = mu_design.shape[1]
+    sigma_penalty[sigma_start + 1, sigma_start + 1] = 1.0
+
+    results = {}
+    for method in ("implicit", "finite_difference"):
+        results[method] = fit_gamlss_laml(
+            BCCG(),
+            response,
+            {"mu": mu_design, "sigma": sigma_design, "nu": nu_design},
+            (mu_penalty, sigma_penalty),
+            (6.0, 4.0),
+            control=LAMLControl(
+                inner_gradient_tolerance=1e-7,
+                outer_max_iterations=1,
+                outer_derivative_method=method,
+            ),
+        )
+
+    implicit = results["implicit"]
+    finite_difference = results["finite_difference"]
+    torch.testing.assert_close(
+        implicit.history[0].gradient,
+        finite_difference.history[0].gradient,
+        rtol=2e-5,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        implicit.outer_gradient,
+        finite_difference.outer_gradient,
+        rtol=2e-5,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        implicit.outer_hessian,
+        finite_difference.outer_hessian,
+        rtol=5e-3,
+        atol=2e-4,
+    )
+    assert implicit.profile_evaluations < finite_difference.profile_evaluations
+
+
 def test_poisson_laml_matches_mgcv_reml_reference():
     response, weights, design, penalties, reference = _mgcv_poisson_system()
     result = fit_gamlss_laml(
@@ -1280,6 +1350,21 @@ def _formula_student_t_laml_data(
     return pd.DataFrame({"y": response.numpy(), "x": x.numpy()})
 
 
+def _formula_bccg_laml_data(
+    observation_count: int = 70,
+) -> pd.DataFrame:
+    dtype = torch.float64
+    x = torch.linspace(-1.0, 1.0, observation_count, dtype=dtype)
+    mu = 3.0 + 0.5 * torch.sin(math.pi * x) + 0.1 * x
+    sigma = torch.full_like(mu, 0.18)
+    nu = torch.full_like(mu, 0.35)
+    response = BCCG().sample(
+        {"mu": mu, "sigma": sigma, "nu": nu},
+        generator=torch.Generator().manual_seed(20260806),
+    )
+    return pd.DataFrame({"y": response.numpy(), "x": x.numpy()})
+
+
 def _formula_gamma_laml_data(
     observation_count: int = 80,
 ) -> pd.DataFrame:
@@ -1457,6 +1542,99 @@ def test_formula_student_t_laml_selects_lambda_and_bootstraps():
     assert bootstrap.bootstrap_smoothing_parameters.shape == (10,)
     assert bootstrap.bootstrap_smoothing_parameters.std() > 0
     assert torch.isfinite(bootstrap.bootstrap_estimates).all()
+
+
+def test_formula_bccg_laml_selects_lambda_and_bootstraps():
+    data = _formula_bccg_laml_data()
+    model = GAMLSS.from_formula(
+        BCCG(),
+        {
+            "mu": "y ~ pb(x, intervals=5)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+        },
+        data,
+    )
+    control = LAMLControl(
+        inner_gradient_tolerance=1e-6,
+        outer_max_iterations=30,
+        outer_gradient_tolerance=5e-4,
+    )
+
+    result = model.fit_laml_data(data, control=control)
+    prediction = model.predict_data(data)
+
+    assert isinstance(result, GAMLSSLAMLResult)
+    assert result.outer_converged
+    assert result.family == "BCCG"
+    assert result.parameter_names == ("mu", "sigma", "nu")
+    assert result.smoothing_parameter_labels == (("mu", "x", 0),)
+    assert result.smoothing_parameters[0] > 0
+    for parameter in result.parameter_names:
+        torch.testing.assert_close(
+            prediction[parameter],
+            result.fitted_parameters[parameter],
+        )
+
+    bootstrap = model.smooth_bootstrap_data(
+        data,
+        new_data=data.iloc[::18].drop(columns="y"),
+        replicates=10,
+        max_attempts=40,
+        algorithm="laml",
+        control=control,
+        generator=torch.Generator().manual_seed(723),
+    )["mu"]["x"]
+
+    assert bootstrap.algorithm == "laml"
+    assert bootstrap.bootstrap_estimates.shape == (10, 4)
+    assert bootstrap.bootstrap_smoothing_parameters.shape == (10,)
+    assert bootstrap.bootstrap_smoothing_parameters.std() > 0
+    assert torch.isfinite(bootstrap.bootstrap_estimates).all()
+
+
+def test_bccg_fixed_lambda_laml_matches_r_gamlss_reference():
+    data = pd.read_csv(BCCG_EXAMPLE_DIR / "data.csv")
+    fitted_reference = pd.read_csv(
+        BCCG_EXAMPLE_DIR / "reference" / "r" / "fitted.csv"
+    )
+    fit_reference = pd.read_csv(
+        BCCG_EXAMPLE_DIR / "reference" / "r" / "fit.csv"
+    ).iloc[0]
+    model = GAMLSS.from_formula(
+        BCCG(),
+        {
+            "mu": "y ~ pb(x, lambda_=10)",
+            "sigma": "~ pb(x, lambda_=10)",
+            "nu": "~ pb(x, lambda_=10)",
+        },
+        data,
+    )
+
+    result = model.fit_laml_data(
+        data,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-8,
+            inner_max_iterations=200,
+        ),
+    )
+
+    assert result.outer_converged
+    assert result.inner_converged
+    assert result.outer_iterations == 0
+    assert result.boundary_status == ("fixed", "fixed", "fixed")
+    assert float(-result.log_likelihood) == pytest.approx(
+        float(fit_reference["negative_log_likelihood"]),
+        rel=2e-6,
+        abs=2e-6,
+    )
+    for parameter in result.parameter_names:
+        torch.testing.assert_close(
+            result.fitted_parameters[parameter],
+            torch.tensor(fitted_reference[parameter].to_numpy(), dtype=torch.float64),
+            rtol=2e-6,
+            atol=2e-6,
+        )
 
 
 def test_formula_gamma_laml_selects_lambda_and_bootstraps():
@@ -2045,3 +2223,36 @@ def test_beta_laml_with_fixed_precision_runs_on_cuda():
     assert result.fitted_parameters["mu"].device.type == "cuda"
     assert result.fitted_parameters["sigma"].device.type == "cuda"
     assert result.outer_hessian.device.type == "cuda"
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_formula_bccg_laml_runs_on_cuda():
+    data = _formula_bccg_laml_data(observation_count=50)
+    model = GAMLSS.from_formula(
+        BCCG(),
+        {
+            "mu": "y ~ pb(x, intervals=4)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+        },
+        data,
+        device="cuda",
+    )
+
+    result = model.fit_laml_data(
+        data,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=30,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+
+    assert result.outer_converged
+    assert result.coefficients.device.type == "cuda"
+    assert result.smoothing_parameters.device.type == "cuda"
+    assert result.outer_hessian.device.type == "cuda"
+    assert all(
+        parameter.device.type == "cuda"
+        for parameter in result.fitted_parameters.values()
+    )

@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | NBI head passed 11/11 CI; Student-t slice passed 641 local tests, CUDA, and R gates |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | BCCG slice passed 645 local tests, CUDA, and all R gates; CI pending |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -348,6 +348,29 @@ direct conditional `mgcv::scat` reference.
   and bytecode checks, package build, strict Twine validation, and the
   installed-wheel smoke test pass.
 
+### Phase 12L — BCCG LAML vertical implemented locally
+
+The first family without a directly overlapping `mgcv` marginal-likelihood
+implementation now follows the validation protocol recorded after Phase 12K.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts standard BCCG
+  identity-location/log-scale/identity-shape models;
+- the inner Newton line search now rejects and shortens domain-invalid trials,
+  including temporary `mu <= 0` proposals and non-finite BCCG likelihoods;
+- with all three `pb()` lambdas fixed at 10, the joint LAML inner fit matches
+  the committed `gamlss::gamlss()` reference negative log likelihood and all
+  1,830 fitted `mu`, `sigma`, and `nu` values;
+- this is explicitly presented as fixed-lambda penalized-fit parity, not as an
+  R implementation of the LAML criterion;
+- a separate two-lambda audit matches the implicit outer gradient and analytic
+  Hessian to finite differences of independently converged profiles;
+- formula selection estimates all three predictors, ten-replicate LAML
+  bootstrap reselects lambda, and the complete path runs on local CUDA 12.8;
+- the isolated installed-wheel smoke test includes and passes a BCCG LAML fit;
+- all 645 Python tests pass without skips; all five R gates, Ruff, dependency
+  and bytecode checks, package build, strict Twine validation, and the
+  installed-wheel smoke test pass.
+
 ### Later slices
 
 1. LAML validation for further GAMLSS families without a direct `mgcv`
@@ -386,8 +409,8 @@ whose internal representation is already available.
 
 ## Resume point
 
-Publish the validated Student-t LAML vertical to draft PR #13 and monitor every
-CI job. `mgcv::scat` is the last direct overlap in the currently translated
-family catalog; the next family extension needs a documented validation design
-before implementation. Rebase onto `main` only after stacked dependencies
-merge. Do not merge any existing draft PR without explicit user authorization.
+Publish the validated BCCG vertical to draft PR #13 and monitor every CI job.
+The next family extension should reuse the same
+fixed-lambda R parity plus derivative-audit protocol when no direct `mgcv`
+overlap exists. Rebase onto `main` only after stacked dependencies merge. Do
+not merge any existing draft PR without explicit user authorization.

@@ -152,6 +152,8 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   slices for Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and Beta
   mean/dispersion models, plus Student-t location/scale/shape, including direct
   `mgcv` REML/LAML parity and bootstrap refits
+- [x] BCCG identity/log/identity LAML with fixed-lambda `gamlss` parity,
+  implicit-versus-finite-difference derivative audits, bootstrap, and CUDA
 - [x] Implicit-function outer LAML gradients with a finite-difference audit
   fallback and reduced profile-evaluation diagnostics
 - [x] Fully analytic outer LAML Hessian from second-order implicit coefficient
