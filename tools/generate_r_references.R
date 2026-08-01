@@ -105,6 +105,12 @@ bccg_rs_reference_path <- file.path(reference_dir, "bccg_rs_reference.csv")
 bct_reference_path <- file.path(reference_dir, "bct_reference.csv")
 bct_fit_data_path <- file.path(reference_dir, "bct_fit_data.csv")
 bct_rs_reference_path <- file.path(reference_dir, "bct_rs_reference.csv")
+bct_laml_fixed_reference_path <- file.path(
+  reference_dir, "bct_laml_fixed_reference.csv"
+)
+bct_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "bct_laml_fixed_fitted_reference.csv"
+)
 bct_cg_reference_path <- file.path(reference_dir, "bct_cg_reference.csv")
 tf_reference_path <- file.path(reference_dir, "tf_reference.csv")
 tf_fit_data_path <- file.path(reference_dir, "tf_fit_data.csv")
@@ -1401,6 +1407,45 @@ bct_rs_reference <- data.frame(
   converged = bct_rs_fit$converged,
   gamlss_version = as.character(packageVersion("gamlss")),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+bct_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  tau.formula = ~ 1,
+  weights = weight,
+  family = BCT(),
+  method = RS(),
+  data = bct_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+bct_laml_fixed_smooth <- getSmo(
+  bct_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+bct_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(bct_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(bct_laml_fixed_fit)),
+  smoothing_parameter = bct_laml_fixed_smooth$lambda,
+  outer_iterations = bct_laml_fixed_fit$iter,
+  converged = bct_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+bct_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(bct_laml_fixed_fit, what = "mu"),
+  sigma = fitted(bct_laml_fixed_fit, what = "sigma"),
+  nu = fitted(bct_laml_fixed_fit, what = "nu"),
+  tau = fitted(bct_laml_fixed_fit, what = "tau")
 )
 
 bct_cg_fit <- gamlss(
@@ -2855,6 +2900,16 @@ if (check_only) {
   assert_close(bct_reference, bct_reference_path, tolerance = 1e-9)
   assert_close(bct_fit_data, bct_fit_data_path, tolerance = 1e-12)
   assert_close(bct_rs_reference, bct_rs_reference_path, tolerance = 1e-6)
+  assert_close(
+    bct_laml_fixed_reference,
+    bct_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    bct_laml_fixed_fitted_reference,
+    bct_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(bct_cg_reference, bct_cg_reference_path, tolerance = 1e-8)
   assert_close(tf_reference, tf_reference_path, tolerance = 1e-10)
   assert_close(tf_fit_data, tf_fit_data_path, tolerance = 1e-12)
@@ -3048,6 +3103,11 @@ if (check_only) {
   write_csv_lf(bct_reference, bct_reference_path)
   write_csv_lf(bct_fit_data, bct_fit_data_path)
   write_csv_lf(bct_rs_reference, bct_rs_reference_path)
+  write_csv_lf(bct_laml_fixed_reference, bct_laml_fixed_reference_path)
+  write_csv_lf(
+    bct_laml_fixed_fitted_reference,
+    bct_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(bct_cg_reference, bct_cg_reference_path)
   write_csv_lf(tf_reference, tf_reference_path)
   write_csv_lf(tf_fit_data, tf_fit_data_path)

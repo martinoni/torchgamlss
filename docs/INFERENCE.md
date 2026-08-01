@@ -284,7 +284,7 @@ For each successful replicate, TorchGAMLSS:
 
 Use the same `algorithm=` and `control=` settings as the original fit so the
 bootstrap distribution represents the estimator that produced the reported
-model. For a supported Normal, Poisson, NBI, Gamma, Beta, Student-t, or BCCG
+model. For a supported Normal, Poisson, NBI, Gamma, Beta, Student-t, BCCG, or BCT
 model fitted with `fit_laml_data()`, use:
 
 ```python
@@ -307,7 +307,8 @@ Normal models with identity-`mu`/log-`sigma` links, Poisson models with a
 log-`mu` link, NBI and Gamma models with log-`mu`/log-`sigma` links, Beta
 models with logit-`mu`/logit-`sigma` links, and Student-t models with
 identity-`mu`/log-`sigma`/log-`nu` links, plus BCCG models with
-identity-`mu`/log-`sigma`/identity-`nu` links. It is
+identity-`mu`/log-`sigma`/identity-`nu` links and BCT models with
+identity-`mu`/log-`sigma`/identity-`nu`/log-`tau` links. It is
 materially more expensive than RS or CG bootstrap, so use `max_attempts` and
 inspect `failure_rate`.
 
@@ -409,9 +410,9 @@ distribution parameter, repeats configured smoothing selection, predicts all
 parameters on `new_data`, and then evaluates the requested family quantiles.
 Thus a BCT or BCPE centile curve, for example, propagates the joint variation
 of `mu`, `sigma`, `nu`, and `tau`. RS and CG are available for every
-sampleable supported family. `algorithm="laml"` is additionally available
-for additive Normal models and repeats joint scalar/tensor selection before
-evaluating each quantile curve.
+sampleable supported family. `algorithm="laml"` is additionally available for
+every family listed in the LAML bootstrap scope above and repeats joint
+scalar/tensor selection before evaluating each quantile curve.
 
 Pointwise limits are percentile bootstrap intervals. The flattened
 `covariance_matrix` follows prediction row first and probability second.

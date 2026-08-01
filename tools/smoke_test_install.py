@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import torchgamlss
 from torchgamlss import (
     BCCG,
+    BCT,
     GAMLSS,
     GG,
     IG,
@@ -380,6 +381,39 @@ def main() -> None:
         raise RuntimeError("installed BCCG LAML fit did not converge")
     if not torch.isfinite(bccg_laml_fit.outer_hessian).all():
         raise RuntimeError("installed BCCG LAML Hessian is non-finite")
+
+    bct_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    bct_mu = 3.0 + 0.45 * torch.sin(torch.pi * bct_x) + 0.1 * bct_x
+    bct_sigma = torch.full_like(bct_mu, 0.18)
+    bct_nu = torch.full_like(bct_mu, 0.3)
+    bct_tau = torch.full_like(bct_mu, 4.0)
+    bct_probability = (
+        torch.arange(80, dtype=torch.float64).mul(37).remainder(80) + 0.5
+    ) / 80
+    bct_y = BCT().distribution(
+        {"mu": bct_mu, "sigma": bct_sigma, "nu": bct_nu, "tau": bct_tau}
+    ).icdf(bct_probability)
+    bct_frame = pd.DataFrame({"x": bct_x.numpy(), "y": bct_y.numpy()})
+    bct_laml_model = GAMLSS.from_formula(
+        BCT(),
+        {
+            "mu": "y ~ pb(x, intervals=3, lambda_=10)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+            "tau": "~ 1",
+        },
+        bct_frame,
+    )
+    bct_rs_fit = bct_laml_model.fit_rs_data(bct_frame)
+    bct_laml_fit = bct_laml_model.fit_laml_data(bct_frame, warm_start=True)
+    if not bct_rs_fit.converged:
+        raise RuntimeError("installed BCT RS warm start did not converge")
+    if not isinstance(bct_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed BCT LAML result is invalid")
+    if not bct_laml_fit.outer_converged:
+        raise RuntimeError("installed BCT LAML fit did not converge")
+    if not torch.isfinite(bct_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed BCT LAML Hessian is non-finite")
 
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)

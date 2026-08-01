@@ -154,12 +154,15 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   `mgcv` REML/LAML parity and bootstrap refits
 - [x] BCCG identity/log/identity LAML with fixed-lambda `gamlss` parity,
   implicit-versus-finite-difference derivative audits, bootstrap, and CUDA
+- [x] BCT identity/log/identity/log LAML with fixed-lambda `gamlss` parity,
+  RS warm starts, derivative audits, bootstrap, and CUDA
 - [x] Implicit-function outer LAML gradients with a finite-difference audit
   fallback and reduced profile-evaluation diagnostics
 - [x] Fully analytic outer LAML Hessian from second-order implicit coefficient
   sensitivities and exact autograd partials, with no displaced profile fits
 - [ ] Extend whole-model LAML to the remaining multi-parameter families,
-  with an explicit reference strategy for families without a directly
+  beginning with BCPE and retaining an explicit reference strategy for
+  families without a directly
   overlapping `mgcv` location-scale family
 - [x] Fixed-lambda tensor-product full smooths and ANOVA-style tensor
   interactions through the generic dense solver

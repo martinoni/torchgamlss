@@ -3,8 +3,8 @@
 TorchGAMLSS has a dense whole-model Laplace approximate marginal likelihood
 implementation for additive Normal location-scale, Poisson log-mean, Gamma
 mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion,
-Student-t location/scale/shape, and BCCG location/scale/shape models. A Normal
-formula model uses:
+Student-t location/scale/shape, BCCG location/scale/shape, and BCT
+location/scale/skewness/tail-shape models. A Normal formula model uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -18,6 +18,27 @@ model = GAMLSS.from_formula(
     data,
 )
 fit = model.fit_laml_data(data, control=LAMLControl())
+```
+
+A Box-Cox t model adds a log-linked tail-shape predictor. Because `tau` can be
+weakly identified from generic starts, initialize the joint LAML profile from
+a compatible RS fit:
+
+```python
+from torchgamlss import BCT, GAMLSS, LAMLControl
+
+model = GAMLSS.from_formula(
+    BCT(),
+    {
+        "mu": "y ~ pb(x, intervals=8)",
+        "sigma": "~ 1",
+        "nu": "~ 1",
+        "tau": "~ 1",
+    },
+    data,
+)
+model.fit_rs_data(data)
+fit = model.fit_laml_data(data, warm_start=True, control=LAMLControl())
 ```
 
 A Gamma model can smooth both its mean and coefficient of variation:
@@ -239,6 +260,16 @@ the fixed-lambda penalized fit matches `gamlss::gamlss()` on the committed
 three-smooth reference, while the LAML outer gradient and Hessian match an
 independent finite-difference profile audit. A regular formula fit estimates
 all three predictors and selects scalar or tensor lambdas jointly.
+
+For BCT, the same validation protocol covers identity `mu`, log `sigma`,
+identity `nu`, and log `tau`. The fixed-lambda penalized fit is compared with
+`gamlss::gamlss(BCT())`, while an independent profile audit validates the
+LAML outer derivatives. R's RS working score uses a forward difference of
+`0.01` for the truncation normalizer's `tau` derivative; Torch LAML
+differentiates the actual Student-t CDF likelihood. Consequently the fitted
+`tau` can differ slightly even when the likelihood and other fitted
+parameters agree. A compatible RS warm start is recommended for joint BCT
+LAML because tail shape can be locally weakly identified.
 
 ## Formula and model integration
 
@@ -572,11 +603,21 @@ outer Hessian against the finite-difference profile implementation. Formula
 selection, ten-replicate parametric bootstrap, and CUDA tests then exercise
 the complete identity/log/identity path.
 
+## BCT reference and derivative gates
+
+The committed BCT reference fixes the `mu` P-spline lambda at 10 and compares
+the warm-started joint inner fit with `gamlss::gamlss()` for all 160 fitted
+`mu`, `sigma`, `nu`, and `tau` values and the negative log likelihood. A
+separate weighted audit compares the implicit outer gradient and analytic
+Hessian with finite differences. Formula selection and ten-replicate LAML
+bootstrap estimate all four predictors, and the complete path runs on CUDA.
+
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
   Poisson log-link, NBI and Gamma log/log, Beta logit/logit, and Student-t
-  identity/log/log and BCCG identity/log/identity models; the low-level
+  identity/log/log, BCCG identity/log/identity, and BCT
+  identity/log/identity/log models; the low-level
   family-driven core is deliberately exposed, but other families are not yet
   claimed as validated;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
