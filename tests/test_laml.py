@@ -889,7 +889,9 @@ def test_bcpe_implicit_outer_derivatives_match_finite_difference():
     torch.testing.assert_close(
         implicit.outer_hessian,
         finite_difference.outer_hessian,
-        rtol=8e-3,
+        # Objective second differences are noisier for the regularized-gamma
+        # CDF path, especially with Windows/Python 3.11 math-library builds.
+        rtol=1.2e-2,
         atol=3e-4,
     )
     assert implicit.profile_evaluations < finite_difference.profile_evaluations

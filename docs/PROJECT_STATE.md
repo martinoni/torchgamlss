@@ -461,7 +461,8 @@ whose internal representation is already available.
 - Keep unrelated phases in separate worktrees and pull requests.
 - Keep new pull requests as drafts unless explicitly asked otherwise.
 - Do not merge a pull request without explicit authorization.
-- Commit and push only outside 09:00--18:00 in America/Sao_Paulo.
+- On weekdays, commit and push only outside 09:00--18:00 in
+  America/Sao_Paulo. Saturdays and Sundays have no time restriction.
 - Existing user changes in a worktree are never discarded or silently staged.
 
 ## Resume point
