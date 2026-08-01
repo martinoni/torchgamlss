@@ -95,7 +95,8 @@ Committed R fixtures cover:
   quantile residuals;
 - response sampling and conditional quantiles matched to `qBCCG`.
 - fixed-lambda LAML inner-fit parity for three simultaneous `pb()` terms
-  against the end-to-end R reference;
+  against the end-to-end R reference, initialized from the independently
+  validated fixed-lambda RS state;
 - implicit LAML gradient and Hessian agreement with profile finite
   differences, plus formula bootstrap and CUDA execution.
 

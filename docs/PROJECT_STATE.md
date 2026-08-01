@@ -357,9 +357,10 @@ implementation now follows the validation protocol recorded after Phase 12K.
   identity-location/log-scale/identity-shape models;
 - the inner Newton line search now rejects and shortens domain-invalid trials,
   including temporary `mu <= 0` proposals and non-finite BCCG likelihoods;
-- with all three `pb()` lambdas fixed at 10, the joint LAML inner fit matches
-  the committed `gamlss::gamlss()` reference negative log likelihood and all
-  1,830 fitted `mu`, `sigma`, and `nu` values;
+- with all three `pb()` lambdas fixed at 10, the joint LAML inner fit,
+  initialized from the matching validated RS state, matches the committed
+  `gamlss::gamlss()` reference negative log likelihood and all 1,830 fitted
+  `mu`, `sigma`, and `nu` values;
 - this is explicitly presented as fixed-lambda penalized-fit parity, not as an
   R implementation of the LAML criterion;
 - a separate two-lambda audit matches the implicit outer gradient and analytic

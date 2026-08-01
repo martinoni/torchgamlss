@@ -478,6 +478,7 @@ class GAMLSS(nn.Module):
         *,
         weights: Any = None,
         control: LAMLControl | None = None,
+        warm_start: bool = False,
     ) -> NormalLAMLResult | GAMLSSLAMLResult:
         """Fit a supported formula model with whole-model LAML selection."""
         prepared = self.prepare_formula_data(data, include_response=True)
@@ -490,6 +491,7 @@ class GAMLSS(nn.Module):
             offsets=prepared.offsets,
             smooth_covariates=prepared.smooth_covariates,
             control=control,
+            warm_start=warm_start,
         )
 
     def fit_data(
@@ -1684,6 +1686,7 @@ class GAMLSS(nn.Module):
         weights: Tensor | None = None,
         offsets: Mapping[str, Tensor] | None = None,
         control: LAMLControl | None = None,
+        warm_start: bool = False,
     ) -> NormalLAMLResult | GAMLSSLAMLResult:
         """Fit a supported complete additive model by nested LAML."""
         self._require_no_neural_predictors("fit_laml()")
@@ -1695,6 +1698,7 @@ class GAMLSS(nn.Module):
             offsets=offsets,
             smooth_covariates=smooth_covariates,
             control=control,
+            warm_start=warm_start,
         )
 
     def inference(

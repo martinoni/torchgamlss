@@ -1611,14 +1611,28 @@ def test_bccg_fixed_lambda_laml_matches_r_gamlss_reference():
         data,
     )
 
+    rs_result = model.fit_rs_data(
+        data,
+        control=RSControl(
+            outer_tolerance=1e-8,
+            max_outer_iterations=300,
+            inner_tolerance=1e-8,
+            max_inner_iterations=300,
+            backfitting_tolerance=1e-8,
+            max_backfitting_iterations=300,
+        ),
+    )
+
     result = model.fit_laml_data(
         data,
+        warm_start=True,
         control=LAMLControl(
             inner_gradient_tolerance=1e-8,
             inner_max_iterations=200,
         ),
     )
 
+    assert rs_result.converged
     assert result.outer_converged
     assert result.inner_converged
     assert result.outer_iterations == 0

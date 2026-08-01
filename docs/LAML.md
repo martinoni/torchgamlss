@@ -265,6 +265,11 @@ fit.outer_hessian
 fitted_parameters = model.predict_data(data)
 ```
 
+`fit_laml()` and `fit_laml_data()` accept `warm_start=True` to initialize the
+joint coefficient profile from the model's current linear and smooth
+coefficients. This is useful when continuing from a compatible fixed-lambda
+RS or CG fit; the default remains family-based initialization.
+
 Use `initial_smoothing_parameters=(4, 7)` or its
 `initial_lambda_=(4, 7)` alias to change the tensor starting point while
 retaining automatic selection. Supplying `lambda_=(4, 7)` instead fixes both
@@ -556,9 +561,11 @@ Rscript tools/generate_mgcv_laml_reference.R --check
 
 The committed `examples/bccg_centile_curves` R reference fits `mu`, `sigma`,
 and `nu` with `gamlss::pb(x, lambda=10)`. The LAML test uses the identical
-Torch formula with all three lambdas fixed and compares the negative log
-likelihood and all 1,830 fitted parameter values to R. This checks the inner
-penalized estimator, not an R marginal-likelihood calculation.
+Torch formula with all three lambdas fixed, initializes it from the matching
+fixed-lambda RS fit, and compares the negative log likelihood and all 1,830
+fitted parameter values to R. This checks the converged inner penalized
+estimator, not an R marginal-likelihood calculation. A separate formula test
+exercises BCCG LAML from the default family initialization.
 
 A separate two-lambda BCCG test compares the implicit outer gradient and full
 outer Hessian against the finite-difference profile implementation. Formula
