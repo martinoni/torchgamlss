@@ -133,6 +133,13 @@ gg_laml_fixed_reference_path <- file.path(
 gg_laml_fixed_fitted_reference_path <- file.path(
   reference_dir, "gg_laml_fixed_fitted_reference.csv"
 )
+logno_fit_data_path <- file.path(reference_dir, "logno_fit_data.csv")
+logno_laml_fixed_reference_path <- file.path(
+  reference_dir, "logno_laml_fixed_reference.csv"
+)
+logno_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "logno_laml_fixed_fitted_reference.csv"
+)
 bcpe_reference_path <- file.path(reference_dir, "bcpe_reference.csv")
 bcpe_fit_data_path <- file.path(reference_dir, "bcpe_fit_data.csv")
 bcpe_rs_reference_path <- file.path(reference_dir, "bcpe_rs_reference.csv")
@@ -1779,6 +1786,65 @@ gg_laml_fixed_fitted_reference <- data.frame(
   nu = fitted(gg_laml_fixed_fit, what = "nu")
 )
 
+logno_n <- 160
+logno_x <- seq(-1, 1, length.out = logno_n)
+logno_z <- cos(seq(0, 2 * pi, length.out = logno_n))
+logno_mu_offset <- 0.04 * cos(seq(0, 3 * pi, length.out = logno_n))
+logno_sigma_offset <- 0.02 * sin(seq(0, 4 * pi, length.out = logno_n))
+logno_weight <- rep(c(1, 1.5, 2, 0.75), length.out = logno_n)
+logno_mu <- (
+  0.4 + 0.7 * logno_x - 0.25 * logno_x^2 +
+    0.15 * logno_x^3 + logno_mu_offset
+)
+logno_sigma <- exp(-0.65 + 0.15 * logno_z + logno_sigma_offset)
+logno_probability <- (((seq_len(logno_n) * 73) %% logno_n) + 0.5) / logno_n
+logno_fit_data <- data.frame(
+  x = logno_x,
+  z = logno_z,
+  y = qLOGNO(
+    logno_probability,
+    mu = logno_mu,
+    sigma = logno_sigma
+  ),
+  weight = logno_weight,
+  mu_offset = logno_mu_offset,
+  sigma_offset = logno_sigma_offset
+)
+logno_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  weights = weight,
+  family = LOGNO(),
+  method = RS(),
+  data = logno_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+logno_laml_fixed_smooth <- getSmo(
+  logno_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+logno_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(logno_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(logno_laml_fixed_fit)),
+  smoothing_parameter = logno_laml_fixed_smooth$lambda,
+  outer_iterations = logno_laml_fixed_fit$iter,
+  converged = logno_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+logno_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(logno_laml_fixed_fit, what = "mu"),
+  sigma = fitted(logno_laml_fixed_fit, what = "sigma")
+)
+
 bcpe_n <- 160
 bcpe_x <- seq(-1, 1, length.out = bcpe_n)
 bcpe_z <- cos(seq(0, 2 * pi, length.out = bcpe_n))
@@ -3099,6 +3165,17 @@ if (check_only) {
     gg_laml_fixed_fitted_reference_path,
     tolerance = 3e-6
   )
+  assert_close(logno_fit_data, logno_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    logno_laml_fixed_reference,
+    logno_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    logno_laml_fixed_fitted_reference,
+    logno_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(bcpe_reference, bcpe_reference_path, tolerance = 1e-9)
   assert_close(bcpe_fit_data, bcpe_fit_data_path, tolerance = 1e-12)
   assert_close(bcpe_rs_reference, bcpe_rs_reference_path, tolerance = 1e-6)
@@ -3317,6 +3394,12 @@ if (check_only) {
   write_csv_lf(
     gg_laml_fixed_fitted_reference,
     gg_laml_fixed_fitted_reference_path
+  )
+  write_csv_lf(logno_fit_data, logno_fit_data_path)
+  write_csv_lf(logno_laml_fixed_reference, logno_laml_fixed_reference_path)
+  write_csv_lf(
+    logno_laml_fixed_fitted_reference,
+    logno_laml_fixed_fitted_reference_path
   )
   write_csv_lf(bcpe_reference, bcpe_reference_path)
   write_csv_lf(bcpe_fit_data, bcpe_fit_data_path)

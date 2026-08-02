@@ -92,7 +92,8 @@ The current implementation contains:
   location/scale/shape, BCCG location/scale/shape, BCT
   location/scale/skewness/tail-shape, and BCPE
   location/scale/skewness/kurtosis, PE location/scale/shape, and GG
-  positive-location/scale/shape models, including
+  positive-location/scale/shape, plus uncensored LOGNO mean-log/scale models,
+  including
   formula `fit_laml_data()`, automatic scalar and tensor lambdas, null-space
   constraints, outer diagnostics, implicit outer gradients and Hessians,
   CPU/CUDA execution, direct `mgcv` REML parity where an overlapping family
@@ -215,8 +216,9 @@ NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
 location/scale/shape, BCCG location/scale/shape, BCT
 location/scale/skewness/tail-shape, and BCPE
 location/scale/skewness/kurtosis, PE location/scale/shape, and GG
-positive-location/scale/shape models. Their parametric bootstrap stores one value per
-marginal lambda while preserving the scalar `pb()` API; `algorithm="laml"`
+positive-location/scale/shape, plus uncensored LOGNO mean-log/scale models.
+Their parametric bootstrap stores one value per marginal lambda while
+preserving the scalar `pb()` API; `algorithm="laml"`
 repeats automatic joint tensor selection in every successful bootstrap
 replicate. The generic tensor-product API, examples, and current limitations
 are documented in

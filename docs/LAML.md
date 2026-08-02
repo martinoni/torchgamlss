@@ -6,7 +6,8 @@ mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion,
 Student-t location/scale/shape, BCCG location/scale/shape, BCT
 location/scale/skewness/tail-shape, and BCPE
 location/scale/skewness/kurtosis, PE location/scale/shape, and GG
-positive-location/scale/shape models. A Normal formula model uses:
+positive-location/scale/shape, plus uncensored LOGNO mean-log/scale models. A
+Normal formula model uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -297,6 +298,21 @@ log-normal-limit series for `|nu| <= 0.05`; the fourth-order derivative gate is
 kept away from that piecewise transition. Current LAML support is for
 uncensored GG responses; `CensoredFamily(GG(), ...)` remains available through
 its existing likelihood and fitting routes but is not yet claimed for LAML.
+
+For log-normal, the standard identity/log links parameterize the mean and
+standard deviation of `log(Y)`. An uncensored LOGNO LAML fit is algebraically
+the same as a Normal LAML fit to `log(Y)`:
+
+```text
+negative LAML_LOGNO(y) = negative LAML_Normal(log(y))
+                         + sum_i weight_i log(y_i).
+```
+
+The additive Jacobian is independent of coefficients and lambdas, so both fits
+have identical coefficients, smoothing parameters, outer gradients, and outer
+Hessians. This supplies a direct bridge to the validated Normal/`mgcv::gaulss`
+path in addition to the fixed-lambda `gamlss::gamlss(LOGNO())` comparison.
+Censored LOGNO remains outside the current LAML scope.
 
 ## Formula and model integration
 
@@ -668,15 +684,27 @@ outer gradient and analytic Hessian with finite differences. Formula selection
 and ten-replicate LAML bootstrap estimate all three predictors, and the
 complete uncensored path runs on CUDA.
 
+## Log-normal reference, identity, and derivative gates
+
+The committed LOGNO reference fixes the `mu` P-spline lambda at 10 and
+compares the warm-started joint inner fit with `gamlss::gamlss()` for all 160
+fitted `mu` and `sigma` values and the negative log likelihood. A separate
+weighted audit compares the implicit outer gradient and analytic Hessian with
+finite differences. The Normal-on-log identity gate additionally verifies the
+same coefficients, selected lambda, outer derivatives, and the exact weighted
+Jacobian shift in the objective. Formula selection and ten-replicate LAML
+bootstrap estimate both predictors, and the complete uncensored path runs on
+CUDA.
+
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
   Poisson log-link, NBI and Gamma log/log, Beta logit/logit, and Student-t
   identity/log/log, BCCG identity/log/identity, BCT
   identity/log/identity/log, BCPE identity/log/identity/log, and PE
-  identity/log/log, plus uncensored GG log/log/identity models; the low-level
-  family-driven core is deliberately exposed, but other families are not yet
-  claimed as validated;
+  identity/log/log, plus uncensored GG log/log/identity and uncensored LOGNO
+  identity/log models; the low-level family-driven core is deliberately
+  exposed, but other families are not yet claimed as validated;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
   it avoids repeated inner fits and finite-difference noise, but its local
   autograd work can be expensive for models with many coefficients or free

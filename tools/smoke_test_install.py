@@ -517,6 +517,40 @@ def main() -> None:
     if not torch.isfinite(gg_laml_fit.outer_hessian).all():
         raise RuntimeError("installed GG LAML Hessian is non-finite")
 
+    logno_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    logno_mu = 0.2 + 0.45 * torch.sin(torch.pi * logno_x) + 0.1 * logno_x
+    logno_sigma = torch.full_like(logno_mu, 0.5)
+    logno_probability = (
+        torch.arange(80, dtype=torch.float64).mul(37).remainder(80) + 0.5
+    ) / 80
+    logno_y = LOGNO().distribution(
+        {"mu": logno_mu, "sigma": logno_sigma}
+    ).icdf(logno_probability)
+    logno_frame = pd.DataFrame(
+        {"x": logno_x.numpy(), "y": logno_y.numpy()}
+    )
+    logno_laml_model = GAMLSS.from_formula(
+        LOGNO(),
+        {
+            "mu": "y ~ pb(x, intervals=3, lambda_=10)",
+            "sigma": "~ 1",
+        },
+        logno_frame,
+    )
+    logno_rs_fit = logno_laml_model.fit_rs_data(logno_frame)
+    logno_laml_fit = logno_laml_model.fit_laml_data(
+        logno_frame,
+        warm_start=True,
+    )
+    if not logno_rs_fit.converged:
+        raise RuntimeError("installed LOGNO RS warm start did not converge")
+    if not isinstance(logno_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed LOGNO LAML result is invalid")
+    if not logno_laml_fit.outer_converged:
+        raise RuntimeError("installed LOGNO LAML fit did not converge")
+    if not torch.isfinite(logno_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed LOGNO LAML Hessian is non-finite")
+
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)
     bootstrap_y = (

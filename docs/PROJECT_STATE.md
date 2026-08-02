@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | GG validation head `42ee44d` passed 11/11 CI jobs, 661 local tests, CUDA, all R gates, and the installed-wheel smoke test |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | LOGNO working tree passed 666 local tests, CUDA, all R gates, and the installed-wheel smoke test; remote CI pending |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -499,10 +499,38 @@ family-driven nested LAML core with its standard log/log/identity links.
   ([run 30726092266](https://github.com/martinoni/torchgamlss/actions/runs/30726092266)),
   including Python 3.10--3.13 on Linux and Windows.
 
+### Phase 12Q — log-normal LAML vertical implemented locally
+
+The uncensored two-parameter `gamlss.dist::LOGNO` family now uses the
+family-driven nested LAML core with its standard identity/log links.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts uncensored LOGNO models,
+  and rejects unsupported links before optimization;
+- LOGNO LAML bootstrap refits reselect automatic scalar or tensor lambdas;
+- a weighted fixed-lambda `mu` P-spline fit initialized from its compatible RS
+  state matches the committed `gamlss::gamlss()` negative log likelihood and
+  all 160 fitted `mu` and `sigma` rows, or 320 fitted parameter values, within
+  `3e-6` relative and absolute tolerance;
+- an exact transformed-model gate verifies that LOGNO on `y` and Normal on
+  `log(y)` have identical coefficients, smoothing parameters, implicit outer
+  gradients, and analytic Hessians, while their objectives and likelihoods
+  differ only by the weighted log-Jacobian; this also connects LOGNO to the
+  existing direct `mgcv` Normal LAML validation;
+- a separate weighted audit matches the implicit outer gradient and analytic
+  Hessian to finite differences;
+- automatic formula selection, ten-replicate bootstrap lambda reselection,
+  and the complete path run on local CUDA 12.8;
+- censored LOGNO remains supported through its existing likelihood and fitting
+  routes but is not yet claimed for whole-model LAML;
+- the R generator and installed-wheel smoke test include LOGNO LAML gates;
+- all 666 Python tests pass without skips; all five R gates, Ruff, dependency
+  and bytecode checks, package build, strict Twine validation, and the
+  installed-wheel smoke test pass locally;
+- remote GitHub Actions validation is pending publication of this slice.
+
 ### Later slices
 
-1. log-normal (`LOGNO`) identity/log LAML validation, followed by Weibull and
-   inverse-Gaussian;
+1. Weibull LAML validation, followed by inverse-Gaussian;
 2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
 3. discretized marginal bases and structured crossproducts;
 4. unconditional inference and smoothing-uncertainty-aware information
@@ -538,6 +566,6 @@ whose internal representation is already available.
 ## Resume point
 
 The next family extension should reuse the same fixed-lambda R parity plus
-derivative-audit protocol for log-normal (`LOGNO`) with its standard
-identity/log links. Rebase onto `main` only after stacked dependencies merge.
-Do not merge any existing draft PR without explicit user authorization.
+derivative-audit protocol for Weibull with its standard log/log links. Rebase
+onto `main` only after stacked dependencies merge. Do not merge any existing
+draft PR without explicit user authorization.
