@@ -60,6 +60,7 @@ def validate_bootstrap_refit(
             Poisson,
             PowerExponential,
             StudentT,
+            Weibull,
         )
         from torchgamlss.links import IdentityLink, LogitLink, LogLink
 
@@ -69,6 +70,7 @@ def validate_bootstrap_refit(
         is_gamma = isinstance(model.family, Gamma)
         is_gg = isinstance(model.family, GeneralizedGamma)
         is_log_normal = isinstance(model.family, LogNormal)
+        is_weibull = isinstance(model.family, Weibull)
         is_beta = isinstance(model.family, Beta)
         is_student_t = isinstance(model.family, StudentT)
         is_bccg = isinstance(model.family, BoxCoxColeGreen)
@@ -82,6 +84,7 @@ def validate_bootstrap_refit(
             or is_gamma
             or is_gg
             or is_log_normal
+            or is_weibull
             or is_beta
             or is_student_t
             or is_bccg
@@ -91,8 +94,8 @@ def validate_bootstrap_refit(
         ):
             raise ValueError(
                 "LAML bootstrap currently supports Normal, Poisson, NBI, "
-                "Gamma, Beta, Student-t, BCCG, BCT, BCPE, PE, GG, and LOGNO "
-                "families"
+                "Gamma, Beta, Student-t, BCCG, BCT, BCPE, PE, GG, LOGNO, and "
+                "WEI families"
             )
         if is_normal and (
             not isinstance(model.family.links["mu"], IdentityLink)
@@ -131,6 +134,11 @@ def validate_bootstrap_refit(
             raise ValueError(
                 "LOGNO LAML bootstrap requires identity mu and log sigma links"
             )
+        if is_weibull and (
+            not isinstance(model.family.links["mu"], LogLink)
+            or not isinstance(model.family.links["sigma"], LogLink)
+        ):
+            raise ValueError("WEI LAML bootstrap requires log mu and log sigma links")
         if is_beta and (
             not isinstance(model.family.links["mu"], LogitLink)
             or not isinstance(model.family.links["sigma"], LogitLink)

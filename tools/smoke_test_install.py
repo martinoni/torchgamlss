@@ -517,6 +517,35 @@ def main() -> None:
     if not torch.isfinite(gg_laml_fit.outer_hessian).all():
         raise RuntimeError("installed GG LAML Hessian is non-finite")
 
+    wei_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    wei_mu = torch.exp(0.25 + 0.4 * torch.sin(torch.pi * wei_x) + 0.1 * wei_x)
+    wei_sigma = torch.full_like(wei_mu, 1.25)
+    wei_probability = (
+        torch.arange(80, dtype=torch.float64).mul(37).remainder(80) + 0.5
+    ) / 80
+    wei_y = WEI().distribution({"mu": wei_mu, "sigma": wei_sigma}).icdf(
+        wei_probability
+    )
+    wei_frame = pd.DataFrame({"x": wei_x.numpy(), "y": wei_y.numpy()})
+    wei_laml_model = GAMLSS.from_formula(
+        WEI(),
+        {
+            "mu": "y ~ pb(x, intervals=3, lambda_=10)",
+            "sigma": "~ 1",
+        },
+        wei_frame,
+    )
+    wei_rs_fit = wei_laml_model.fit_rs_data(wei_frame)
+    wei_laml_fit = wei_laml_model.fit_laml_data(wei_frame, warm_start=True)
+    if not wei_rs_fit.converged:
+        raise RuntimeError("installed WEI RS warm start did not converge")
+    if not isinstance(wei_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed WEI LAML result is invalid")
+    if not wei_laml_fit.outer_converged:
+        raise RuntimeError("installed WEI LAML fit did not converge")
+    if not torch.isfinite(wei_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed WEI LAML Hessian is non-finite")
+
     logno_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
     logno_mu = 0.2 + 0.45 * torch.sin(torch.pi * logno_x) + 0.1 * logno_x
     logno_sigma = torch.full_like(logno_mu, 0.5)

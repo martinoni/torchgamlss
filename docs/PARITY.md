@@ -492,6 +492,16 @@ Torch predictor is `eta_sigma = eta_phi / 2`; the tests compare the objective,
 both lambdas, EDF, coefficients, predictors, fitted mean/CV, and the complete
 outer Hessian on CPU and CUDA.
 
+The Weibull LAML fixture uses the exact transformation `X = -log(Y)` to
+`mgcv::gumbls(link=list("identity","identity"))`. Gumbel location and log scale
+map to `m = -log(mu)` and `B = -log(sigma)`, so the Torch coefficient blocks
+are sign-reversed while penalties, lambdas, and outer derivatives are
+unchanged. The test compares the Jacobian-adjusted objective and likelihood,
+both lambdas, EDF, all coefficients, fitted scale/shape, and the complete
+outer Hessian. This `gumbls` fixture uses unit weights because that extended
+family does not apply prior weights to its likelihood; weighted WEI behavior
+is checked against `gamlss::gamlss()` and finite-difference derivatives.
+
 The NBI LAML fixture uses `mgcv::nb(theta=4, link="log")`, with
 `theta = 1/sigma` under the `gamlss.dist::NBI` variance convention. Torch
 supplies an empty `sigma` coefficient design plus the equivalent fixed

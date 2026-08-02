@@ -168,8 +168,8 @@ parameters jointly for Normal location-scale, Poisson log-mean, Gamma mean/CV,
 NBI mean/dispersion, Beta mean/dispersion, Student-t location/scale/shape, and
 BCCG location/scale/shape, BCT location/scale/skewness/tail-shape, and BCPE
 location/scale/skewness/kurtosis, PE location/scale/shape, and uncensored GG
-positive-location/scale/shape, plus uncensored LOGNO mean-log/scale models. All
-paths run on CPU or CUDA.
+positive-location/scale/shape, uncensored LOGNO mean-log/scale, and uncensored
+WEI scale/shape models. All paths run on CPU or CUDA.
 
 ## Whole-model LAML selection
 
@@ -265,8 +265,8 @@ Their ordering and values are checked exactly against
   Beta mean/dispersion, Student-t location/scale/shape, BCCG
   location/scale/shape, BCT location/scale/skewness/tail-shape, and BCPE
   location/scale/skewness/kurtosis, PE location/scale/shape, and uncensored GG
-  positive-location/scale/shape, plus uncensored LOGNO mean-log/scale models,
-  including parametric bootstrap refits.
+  positive-location/scale/shape, uncensored LOGNO mean-log/scale, and
+  uncensored WEI scale/shape models, including parametric bootstrap refits.
 - Tensor terms are consumed through LAML, the generic dense penalized solver,
   the classical fixed-lambda RS/CG paths, or formula fixed-lambda
   L-BFGS/mini-batch fitting.

@@ -13,6 +13,7 @@ from torchgamlss import (
     GG,
     LOGNO,
     PE,
+    WEI,
     Beta,
     GAMLSSLAMLResult,
     Gamma,
@@ -53,6 +54,50 @@ def _mgcv_system():
     )
     coefficient_count = mu_design.shape[1] + sigma_design.shape[1]
     penalty_frame = pd.read_csv(REFERENCE_DIR / "mgcv_laml_penalties.csv")
+    penalties = []
+    for penalty_index in sorted(penalty_frame["penalty"].unique()):
+        rows = penalty_frame[penalty_frame["penalty"] == penalty_index]
+        penalty = torch.zeros(
+            (coefficient_count, coefficient_count),
+            dtype=dtype,
+        )
+        penalty[
+            torch.tensor(rows["row"].to_numpy() - 1),
+            torch.tensor(rows["column"].to_numpy() - 1),
+        ] = torch.tensor(rows["value"].to_numpy(), dtype=dtype)
+        penalties.append(penalty)
+    return (
+        response,
+        weights,
+        mu_design,
+        sigma_design,
+        tuple(penalties),
+        reference,
+    )
+
+
+def _mgcv_wei_system():
+    design_frame = pd.read_csv(REFERENCE_DIR / "mgcv_wei_laml_design.csv")
+    reference = pd.read_csv(REFERENCE_DIR / "mgcv_wei_laml_reference.csv").iloc[0]
+    dtype = torch.float64
+    response = torch.tensor(
+        design_frame["response"].to_numpy(),
+        dtype=dtype,
+    )
+    weights = torch.tensor(
+        design_frame["weight"].to_numpy(),
+        dtype=dtype,
+    )
+    mu_design = torch.tensor(
+        design_frame.filter(regex=r"^mu_").to_numpy(),
+        dtype=dtype,
+    )
+    sigma_design = torch.tensor(
+        design_frame.filter(regex=r"^sigma_").to_numpy(),
+        dtype=dtype,
+    )
+    coefficient_count = mu_design.shape[1] + sigma_design.shape[1]
+    penalty_frame = pd.read_csv(REFERENCE_DIR / "mgcv_wei_laml_penalties.csv")
     penalties = []
     for penalty_index in sorted(penalty_frame["penalty"].unique()):
         rows = penalty_frame[penalty_frame["penalty"] == penalty_index]
@@ -1038,6 +1083,70 @@ def test_gg_implicit_outer_derivatives_match_finite_difference():
     assert implicit.profile_evaluations < finite_difference.profile_evaluations
 
 
+def test_wei_implicit_outer_derivatives_match_finite_difference():
+    dtype = torch.float64
+    data = pd.read_csv(REFERENCE_DIR / "wei_fit_data.csv")
+    response = torch.tensor(data["y"].to_numpy(), dtype=dtype)
+    x = torch.tensor(data["x"].to_numpy(), dtype=dtype)
+    z = torch.tensor(data["z"].to_numpy(), dtype=dtype)
+    mu_design = torch.column_stack(
+        (torch.ones_like(x), x, x.square(), x.pow(3))
+    )
+    sigma_design = torch.column_stack((torch.ones_like(z), z))
+    coefficient_count = mu_design.shape[1] + sigma_design.shape[1]
+    mu_penalty = torch.zeros((coefficient_count, coefficient_count), dtype=dtype)
+    mu_penalty[2:4, 2:4] = torch.eye(2, dtype=dtype)
+    initial_coefficients = torch.tensor(
+        [0.35, 0.55, -0.2, 0.1, 0.05, 0.25],
+        dtype=dtype,
+    )
+
+    results = {}
+    for method in ("implicit", "finite_difference"):
+        results[method] = fit_gamlss_laml(
+            WEI(),
+            response,
+            {"mu": mu_design, "sigma": sigma_design},
+            (mu_penalty,),
+            (6.0,),
+            weights=torch.tensor(data["weight"].to_numpy(), dtype=dtype),
+            offsets={
+                "mu": torch.tensor(data["mu_offset"].to_numpy(), dtype=dtype),
+                "sigma": torch.tensor(
+                    data["sigma_offset"].to_numpy(), dtype=dtype
+                ),
+            },
+            initial_coefficients=initial_coefficients,
+            control=LAMLControl(
+                inner_gradient_tolerance=1e-7,
+                outer_max_iterations=1,
+                outer_derivative_method=method,
+            ),
+        )
+
+    implicit = results["implicit"]
+    finite_difference = results["finite_difference"]
+    torch.testing.assert_close(
+        implicit.history[0].gradient,
+        finite_difference.history[0].gradient,
+        rtol=5e-5,
+        atol=5e-6,
+    )
+    torch.testing.assert_close(
+        implicit.outer_gradient,
+        finite_difference.outer_gradient,
+        rtol=5e-5,
+        atol=5e-6,
+    )
+    torch.testing.assert_close(
+        implicit.outer_hessian,
+        finite_difference.outer_hessian,
+        rtol=3e-3,
+        atol=3e-5,
+    )
+    assert implicit.profile_evaluations < finite_difference.profile_evaluations
+
+
 def test_logno_implicit_outer_derivatives_match_finite_difference():
     dtype = torch.float64
     data = pd.read_csv(REFERENCE_DIR / "logno_fit_data.csv")
@@ -1174,6 +1283,100 @@ def test_logno_laml_equals_normal_laml_on_log_response():
         torch.testing.assert_close(
             log_normal.fitted_parameters[parameter],
             normal.fitted_parameters[parameter],
+        )
+
+
+def test_weibull_laml_matches_mgcv_gumbls_reference():
+    (
+        response,
+        weights,
+        mu_design,
+        sigma_design,
+        penalties,
+        reference,
+    ) = _mgcv_wei_system()
+    result = fit_gamlss_laml(
+        WEI(),
+        response,
+        {"mu": mu_design, "sigma": sigma_design},
+        penalties,
+        (10.0, 10.0),
+        weights=weights,
+        control=LAMLControl(
+            outer_max_iterations=40,
+            outer_gradient_tolerance=2e-5,
+        ),
+    )
+    coefficients = pd.read_csv(
+        REFERENCE_DIR / "mgcv_wei_laml_coefficient_reference.csv"
+    )
+    fitted = pd.read_csv(
+        REFERENCE_DIR / "mgcv_wei_laml_fitted_reference.csv"
+    )
+    weighted_log_jacobian = float(reference["weighted_log_jacobian"])
+
+    assert result.outer_converged
+    assert result.inner_converged
+    assert result.family == "WEI"
+    assert result.parameter_names == ("mu", "sigma")
+    assert result.boundary_status == ("interior", "interior")
+    assert result.penalty_ranks == (6, 5)
+    assert result.combined_penalty_rank == 11
+    assert result.unpenalized_dimension == 4
+    assert float(result.objective) == pytest.approx(
+        float(reference["objective"]) + weighted_log_jacobian,
+        rel=2e-8,
+        abs=2e-8,
+    )
+    assert float(result.log_likelihood) == pytest.approx(
+        float(reference["log_likelihood"]) - weighted_log_jacobian,
+        rel=2e-8,
+        abs=2e-6,
+    )
+    torch.testing.assert_close(
+        result.smoothing_parameters,
+        torch.tensor(
+            [reference["lambda_mu"], reference["lambda_sigma"]],
+            dtype=torch.float64,
+        ),
+        rtol=2e-5,
+        atol=2e-5,
+    )
+    assert float(result.effective_degrees_of_freedom) == pytest.approx(
+        float(reference["effective_degrees_of_freedom"]),
+        rel=3e-6,
+    )
+    expected_hessian = torch.tensor(
+        [
+            [reference["hessian_mu_mu"], reference["hessian_mu_sigma"]],
+            [reference["hessian_mu_sigma"], reference["hessian_sigma_sigma"]],
+        ],
+        dtype=torch.float64,
+    )
+    torch.testing.assert_close(
+        result.outer_hessian,
+        expected_hessian,
+        rtol=3e-5,
+        atol=3e-6,
+    )
+    torch.testing.assert_close(
+        result.coefficients,
+        -torch.tensor(coefficients["coefficient"].to_numpy(), dtype=torch.float64),
+        rtol=3e-5,
+        atol=5e-6,
+    )
+    for parameter in result.parameter_names:
+        torch.testing.assert_close(
+            result.linear_predictors[parameter],
+            torch.tensor(fitted[f"eta_{parameter}"].to_numpy(), dtype=torch.float64),
+            rtol=3e-5,
+            atol=3e-6,
+        )
+        torch.testing.assert_close(
+            result.fitted_parameters[parameter],
+            torch.tensor(fitted[parameter].to_numpy(), dtype=torch.float64),
+            rtol=3e-5,
+            atol=3e-6,
         )
 
 
@@ -2567,6 +2770,121 @@ def test_gg_fixed_lambda_laml_matches_r_gamlss_reference():
         )
 
 
+def test_formula_wei_laml_selects_lambda_and_bootstraps():
+    data = pd.read_csv(REFERENCE_DIR / "wei_fit_data.csv")
+    model = GAMLSS.from_formula(
+        WEI(),
+        {
+            "mu": "y ~ pb(x, intervals=4)",
+            "sigma": "~ 1",
+        },
+        data,
+    )
+    control = LAMLControl(
+        inner_gradient_tolerance=1e-6,
+        outer_max_iterations=30,
+        outer_gradient_tolerance=5e-4,
+    )
+
+    rs_result = model.fit_rs_data(data, weights="weight")
+    result = model.fit_laml_data(
+        data,
+        weights="weight",
+        control=control,
+        warm_start=True,
+    )
+    prediction = model.predict_data(data)
+
+    assert rs_result.converged
+    assert isinstance(result, GAMLSSLAMLResult)
+    assert result.outer_converged
+    assert result.family == "WEI"
+    assert result.parameter_names == ("mu", "sigma")
+    assert result.smoothing_parameter_labels == (("mu", "x", 0),)
+    assert result.smoothing_parameters[0] > 0
+    for parameter in result.parameter_names:
+        torch.testing.assert_close(
+            prediction[parameter],
+            result.fitted_parameters[parameter],
+        )
+
+    bootstrap = model.smooth_bootstrap_data(
+        data,
+        weights="weight",
+        new_data=data.iloc[::24].drop(columns="y"),
+        replicates=10,
+        max_attempts=40,
+        algorithm="laml",
+        control=control,
+        generator=torch.Generator().manual_seed(729),
+    )["mu"]["x"]
+
+    assert bootstrap.algorithm == "laml"
+    assert bootstrap.bootstrap_estimates.shape == (10, 7)
+    assert bootstrap.bootstrap_smoothing_parameters.shape == (10,)
+    assert (bootstrap.bootstrap_smoothing_parameters > 0).all()
+    assert torch.isfinite(bootstrap.bootstrap_smoothing_parameters).all()
+    assert torch.isfinite(bootstrap.bootstrap_estimates).all()
+
+
+def test_wei_fixed_lambda_laml_matches_r_gamlss_reference():
+    data = pd.read_csv(REFERENCE_DIR / "wei_fit_data.csv")
+    fitted_reference = pd.read_csv(
+        REFERENCE_DIR / "wei_laml_fixed_fitted_reference.csv"
+    )
+    fit_reference = pd.read_csv(
+        REFERENCE_DIR / "wei_laml_fixed_reference.csv"
+    ).iloc[0]
+    model = GAMLSS.from_formula(
+        WEI(),
+        {
+            "mu": "y ~ pb(x, lambda_=10)",
+            "sigma": "~ 1",
+        },
+        data,
+    )
+    rs_result = model.fit_rs_data(
+        data,
+        weights="weight",
+        control=RSControl(
+            outer_tolerance=1e-8,
+            max_outer_iterations=300,
+            inner_tolerance=1e-8,
+            max_inner_iterations=300,
+            backfitting_tolerance=1e-8,
+            max_backfitting_iterations=300,
+        ),
+    )
+
+    result = model.fit_laml_data(
+        data,
+        weights="weight",
+        warm_start=True,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-8,
+            inner_max_iterations=200,
+        ),
+    )
+
+    assert rs_result.converged
+    assert result.outer_converged
+    assert result.inner_converged
+    assert result.outer_iterations == 0
+    assert result.boundary_status == ("fixed",)
+    assert float(-result.log_likelihood) == pytest.approx(
+        float(fit_reference["negative_log_likelihood"]),
+        rel=3e-6,
+        abs=3e-6,
+    )
+    for parameter in result.parameter_names:
+        torch.testing.assert_close(
+            result.fitted_parameters[parameter],
+            torch.tensor(fitted_reference[parameter].to_numpy(), dtype=torch.float64),
+            rtol=3e-6,
+            atol=3e-6,
+        )
+
+
 def test_formula_logno_laml_selects_lambda_and_bootstraps():
     data = pd.read_csv(REFERENCE_DIR / "logno_fit_data.csv")
     model = GAMLSS.from_formula(
@@ -3425,6 +3743,42 @@ def test_formula_gg_laml_runs_on_cuda():
             "mu": "y ~ pb(x, intervals=3)",
             "sigma": "~ 1",
             "nu": "~ 1",
+        },
+        data,
+        device="cuda",
+    )
+
+    rs_result = model.fit_rs_data(data, weights="weight")
+    result = model.fit_laml_data(
+        data,
+        weights="weight",
+        warm_start=True,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=30,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+
+    assert rs_result.converged
+    assert result.outer_converged
+    assert result.coefficients.device.type == "cuda"
+    assert result.smoothing_parameters.device.type == "cuda"
+    assert result.outer_hessian.device.type == "cuda"
+    assert all(
+        parameter.device.type == "cuda"
+        for parameter in result.fitted_parameters.values()
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+def test_formula_wei_laml_runs_on_cuda():
+    data = pd.read_csv(REFERENCE_DIR / "wei_fit_data.csv")
+    model = GAMLSS.from_formula(
+        WEI(),
+        {
+            "mu": "y ~ pb(x, intervals=3)",
+            "sigma": "~ 1",
         },
         data,
         device="cuda",

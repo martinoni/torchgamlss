@@ -285,7 +285,7 @@ For each successful replicate, TorchGAMLSS:
 Use the same `algorithm=` and `control=` settings as the original fit so the
 bootstrap distribution represents the estimator that produced the reported
 model. For a supported Normal, Poisson, NBI, Gamma, Beta, Student-t, BCCG, BCT,
-BCPE, PE, uncensored GG, or uncensored LOGNO model fitted with
+BCPE, PE, uncensored GG, uncensored LOGNO, or uncensored WEI model fitted with
 `fit_laml_data()`, use:
 
 ```python
@@ -311,9 +311,10 @@ identity-`mu`/log-`sigma`/log-`nu` links, plus BCCG models with
 identity-`mu`/log-`sigma`/identity-`nu` links and BCT models with
 identity-`mu`/log-`sigma`/identity-`nu`/log-`tau` links. BCPE uses the same
 four standard links; PE uses identity-`mu`/log-`sigma`/log-`nu`. It is followed
-by uncensored GG with log-`mu`/log-`sigma`/identity-`nu` and uncensored LOGNO
-with identity-`mu`/log-`sigma`. LAML bootstrap is materially more expensive
-than RS or CG bootstrap, so use `max_attempts` and inspect `failure_rate`.
+by uncensored GG with log-`mu`/log-`sigma`/identity-`nu`, uncensored LOGNO with
+identity-`mu`/log-`sigma`, and uncensored WEI with log-`mu`/log-`sigma`. LAML
+bootstrap is materially more expensive than RS or CG bootstrap, so use
+`max_attempts` and inspect `failure_rate`.
 
 The reported pointwise intervals are percentile bootstrap intervals.
 `standard_errors` and `covariance_matrix` are empirical across the successful

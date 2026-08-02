@@ -133,6 +133,13 @@ gg_laml_fixed_reference_path <- file.path(
 gg_laml_fixed_fitted_reference_path <- file.path(
   reference_dir, "gg_laml_fixed_fitted_reference.csv"
 )
+wei_fit_data_path <- file.path(reference_dir, "wei_fit_data.csv")
+wei_laml_fixed_reference_path <- file.path(
+  reference_dir, "wei_laml_fixed_reference.csv"
+)
+wei_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "wei_laml_fixed_fitted_reference.csv"
+)
 logno_fit_data_path <- file.path(reference_dir, "logno_fit_data.csv")
 logno_laml_fixed_reference_path <- file.path(
   reference_dir, "logno_laml_fixed_reference.csv"
@@ -1786,6 +1793,65 @@ gg_laml_fixed_fitted_reference <- data.frame(
   nu = fitted(gg_laml_fixed_fit, what = "nu")
 )
 
+wei_n <- 160
+wei_x <- seq(-1, 1, length.out = wei_n)
+wei_z <- cos(seq(0, 2 * pi, length.out = wei_n))
+wei_mu_offset <- 0.03 * cos(seq(0, 3 * pi, length.out = wei_n))
+wei_sigma_offset <- 0.02 * sin(seq(0, 4 * pi, length.out = wei_n))
+wei_weight <- rep(c(1, 1.5, 2, 0.75), length.out = wei_n)
+wei_mu <- exp(
+  0.35 + 0.55 * wei_x - 0.2 * wei_x^2 +
+    0.1 * wei_x^3 + wei_mu_offset
+)
+wei_sigma <- exp(0.05 + 0.25 * wei_z + wei_sigma_offset)
+wei_probability <- (((seq_len(wei_n) * 71) %% wei_n) + 0.5) / wei_n
+wei_fit_data <- data.frame(
+  x = wei_x,
+  z = wei_z,
+  y = qWEI(
+    wei_probability,
+    mu = wei_mu,
+    sigma = wei_sigma
+  ),
+  weight = wei_weight,
+  mu_offset = wei_mu_offset,
+  sigma_offset = wei_sigma_offset
+)
+wei_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  weights = weight,
+  family = WEI(),
+  method = RS(),
+  data = wei_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+wei_laml_fixed_smooth <- getSmo(
+  wei_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+wei_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(wei_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(wei_laml_fixed_fit)),
+  smoothing_parameter = wei_laml_fixed_smooth$lambda,
+  outer_iterations = wei_laml_fixed_fit$iter,
+  converged = wei_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+wei_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(wei_laml_fixed_fit, what = "mu"),
+  sigma = fitted(wei_laml_fixed_fit, what = "sigma")
+)
+
 logno_n <- 160
 logno_x <- seq(-1, 1, length.out = logno_n)
 logno_z <- cos(seq(0, 2 * pi, length.out = logno_n))
@@ -3165,6 +3231,17 @@ if (check_only) {
     gg_laml_fixed_fitted_reference_path,
     tolerance = 3e-6
   )
+  assert_close(wei_fit_data, wei_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    wei_laml_fixed_reference,
+    wei_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    wei_laml_fixed_fitted_reference,
+    wei_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(logno_fit_data, logno_fit_data_path, tolerance = 1e-12)
   assert_close(
     logno_laml_fixed_reference,
@@ -3394,6 +3471,12 @@ if (check_only) {
   write_csv_lf(
     gg_laml_fixed_fitted_reference,
     gg_laml_fixed_fitted_reference_path
+  )
+  write_csv_lf(wei_fit_data, wei_fit_data_path)
+  write_csv_lf(wei_laml_fixed_reference, wei_laml_fixed_reference_path)
+  write_csv_lf(
+    wei_laml_fixed_fitted_reference,
+    wei_laml_fixed_fitted_reference_path
   )
   write_csv_lf(logno_fit_data, logno_fit_data_path)
   write_csv_lf(logno_laml_fixed_reference, logno_laml_fixed_reference_path)

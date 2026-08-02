@@ -80,9 +80,9 @@ positive `mu` and `sigma` with log links plus unrestricted shape `nu` with an
 identity link. Its `nu=0` limit is log-normal with median `mu`. All four
 families require strictly positive responses.
 
-Uncensored GG and LOGNO additionally support whole-model LAML selection and
-LAML bootstrap with their standard links. Censored GG and LOGNO continue to
-use the existing censored-likelihood fitting routes rather than LAML.
+Uncensored GG, LOGNO, and WEI additionally support whole-model LAML selection
+and LAML bootstrap with their standard links. Their censored wrappers continue
+to use the existing censored-likelihood fitting routes rather than LAML.
 
 Continuous event-time families expose `survival()`, `hazard()`, and
 `cumulative_hazard()` alongside density, CDF, quantile, sampling, mean, and

@@ -6,8 +6,8 @@ mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion,
 Student-t location/scale/shape, BCCG location/scale/shape, BCT
 location/scale/skewness/tail-shape, and BCPE
 location/scale/skewness/kurtosis, PE location/scale/shape, and GG
-positive-location/scale/shape, plus uncensored LOGNO mean-log/scale models. A
-Normal formula model uses:
+positive-location/scale/shape, uncensored LOGNO mean-log/scale, and uncensored
+WEI scale/shape models. A Normal formula model uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -313,6 +313,24 @@ have identical coefficients, smoothing parameters, outer gradients, and outer
 Hessians. This supplies a direct bridge to the validated Normal/`mgcv::gaulss`
 path in addition to the fixed-lambda `gamlss::gamlss(LOGNO())` comparison.
 Censored LOGNO remains outside the current LAML scope.
+
+For Weibull, the standard log/log links parameterize positive scale `mu` and
+shape `sigma`. With `X = -log(Y)`, the transformed response follows the Gumbel
+location-scale model used by `mgcv::gumbls()` with
+`m = -log(mu)` and `B = -log(sigma)`. Therefore:
+
+```text
+negative LAML_WEI(y) = negative LAML_Gumbel(-log(y))
+                       + sum_i weight_i log(y_i).
+```
+
+For identical design matrices, the Weibull coefficient blocks are the
+negatives of the Gumbel blocks. Their quadratic penalties, selected lambdas,
+outer gradients, and outer Hessians are unchanged. The direct `gumbls` gate
+uses unit weights because that `mgcv` extended family does not apply prior
+weights to its likelihood; weighted behavior is covered separately by the
+`gamlss::gamlss(WEI())` and finite-difference derivative gates. Censored WEI
+remains outside the current LAML scope.
 
 ## Formula and model integration
 
@@ -696,15 +714,29 @@ Jacobian shift in the objective. Formula selection and ten-replicate LAML
 bootstrap estimate both predictors, and the complete uncensored path runs on
 CUDA.
 
+## Weibull reference, Gumbel identity, and derivative gates
+
+The committed WEI reference fixes the `mu` P-spline lambda at 10 and compares
+the weighted warm-started joint inner fit with `gamlss::gamlss()` for all 160
+fitted `mu` and `sigma` values and the negative log likelihood. A separate
+weighted audit compares the implicit outer gradient and analytic Hessian with
+finite differences. The transformed-response gate exports exact
+`mgcv::gumbls(link=list("identity", "identity"))` designs and penalties, then
+compares the Jacobian-adjusted objective and likelihood, both lambdas, EDF,
+sign-reversed coefficients, fitted parameters, and the complete outer
+Hessian. Formula selection and ten-replicate LAML bootstrap estimate both
+predictors, and the complete uncensored path runs on CUDA.
+
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
   Poisson log-link, NBI and Gamma log/log, Beta logit/logit, and Student-t
   identity/log/log, BCCG identity/log/identity, BCT
   identity/log/identity/log, BCPE identity/log/identity/log, and PE
-  identity/log/log, plus uncensored GG log/log/identity and uncensored LOGNO
-  identity/log models; the low-level family-driven core is deliberately
-  exposed, but other families are not yet claimed as validated;
+  identity/log/log, plus uncensored GG log/log/identity, uncensored LOGNO
+  identity/log, and uncensored WEI log/log models; the low-level family-driven
+  core is deliberately exposed, but other families are not yet claimed as
+  validated;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
   it avoids repeated inner fits and finite-difference noise, but its local
   autograd work can be expensive for models with many coefficients or free

@@ -852,7 +852,8 @@ Important exclusions include:
   Beta mean/dispersion, Student-t location/scale/shape, BCCG
   location/scale/shape, BCT location/scale/skewness/tail-shape, and BCPE
   location/scale/skewness/kurtosis, PE location/scale/shape, and uncensored GG
-  positive-location/scale/shape, plus uncensored LOGNO mean-log/scale families;
+  positive-location/scale/shape, uncensored LOGNO mean-log/scale, and
+  uncensored WEI scale/shape families;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;

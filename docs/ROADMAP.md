@@ -165,14 +165,17 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
   transition, bootstrap, and CUDA
 - [x] Uncensored LOGNO identity/log LAML with fixed-lambda `gamlss` parity,
   exact Normal-on-log objective/derivative identity, bootstrap, and CUDA
+- [x] Uncensored WEI log/log LAML with weighted fixed-lambda `gamlss` parity,
+  exact Gumbel transformed-response `mgcv` parity, derivative audits,
+  bootstrap, and CUDA
 - [x] Implicit-function outer LAML gradients with a finite-difference audit
   fallback and reduced profile-evaluation diagnostics
 - [x] Fully analytic outer LAML Hessian from second-order implicit coefficient
   sensitivities and exact autograd partials, with no displaced profile fits
 - [ ] Extend whole-model LAML to the remaining multi-parameter families,
-  beginning with Weibull, followed by inverse-Gaussian, while retaining an
-  explicit reference strategy for families without a directly overlapping
-  `mgcv` location-scale family
+  beginning with inverse-Gaussian, while retaining an explicit reference
+  strategy for families without a directly overlapping `mgcv` location-scale
+  family
 - [x] Fixed-lambda tensor-product full smooths and ANOVA-style tensor
   interactions through the generic dense solver
 - [x] Fixed-lambda `te()`/`ti()` formula construction, prediction, L-BFGS,

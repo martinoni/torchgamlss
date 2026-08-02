@@ -883,6 +883,155 @@ scat_fitted_reference <- data.frame(
   mu = as.numeric(fitted(scat_fit))
 )
 
+wei_design_path <- file.path(
+  reference_dir,
+  "mgcv_wei_laml_design.csv"
+)
+wei_penalty_path <- file.path(
+  reference_dir,
+  "mgcv_wei_laml_penalties.csv"
+)
+wei_summary_path <- file.path(
+  reference_dir,
+  "mgcv_wei_laml_reference.csv"
+)
+wei_coefficient_path <- file.path(
+  reference_dir,
+  "mgcv_wei_laml_coefficient_reference.csv"
+)
+wei_fitted_path <- file.path(
+  reference_dir,
+  "mgcv_wei_laml_fitted_reference.csv"
+)
+
+wei_observation_count <- 360
+set.seed(20260807)
+wei_x <- runif(wei_observation_count, -1, 1)
+wei_z <- runif(wei_observation_count, -1, 1)
+wei_mu <- exp(
+  0.35 + 0.55 * sin(pi * wei_x) + 0.15 * wei_x
+)
+wei_sigma <- exp(
+  0.1 + 0.7 * sin(pi * wei_z) - 0.15 * wei_z
+)
+wei_probability <- runif(wei_observation_count, 0.002, 0.998)
+wei_y <- qweibull(
+  wei_probability,
+  shape = wei_sigma,
+  scale = wei_mu
+)
+wei_weight <- rep(1, wei_observation_count)
+wei_data <- data.frame(
+  gumbel_response = -log(wei_y),
+  x = wei_x,
+  z = wei_z,
+  weight = wei_weight
+)
+wei_setup <- gam(
+  list(
+    gumbel_response ~ s(x, bs = "ps", k = 8),
+    ~s(z, bs = "ps", k = 7)
+  ),
+  data = wei_data,
+  weights = weight,
+  family = gumbls(link = list("identity", "identity")),
+  method = "REML",
+  fit = FALSE
+)
+wei_fit <- gam(G = wei_setup, method = "REML")
+wei_predictor_indices <- attr(wei_setup$X, "lpi")
+wei_mu_design <- wei_setup$X[
+  ,
+  wei_predictor_indices[[1]],
+  drop = FALSE
+]
+wei_sigma_design <- wei_setup$X[
+  ,
+  wei_predictor_indices[[2]],
+  drop = FALSE
+]
+colnames(wei_mu_design) <- paste0(
+  "mu_",
+  seq_len(ncol(wei_mu_design))
+)
+colnames(wei_sigma_design) <- paste0(
+  "sigma_",
+  seq_len(ncol(wei_sigma_design))
+)
+wei_design_reference <- data.frame(
+  response = wei_y,
+  gumbel_response = wei_setup$y,
+  weight = wei_setup$w,
+  wei_mu_design,
+  wei_sigma_design,
+  check.names = FALSE
+)
+wei_coefficient_count <- ncol(wei_setup$X)
+wei_penalty_references <- lapply(
+  seq_along(wei_setup$S),
+  function(penalty_index) {
+    full_penalty <- matrix(
+      0,
+      nrow = wei_coefficient_count,
+      ncol = wei_coefficient_count
+    )
+    start <- wei_setup$off[penalty_index]
+    term_indices <- start:(
+      start + nrow(wei_setup$S[[penalty_index]]) - 1
+    )
+    full_penalty[term_indices, term_indices] <- (
+      wei_setup$S[[penalty_index]]
+    )
+    data.frame(
+      penalty = penalty_index,
+      row = rep(
+        seq_len(wei_coefficient_count),
+        each = wei_coefficient_count
+      ),
+      column = rep(
+        seq_len(wei_coefficient_count),
+        wei_coefficient_count
+      ),
+      value = as.vector(t(full_penalty))
+    )
+  }
+)
+wei_penalty_reference <- do.call(
+  rbind,
+  wei_penalty_references
+)
+wei_outer_gradient <- as.numeric(wei_fit$outer.info$grad)
+wei_outer_hessian <- wei_fit$outer.info$hess
+wei_summary_reference <- data.frame(
+  mgcv_version = as.character(packageVersion("mgcv")),
+  objective = as.numeric(wei_fit$gcv.ubre),
+  log_likelihood = as.numeric(logLik(wei_fit)),
+  weighted_log_jacobian = sum(wei_setup$w * log(wei_y)),
+  lambda_mu = as.numeric(wei_fit$sp[1]),
+  lambda_sigma = as.numeric(wei_fit$sp[2]),
+  effective_degrees_of_freedom = sum(wei_fit$edf),
+  outer_iterations = wei_fit$outer.info$iter,
+  outer_convergence = wei_fit$outer.info$conv,
+  gradient_mu = wei_outer_gradient[1],
+  gradient_sigma = wei_outer_gradient[2],
+  hessian_mu_mu = wei_outer_hessian[1, 1],
+  hessian_mu_sigma = wei_outer_hessian[1, 2],
+  hessian_sigma_sigma = wei_outer_hessian[2, 2],
+  coefficient_count = length(coef(wei_fit))
+)
+wei_coefficient_reference <- data.frame(
+  index = seq_along(coef(wei_fit)),
+  coefficient = as.numeric(coef(wei_fit)),
+  effective_degrees_of_freedom = as.numeric(wei_fit$edf)
+)
+wei_link_prediction <- predict(wei_fit, type = "link")
+wei_fitted_reference <- data.frame(
+  eta_mu = -wei_link_prediction[, 1],
+  eta_sigma = -wei_link_prediction[, 2],
+  mu = exp(-wei_link_prediction[, 1]),
+  sigma = exp(-wei_link_prediction[, 2])
+)
+
 write_reference <- function(value, path) {
   connection <- file(path, open = "wb")
   on.exit(close(connection))
@@ -942,7 +1091,8 @@ check_reference <- function(actual, path, label) {
         "gamma_summary",
         "beta_summary",
         "nbi_summary",
-        "scat_summary"
+        "scat_summary",
+        "wei_summary"
       )
       optimizer_sensitive_output <- label %in% c(
         "gamma_coefficient",
@@ -952,7 +1102,9 @@ check_reference <- function(actual, path, label) {
         "nbi_coefficient",
         "nbi_fitted",
         "scat_coefficient",
-        "scat_fitted"
+        "scat_fitted",
+        "wei_coefficient",
+        "wei_fitted"
       )
       if (optimizer_sensitive_output) {
         relative_tolerance <- 1e-5
@@ -1139,6 +1291,26 @@ references <- list(
   scat_fitted = list(
     value = scat_fitted_reference,
     path = scat_fitted_path
+  ),
+  wei_design = list(
+    value = wei_design_reference,
+    path = wei_design_path
+  ),
+  wei_penalty = list(
+    value = wei_penalty_reference,
+    path = wei_penalty_path
+  ),
+  wei_summary = list(
+    value = wei_summary_reference,
+    path = wei_summary_path
+  ),
+  wei_coefficient = list(
+    value = wei_coefficient_reference,
+    path = wei_coefficient_path
+  ),
+  wei_fitted = list(
+    value = wei_fitted_reference,
+    path = wei_fitted_path
   )
 )
 
