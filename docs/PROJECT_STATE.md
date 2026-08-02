@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | LOGNO working tree passed 666 local tests, CUDA, all R gates, and the installed-wheel smoke test; remote CI pending |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | LOGNO implementation head `5055372` passed 11/11 CI jobs, 666 local tests, CUDA, all R gates, and the installed-wheel smoke test |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -526,7 +526,9 @@ family-driven nested LAML core with its standard identity/log links.
 - all 666 Python tests pass without skips; all five R gates, Ruff, dependency
   and bytecode checks, package build, strict Twine validation, and the
   installed-wheel smoke test pass locally;
-- remote GitHub Actions validation is pending publication of this slice.
+- GitHub Actions passed all 11/11 jobs on implementation head `5055372`
+  ([run 30757334270](https://github.com/martinoni/torchgamlss/actions/runs/30757334270)),
+  including Python 3.10--3.13 on Linux and Windows.
 
 ### Later slices
 
