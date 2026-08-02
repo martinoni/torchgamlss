@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | WEI working tree passed 671 local tests, CUDA, all R gates, and the installed-wheel smoke test; remote CI pending |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | WEI stabilization head `d3396a0` passed 11/11 CI jobs, 671 local tests, CUDA, all R gates, and the installed-wheel smoke test |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -560,7 +560,17 @@ family-driven nested LAML core with its standard log/log links.
 - all 671 Python tests pass without skips; all five R gates, Ruff, dependency
   and bytecode checks, package build, strict Twine validation, and the
   installed-wheel smoke test pass locally;
-- remote GitHub Actions validation is pending publication of this slice.
+- the first WEI implementation run passed 10/11 jobs; Python 3.12/Linux
+  reproduced two pre-existing numerical test instabilities without failing a
+  WEI test: PE's regularized-gamma second-difference audit and a direct-start
+  BCCG formula fit. The PE audit now uses an `8e-3` Hessian-difference step to
+  avoid cancellation, while retaining its estimator and comparison tolerance;
+  the BCCG formula gate now uses its documented compatible RS warm start;
+- both stabilized tests passed five consecutive focused repetitions, all
+  66 LAML tests passed locally, and GitHub Actions passed all 11/11 jobs on
+  stabilization head `d3396a0`
+  ([run 30761725213](https://github.com/martinoni/torchgamlss/actions/runs/30761725213)),
+  including Python 3.10--3.13 on Linux and Windows.
 
 ### Later slices
 
