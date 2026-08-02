@@ -126,6 +126,13 @@ pe_laml_fixed_fitted_reference_path <- file.path(
   reference_dir, "pe_laml_fixed_fitted_reference.csv"
 )
 pe_cg_reference_path <- file.path(reference_dir, "pe_cg_reference.csv")
+gg_fit_data_path <- file.path(reference_dir, "gg_fit_data.csv")
+gg_laml_fixed_reference_path <- file.path(
+  reference_dir, "gg_laml_fixed_reference.csv"
+)
+gg_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "gg_laml_fixed_fitted_reference.csv"
+)
 bcpe_reference_path <- file.path(reference_dir, "bcpe_reference.csv")
 bcpe_fit_data_path <- file.path(reference_dir, "bcpe_fit_data.csv")
 bcpe_rs_reference_path <- file.path(reference_dir, "bcpe_rs_reference.csv")
@@ -1708,6 +1715,70 @@ pe_cg_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+gg_n <- 160
+gg_x <- seq(-1, 1, length.out = gg_n)
+gg_z <- cos(seq(0, 2 * pi, length.out = gg_n))
+gg_w <- sin(seq(0, 2 * pi, length.out = gg_n))
+gg_mu_offset <- 0.04 * cos(seq(0, 3 * pi, length.out = gg_n))
+gg_sigma_offset <- 0.02 * sin(seq(0, 4 * pi, length.out = gg_n))
+gg_nu_offset <- 0.03 * cos(seq(0, 5 * pi, length.out = gg_n))
+gg_weight <- rep(c(1, 1.5, 2, 0.75), length.out = gg_n)
+gg_mu <- exp(0.5 + 0.35 * gg_x + gg_mu_offset)
+gg_sigma <- exp(-0.55 + 0.12 * gg_z + gg_sigma_offset)
+gg_nu <- 0.7 + 0.08 * gg_w + gg_nu_offset
+gg_probability <- (((seq_len(gg_n) * 71) %% gg_n) + 0.5) / gg_n
+gg_fit_data <- data.frame(
+  x = gg_x,
+  z = gg_z,
+  w = gg_w,
+  y = qGG(
+    gg_probability,
+    mu = gg_mu,
+    sigma = gg_sigma,
+    nu = gg_nu
+  ),
+  weight = gg_weight,
+  mu_offset = gg_mu_offset,
+  sigma_offset = gg_sigma_offset,
+  nu_offset = gg_nu_offset
+)
+gg_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  weights = weight,
+  family = GG(),
+  method = RS(),
+  data = gg_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+gg_laml_fixed_smooth <- getSmo(
+  gg_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+gg_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(gg_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(gg_laml_fixed_fit)),
+  smoothing_parameter = gg_laml_fixed_smooth$lambda,
+  outer_iterations = gg_laml_fixed_fit$iter,
+  converged = gg_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+gg_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(gg_laml_fixed_fit, what = "mu"),
+  sigma = fitted(gg_laml_fixed_fit, what = "sigma"),
+  nu = fitted(gg_laml_fixed_fit, what = "nu")
+)
+
 bcpe_n <- 160
 bcpe_x <- seq(-1, 1, length.out = bcpe_n)
 bcpe_z <- cos(seq(0, 2 * pi, length.out = bcpe_n))
@@ -3017,6 +3088,17 @@ if (check_only) {
     tolerance = 3e-6
   )
   assert_close(pe_cg_reference, pe_cg_reference_path, tolerance = 1e-8)
+  assert_close(gg_fit_data, gg_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    gg_laml_fixed_reference,
+    gg_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    gg_laml_fixed_fitted_reference,
+    gg_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(bcpe_reference, bcpe_reference_path, tolerance = 1e-9)
   assert_close(bcpe_fit_data, bcpe_fit_data_path, tolerance = 1e-12)
   assert_close(bcpe_rs_reference, bcpe_rs_reference_path, tolerance = 1e-6)
@@ -3230,6 +3312,12 @@ if (check_only) {
     pe_laml_fixed_fitted_reference_path
   )
   write_csv_lf(pe_cg_reference, pe_cg_reference_path)
+  write_csv_lf(gg_fit_data, gg_fit_data_path)
+  write_csv_lf(gg_laml_fixed_reference, gg_laml_fixed_reference_path)
+  write_csv_lf(
+    gg_laml_fixed_fitted_reference,
+    gg_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(bcpe_reference, bcpe_reference_path)
   write_csv_lf(bcpe_fit_data, bcpe_fit_data_path)
   write_csv_lf(bcpe_rs_reference, bcpe_rs_reference_path)

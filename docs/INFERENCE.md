@@ -285,7 +285,7 @@ For each successful replicate, TorchGAMLSS:
 Use the same `algorithm=` and `control=` settings as the original fit so the
 bootstrap distribution represents the estimator that produced the reported
 model. For a supported Normal, Poisson, NBI, Gamma, Beta, Student-t, BCCG, BCT,
-BCPE, or PE model fitted with `fit_laml_data()`, use:
+BCPE, PE, or uncensored GG model fitted with `fit_laml_data()`, use:
 
 ```python
 from torchgamlss import LAMLControl
@@ -309,7 +309,8 @@ models with logit-`mu`/logit-`sigma` links, and Student-t models with
 identity-`mu`/log-`sigma`/log-`nu` links, plus BCCG models with
 identity-`mu`/log-`sigma`/identity-`nu` links and BCT models with
 identity-`mu`/log-`sigma`/identity-`nu`/log-`tau` links. BCPE uses the same
-four standard links; PE uses identity-`mu`/log-`sigma`/log-`nu`. It is
+four standard links; PE uses identity-`mu`/log-`sigma`/log-`nu`. It is followed
+by uncensored GG with log-`mu`/log-`sigma`/identity-`nu`. LAML bootstrap is
 materially more expensive than RS or CG bootstrap, so use `max_attempts` and
 inspect `failure_rate`.
 

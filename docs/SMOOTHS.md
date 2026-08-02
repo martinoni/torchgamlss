@@ -362,7 +362,8 @@ low-level row-product and penalty embedding are checked against
   NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
   location/scale/shape, BCCG location/scale/shape, BCT
   location/scale/skewness/tail-shape, and BCPE
-  location/scale/skewness/kurtosis, and PE location/scale/shape models.
+  location/scale/skewness/kurtosis, PE location/scale/shape, and uncensored GG
+  positive-location/scale/shape models.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
   additive models, including fixed-lambda tensor terms. Analytic inference

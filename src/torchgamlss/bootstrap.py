@@ -53,6 +53,7 @@ def validate_bootstrap_refit(
             BoxCoxPowerExponential,
             BoxCoxT,
             Gamma,
+            GeneralizedGamma,
             NegativeBinomial,
             Normal,
             Poisson,
@@ -65,6 +66,7 @@ def validate_bootstrap_refit(
         is_poisson = isinstance(model.family, Poisson)
         is_nbi = isinstance(model.family, NegativeBinomial)
         is_gamma = isinstance(model.family, Gamma)
+        is_gg = isinstance(model.family, GeneralizedGamma)
         is_beta = isinstance(model.family, Beta)
         is_student_t = isinstance(model.family, StudentT)
         is_bccg = isinstance(model.family, BoxCoxColeGreen)
@@ -76,6 +78,7 @@ def validate_bootstrap_refit(
             or is_poisson
             or is_nbi
             or is_gamma
+            or is_gg
             or is_beta
             or is_student_t
             or is_bccg
@@ -85,7 +88,7 @@ def validate_bootstrap_refit(
         ):
             raise ValueError(
                 "LAML bootstrap currently supports Normal, Poisson, NBI, "
-                "Gamma, Beta, Student-t, BCCG, BCT, BCPE, and PE families"
+                "Gamma, Beta, Student-t, BCCG, BCT, BCPE, PE, and GG families"
             )
         if is_normal and (
             not isinstance(model.family.links["mu"], IdentityLink)
@@ -108,6 +111,15 @@ def validate_bootstrap_refit(
             or not isinstance(model.family.links["sigma"], LogLink)
         ):
             raise ValueError("Gamma LAML bootstrap requires log mu and log sigma links")
+        if is_gg and (
+            not isinstance(model.family.links["mu"], LogLink)
+            or not isinstance(model.family.links["sigma"], LogLink)
+            or not isinstance(model.family.links["nu"], IdentityLink)
+        ):
+            raise ValueError(
+                "GG LAML bootstrap requires log mu, log sigma, "
+                "and identity nu links"
+            )
         if is_beta and (
             not isinstance(model.family.links["mu"], LogitLink)
             or not isinstance(model.family.links["sigma"], LogitLink)

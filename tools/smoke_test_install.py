@@ -485,6 +485,38 @@ def main() -> None:
     if not torch.isfinite(pe_laml_fit.outer_hessian).all():
         raise RuntimeError("installed PE LAML Hessian is non-finite")
 
+    gg_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    gg_mu = torch.exp(0.5 + 0.3 * torch.sin(torch.pi * gg_x) + 0.1 * gg_x)
+    gg_sigma = torch.full_like(gg_mu, 0.58)
+    gg_nu = torch.full_like(gg_mu, 0.8)
+    gg_probability = (
+        torch.arange(80, dtype=torch.float64).mul(37).remainder(80) + 0.5
+    ) / 80
+    gg_y = GG().quantile(
+        gg_probability,
+        {"mu": gg_mu, "sigma": gg_sigma, "nu": gg_nu},
+    ).diagonal()
+    gg_frame = pd.DataFrame({"x": gg_x.numpy(), "y": gg_y.numpy()})
+    gg_laml_model = GAMLSS.from_formula(
+        GG(),
+        {
+            "mu": "y ~ pb(x, intervals=3, lambda_=10)",
+            "sigma": "~ 1",
+            "nu": "~ 1",
+        },
+        gg_frame,
+    )
+    gg_rs_fit = gg_laml_model.fit_rs_data(gg_frame)
+    gg_laml_fit = gg_laml_model.fit_laml_data(gg_frame, warm_start=True)
+    if not gg_rs_fit.converged:
+        raise RuntimeError("installed GG RS warm start did not converge")
+    if not isinstance(gg_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed GG LAML result is invalid")
+    if not gg_laml_fit.outer_converged:
+        raise RuntimeError("installed GG LAML fit did not converge")
+    if not torch.isfinite(gg_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed GG LAML Hessian is non-finite")
+
     bootstrap_x = torch.linspace(-1.0, 1.0, 40, dtype=torch.float64)
     bootstrap_generator = torch.Generator().manual_seed(44)
     bootstrap_y = (

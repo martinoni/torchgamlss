@@ -5,8 +5,8 @@ implementation for additive Normal location-scale, Poisson log-mean, Gamma
 mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion,
 Student-t location/scale/shape, BCCG location/scale/shape, BCT
 location/scale/skewness/tail-shape, and BCPE
-location/scale/skewness/kurtosis, and PE location/scale/shape models. A Normal
-formula model uses:
+location/scale/skewness/kurtosis, PE location/scale/shape, and GG
+positive-location/scale/shape models. A Normal formula model uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -288,6 +288,15 @@ Box-Cox transform or positive-support truncation. A fixed-lambda inner fit is
 checked against `gamlss::gamlss(PE())`, while the outer gradient and Hessian
 are audited independently against finite-difference profiles. A compatible
 RS warm start is recommended when tail shape is weakly identified.
+
+For generalized Gamma, the standard log/log/identity links parameterize
+positive median-like location, scale, and unrestricted shape. The fixed-lambda
+inner fit is checked against `gamlss::gamlss(GG())`, while the outer gradient
+and Hessian are audited independently. The likelihood uses a stable
+log-normal-limit series for `|nu| <= 0.05`; the fourth-order derivative gate is
+kept away from that piecewise transition. Current LAML support is for
+uncensored GG responses; `CensoredFamily(GG(), ...)` remains available through
+its existing likelihood and fitting routes but is not yet claimed for LAML.
 
 ## Formula and model integration
 
@@ -648,14 +657,26 @@ weighted audit compares the implicit outer gradient and analytic Hessian with
 finite differences. Formula selection and ten-replicate LAML bootstrap
 estimate all three predictors, and the complete path runs on CUDA.
 
+## Generalized Gamma reference and derivative gates
+
+The committed GG reference fixes the `mu` P-spline lambda at 10 and compares
+the warm-started joint inner fit with `gamlss::gamlss()` for all 160 fitted
+`mu`, `sigma`, and `nu` values and the negative log likelihood. A separate
+weighted audit estimates all three parameters while keeping every fitted
+`nu` away from the piecewise log-normal transition, then compares the implicit
+outer gradient and analytic Hessian with finite differences. Formula selection
+and ten-replicate LAML bootstrap estimate all three predictors, and the
+complete uncensored path runs on CUDA.
+
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
   Poisson log-link, NBI and Gamma log/log, Beta logit/logit, and Student-t
   identity/log/log, BCCG identity/log/identity, BCT
   identity/log/identity/log, BCPE identity/log/identity/log, and PE
-  identity/log/log models; the low-level family-driven core is deliberately
-  exposed, but other families are not yet claimed as validated;
+  identity/log/log, plus uncensored GG log/log/identity models; the low-level
+  family-driven core is deliberately exposed, but other families are not yet
+  claimed as validated;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
   it avoids repeated inner fits and finite-difference noise, but its local
   autograd work can be expensive for models with many coefficients or free
