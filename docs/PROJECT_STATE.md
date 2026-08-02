@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | GG validation passes 661 local tests, CUDA, all R gates, and the installed-wheel smoke test; remote CI is pending |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | GG validation head `42ee44d` passed 11/11 CI jobs, 661 local tests, CUDA, all R gates, and the installed-wheel smoke test |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -495,8 +495,9 @@ family-driven nested LAML core with its standard log/log/identity links.
 - all 661 Python tests pass without skips; all five R gates, Ruff, dependency
   and bytecode checks, package build, strict Twine validation, and the
   installed-wheel smoke test pass locally;
-- remote GitHub Actions validation remains pending for the GG implementation
-  commit.
+- GitHub Actions passed all 11/11 jobs on implementation head `42ee44d`
+  ([run 30726092266](https://github.com/martinoni/torchgamlss/actions/runs/30726092266)),
+  including Python 3.10--3.13 on Linux and Windows.
 
 ### Later slices
 
