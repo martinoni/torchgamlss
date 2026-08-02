@@ -14,6 +14,7 @@ from torchgamlss import (
     TF,
     Beta,
     Gamma,
+    LAMLControl,
     NegativeBinomial,
     Normal,
     Poisson,
@@ -245,3 +246,54 @@ def test_quantile_bootstrap_reselects_smoothing_and_is_reproducible():
     )
     assert cg.algorithm == "cg"
     assert cg.bootstrap_estimates.shape == (10, len(new_data), 1)
+
+
+def test_quantile_bootstrap_supports_whole_model_laml_refits():
+    observation_count = 40
+    x = torch.linspace(-1.0, 1.0, observation_count, dtype=torch.float64)
+    generator = torch.Generator().manual_seed(44)
+    response = (
+        0.4
+        + torch.sin(2.5 * x)
+        + 0.16
+        * torch.randn(
+            observation_count,
+            dtype=torch.float64,
+            generator=generator,
+        )
+    )
+    data = pd.DataFrame({"y": response.numpy(), "x": x.numpy()})
+    model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ pb(x, intervals=4)", "sigma": "~ 1"},
+        data,
+    )
+    control = LAMLControl(
+        outer_max_iterations=25,
+        outer_gradient_tolerance=1e-4,
+    )
+    fit = model.fit_laml_data(data, control=control)
+    original_smoothing_parameter = (
+        model.smooth_terms["mu"]["x"].smoothing_parameter
+    )
+    new_data = data.iloc[::10].drop(columns="y")
+
+    result = model.centile_bootstrap_data(
+        data,
+        centiles=[10, 50, 90],
+        new_data=new_data,
+        replicates=10,
+        max_attempts=20,
+        algorithm="laml",
+        control=control,
+        generator=torch.Generator().manual_seed(99),
+    )
+
+    assert fit.outer_converged
+    assert result.algorithm == "laml"
+    assert result.bootstrap_estimates.shape == (10, len(new_data), 3)
+    assert torch.isfinite(result.bootstrap_estimates).all()
+    assert (result.standard_errors > 0).all()
+    assert model.smooth_terms["mu"]["x"].smoothing_parameter == pytest.approx(
+        original_smoothing_parameter
+    )

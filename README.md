@@ -82,6 +82,23 @@ The current implementation contains:
   linear and additive predictors;
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
+- a dense low-level solver for multiple fixed positive-semidefinite smooth
+  penalties and null-space-reparameterized linear constraints on CPU or CUDA;
+- full tensor-product smooths and highest-order ANOVA tensor interactions,
+  with one penalty per marginal direction, explicit identifiability
+  constraints, and `mgcv` algebraic parity;
+- dense whole-model LAML for additive Normal location-scale, Poisson log-mean,
+  NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
+  location/scale/shape, BCCG location/scale/shape, BCT
+  location/scale/skewness/tail-shape, and BCPE
+  location/scale/skewness/kurtosis, PE location/scale/shape, and GG
+  positive-location/scale/shape, uncensored LOGNO mean-log/scale, and
+  uncensored WEI scale/shape models, including
+  formula `fit_laml_data()`, automatic scalar and tensor lambdas, null-space
+  constraints, outer diagnostics, implicit outer gradients and Hessians,
+  CPU/CUDA execution, direct `mgcv` REML parity where an overlapping family
+  exists, and
+  fixed-lambda `gamlss` parity otherwise;
 - automatic P-spline smoothing-parameter selection with the `pb()` ML update;
 - target-EDF P-splines compatible with `pb(x, df=...)`;
 - local GAIC and GCV P-spline smoothing-parameter selection compatible with
@@ -95,9 +112,12 @@ The current implementation contains:
   simulation-based simultaneous confidence bands for fitted P-spline
   contributions, conditional on their smoothing parameters;
 - analytic fixed-lambda joint covariance across linear coefficients, spline
-  coefficients, smooth terms, and distribution parameters;
+  coefficients, smooth terms, and distribution parameters, including
+  multiply penalized tensor surfaces;
 - fixed-design parametric bootstrap intervals, cross-smooth covariance, and
-  joint bands that refit RS or CG and repeat smoothing-parameter selection;
+  joint bands that refit RS, CG, or supported whole-model LAML models, repeat
+  available smoothing-parameter selection, and retain one lambda column per
+  tensor penalty;
 - aligned bootstrap inference for smooth contrasts, differences, derivatives,
   extrema, and linearly interpolated crossings;
 - fixed-design bootstrap intervals and joint bands for response-scale centile
@@ -111,7 +131,8 @@ The current implementation contains:
 - moment and centile bucket plots through `bp()`, `bp_data()`, and
   `bucket_plot()`, with weighted statistics and nonparametric bootstrap;
 - Wilkinson formulas for tabular fitting and prediction, including categorical
-  variables, `offset()`, and `pb()`;
+  variables, `offset()`, `pb()`, and fixed or LAML-selected `te()`/`ti()`
+  tensor products;
 - independent design matrices for each distribution parameter;
 - R-generated parity fixtures for all supported families' densities or masses,
   links, derivatives, starting values, and fitted models;
@@ -188,7 +209,21 @@ print(model.predict_data(data)["mu"])
 Every distribution parameter can have its own formula, smooth terms, offsets,
 or neural contribution. See
 [`docs/R_TO_PYTHON.md`](docs/R_TO_PYTHON.md) for a complete mapping from an R
-workflow.
+workflow. Formula `te()` and `ti()` terms can be fitted with fixed lambdas
+through RS, CG, L-BFGS, or mini-batch Adam, or with jointly selected marginal
+lambdas through `fit_laml_data()` for Normal location-scale, Poisson log-mean,
+NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
+location/scale/shape, BCCG location/scale/shape, BCT
+location/scale/skewness/tail-shape, and BCPE
+location/scale/skewness/kurtosis, PE location/scale/shape, and GG
+positive-location/scale/shape, uncensored LOGNO mean-log/scale, and uncensored
+WEI scale/shape models. Their parametric bootstrap stores one value per
+marginal lambda while
+preserving the scalar `pb()` API; `algorithm="laml"`
+repeats automatic joint tensor selection in every successful bootstrap
+replicate. The generic tensor-product API, examples, and current limitations
+are documented in
+[`docs/TENSOR_SMOOTHS.md`](docs/TENSOR_SMOOTHS.md).
 
 ## Development
 
@@ -208,6 +243,10 @@ Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_mgcv_tensor_reference.R
+Rscript tools/generate_mgcv_tensor_reference.R --check
+Rscript tools/generate_mgcv_laml_reference.R
+Rscript tools/generate_mgcv_laml_reference.R --check
 ```
 
 The complete weighted Normal location-scale example can be run in both
@@ -265,7 +304,8 @@ for the censoring design and no-R validation mode.
 
 See [`docs/PARITY.md`](docs/PARITY.md) for the numerical compatibility
 conventions and provenance. See [`docs/SMOOTHS.md`](docs/SMOOTHS.md) for the
-P-spline API and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
+P-spline API, [`docs/LAML.md`](docs/LAML.md) for whole-model smoothing
+selection, and [`docs/GAMMA.md`](docs/GAMMA.md) for the Gamma
 parameterization. Poisson, NBI, and Beta are described in
 [`docs/FAMILIES.md`](docs/FAMILIES.md), BCCG in
 [`docs/BCCG.md`](docs/BCCG.md), BCT in [`docs/BCT.md`](docs/BCT.md), and BCPE

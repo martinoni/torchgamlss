@@ -10,10 +10,14 @@ from typing import TYPE_CHECKING, Any
 import torch
 from torch import Tensor
 
+from torchgamlss.penalties import solve_penalized_least_squares
 from torchgamlss.smooths import SmoothTerm
 
 if TYPE_CHECKING:
     from torchgamlss.model import GAMLSS
+
+
+SmoothingParameterValue = float | tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -82,7 +86,10 @@ class CGFitResult:
     deviance_history: tuple[float, ...]
     backfitting_iterations: Mapping[str, int]
     smooth_effective_degrees_of_freedom: Mapping[str, Mapping[str, float]]
-    smoothing_parameters: Mapping[str, Mapping[str, float]]
+    smoothing_parameters: Mapping[
+        str,
+        Mapping[str, SmoothingParameterValue],
+    ]
     smoothing_iterations: Mapping[str, Mapping[str, int]]
     parameter_effective_degrees_of_freedom: Mapping[str, float]
     effective_degrees_of_freedom: float
@@ -148,7 +155,10 @@ class RSFitResult:
     deviance_history: tuple[float, ...]
     backfitting_iterations: Mapping[str, int]
     smooth_effective_degrees_of_freedom: Mapping[str, Mapping[str, float]]
-    smoothing_parameters: Mapping[str, Mapping[str, float]]
+    smoothing_parameters: Mapping[
+        str,
+        Mapping[str, SmoothingParameterValue],
+    ]
     smoothing_iterations: Mapping[str, Mapping[str, int]]
     parameter_effective_degrees_of_freedom: Mapping[str, float]
     effective_degrees_of_freedom: float
@@ -166,7 +176,7 @@ class _ParameterFitResult:
     smooth_coefficients: dict[str, Tensor]
     backfitting_iterations: int
     smooth_edf: dict[str, float]
-    smoothing_parameters: dict[str, float]
+    smoothing_parameters: dict[str, SmoothingParameterValue]
     smoothing_iterations: dict[str, int]
 
 
@@ -176,16 +186,42 @@ class _AdditiveFitResult:
     smooth_coefficients: dict[str, Tensor]
     iterations: int
     smooth_edf: dict[str, float]
-    smoothing_parameters: dict[str, float]
+    smoothing_parameters: dict[str, SmoothingParameterValue]
     smoothing_iterations: dict[str, int]
 
 
 @dataclass(frozen=True)
 class _SmoothFitResult:
     coefficient: Tensor
-    smoothing_parameter: float
+    smoothing_parameter: SmoothingParameterValue
     effective_degrees_of_freedom: float
     smoothing_iterations: int
+
+
+def _term_smoothing_parameter_value(
+    term: SmoothTerm,
+) -> SmoothingParameterValue:
+    values = term.smoothing_parameters
+    return values[0] if len(values) == 1 else tuple(values)
+
+
+def _set_term_smoothing_parameter_value(
+    term: SmoothTerm,
+    value: SmoothingParameterValue,
+) -> None:
+    if isinstance(value, tuple):
+        if value != term.smoothing_parameters:
+            raise RuntimeError(
+                "multiply penalized term smoothing parameters are fixed "
+                "during RS/CG fitting"
+            )
+        return
+    term._set_fitted_smoothing_parameter(value)
+
+
+def _linear_design_overlap(term: SmoothTerm) -> int:
+    """Return smooth null-space dimensions duplicated in the linear block."""
+    return term.penalty_nullity if len(term.penalty_matrices()) == 1 else 0
 
 
 def fit_cg(
@@ -230,7 +266,7 @@ def fit_cg(
     }
     smoothing_parameters = {
         parameter: {
-            name: term.smoothing_parameter
+            name: _term_smoothing_parameter_value(term)
             for name, term in model.smooth_terms[parameter].items()
         }
         for parameter in parameter_names
@@ -447,14 +483,15 @@ def fit_cg(
             model.coefficients[name].copy_(coefficient)
             for term_name, term_coefficient in smooth_coefficients[name].items():
                 model.smooth_terms[name][term_name].coefficients.copy_(term_coefficient)
-                model.smooth_terms[name][term_name]._set_fitted_smoothing_parameter(
-                    smoothing_parameters[name][term_name]
+                _set_term_smoothing_parameter_value(
+                    model.smooth_terms[name][term_name],
+                    smoothing_parameters[name][term_name],
                 )
 
     parameter_edf = {
         parameter: float(model.coefficients[parameter].numel())
         + sum(
-            smooth_edf[parameter][name] - term.penalty_nullity
+            smooth_edf[parameter][name] - _linear_design_overlap(term)
             for name, term in model.smooth_terms[parameter].items()
         )
         for parameter in parameter_names
@@ -543,7 +580,7 @@ def fit_rs(
     }
     smoothing_parameters = {
         parameter: {
-            name: term.smoothing_parameter
+            name: _term_smoothing_parameter_value(term)
             for name, term in model.smooth_terms[parameter].items()
         }
         for parameter in model.family.parameter_names
@@ -619,16 +656,15 @@ def fit_rs(
                 model.smooth_terms[parameter][term_name].coefficients.copy_(
                     term_coefficient
                 )
-                model.smooth_terms[parameter][
-                    term_name
-                ]._set_fitted_smoothing_parameter(
+                _set_term_smoothing_parameter_value(
+                    model.smooth_terms[parameter][term_name],
                     smoothing_parameters[parameter][term_name]
                 )
 
     parameter_edf = {
         parameter: float(model.coefficients[parameter].numel())
         + sum(
-            smooth_edf[parameter][name] - term.penalty_nullity
+            smooth_edf[parameter][name] - _linear_design_overlap(term)
             for name, term in model.smooth_terms[parameter].items()
         )
         for parameter in model.family.parameter_names
@@ -659,7 +695,7 @@ def _fit_parameter(
     smooth_terms: Mapping[str, SmoothTerm],
     smooth_covariates: Mapping[str, Tensor],
     initial_smooth_coefficients: Mapping[str, Tensor],
-    initial_smoothing_parameters: Mapping[str, float],
+    initial_smoothing_parameters: Mapping[str, SmoothingParameterValue],
     control: RSControl,
 ) -> _ParameterFitResult:
     link = model.family.links[parameter]
@@ -835,14 +871,19 @@ def _additive_fit(
     smooth_terms: Mapping[str, SmoothTerm],
     smooth_covariates: Mapping[str, Tensor],
     initial_coefficients: Mapping[str, Tensor],
-    initial_smoothing_parameters: Mapping[str, float],
+    initial_smoothing_parameters: Mapping[str, SmoothingParameterValue],
     control: RSControl | CGControl,
     *,
     max_iterations: int | None = None,
 ) -> _AdditiveFitResult:
     """Alternate parametric and penalized terms as in ``additive.fit()``."""
     bases = {
-        name: term.basis(smooth_covariates[name]) for name, term in smooth_terms.items()
+        name: term.design(smooth_covariates[name])
+        for name, term in smooth_terms.items()
+    }
+    constraints = {
+        name: term.constraints(smooth_covariates[name])
+        for name, term in smooth_terms.items()
     }
     coefficients = dict(initial_coefficients)
     smoothing_parameters = dict(initial_smoothing_parameters)
@@ -877,6 +918,7 @@ def _additive_fit(
                 weights,
                 smoothing_parameters[name],
                 control,
+                constraints=constraints[name],
             )
             coefficient = smooth_fit.coefficient
             fitted = bases[name] @ coefficient
@@ -921,9 +963,43 @@ def _fit_smooth_term(
     basis: Tensor,
     response: Tensor,
     weights: Tensor,
-    starting_smoothing_parameter: float,
+    starting_smoothing_parameter: SmoothingParameterValue,
     control: RSControl | CGControl,
+    *,
+    constraints: Tensor,
 ) -> _SmoothFitResult:
+    penalties = term.penalty_matrices()
+    if len(penalties) > 1:
+        if term.estimates_smoothing_parameter:
+            raise ValueError(
+                "automatic smoothing selection for multiply penalized terms "
+                "requires whole-model LAML"
+            )
+        if not isinstance(starting_smoothing_parameter, tuple):
+            raise RuntimeError(
+                "multiply penalized terms require one smoothing parameter "
+                "per penalty"
+            )
+        fit = solve_penalized_least_squares(
+            basis,
+            response,
+            weights,
+            penalties,
+            starting_smoothing_parameter,
+            constraints=constraints,
+        )
+        return _SmoothFitResult(
+            coefficient=fit.coefficients,
+            smoothing_parameter=starting_smoothing_parameter,
+            effective_degrees_of_freedom=float(
+                fit.effective_degrees_of_freedom
+            ),
+            smoothing_iterations=0,
+        )
+    if isinstance(starting_smoothing_parameter, tuple):
+        raise RuntimeError(
+            "single-penalty terms require one scalar smoothing parameter"
+        )
     if term.estimates_smoothing_parameter:
         if term.smoothing_method == "DF":
             target_edf = term.target_effective_degrees_of_freedom
@@ -1340,7 +1416,7 @@ def _additive_predictor(
     for name, term in smooth_terms.items():
         predictor = (
             predictor
-            + term.basis(smooth_covariates[name]) @ (smooth_coefficients[name])
+            + term.design(smooth_covariates[name]) @ (smooth_coefficients[name])
         )
     return predictor
 

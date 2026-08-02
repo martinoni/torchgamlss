@@ -373,8 +373,9 @@ Response-scale centile bootstrap bands are a simulate-and-refit extension over
 these parity-tested quantiles.
 
 Parametric smooth bootstrap is also an extension: it composes the
-parity-tested family distributions, RS/CG fitting, and smoothing-selection
-updates rather than reproducing a single `gamlss` return value. Seeded
+parity-tested family distributions, RS/CG fitting or supported whole-model
+LAML fitting, and smoothing-selection updates rather than reproducing a single
+`gamlss` return value. Seeded
 samplers for BCCG, BCT, BCPE, TF, and PE are checked through their fitted CDFs
 using the probability integral transform. Joint bootstrap covariance and
 multi-smooth max-|t| bands reuse the same aligned refits; they do not claim a
@@ -462,6 +463,96 @@ resampling follows R's paired resampling of residuals and prior weights;
 cross-language parity is asserted for the statistics rather than random
 sample indices.
 
+## Tensor-product algebra
+
+The tensor reference fixture compares TorchGAMLSS directly with
+`mgcv::tensor.prod.model.matrix()` and
+`mgcv::tensor.prod.penalties()`. It checks the complete row-wise Kronecker
+design and every entry of the embedded marginal penalties using fixed model
+matrices and positive-semidefinite penalties.
+
+The separate tensor LAML fixture is a whole-model numerical check against
+`mgcv::gaulss(method="REML")`. It exports the exact `mgcv::te()` design and
+both directional penalties, then compares the negative LAML objective,
+lambdas, EDF, every coefficient, fitted location and scale, and the outer
+Hessian.
+
+The Poisson LAML fixture is the first family-driven non-Normal check. It uses
+`mgcv::gam(..., family=poisson(), method="REML")`, exports the exact design and
+coefficient-space penalty, and compares the negative LAML objective, selected
+lambda, EDF, every coefficient, link predictor, fitted mean, and outer
+Hessian. The same Torch core is covered through formula fitting, parametric
+smooth bootstrap, and local CUDA execution.
+
+The Gamma LAML fixture then exercises two parameters and cross-information.
+It uses `mgcv::gammals(link=list("identity","identity"))` and the identity
+`phi = sigma^2`, where `phi` is `mgcv`'s variance scale and `sigma` is the
+GAMLSS coefficient of variation. The exported scale design is halved so the
+Torch predictor is `eta_sigma = eta_phi / 2`; the tests compare the objective,
+both lambdas, EDF, coefficients, predictors, fitted mean/CV, and the complete
+outer Hessian on CPU and CUDA.
+
+The Weibull LAML fixture uses the exact transformation `X = -log(Y)` to
+`mgcv::gumbls(link=list("identity","identity"))`. Gumbel location and log scale
+map to `m = -log(mu)` and `B = -log(sigma)`, so the Torch coefficient blocks
+are sign-reversed while penalties, lambdas, and outer derivatives are
+unchanged. The test compares the Jacobian-adjusted objective and likelihood,
+both lambdas, EDF, all coefficients, fitted scale/shape, and the complete
+outer Hessian. This `gumbls` fixture uses unit weights because that extended
+family does not apply prior weights to its likelihood; weighted WEI behavior
+is checked against `gamlss::gamlss()` and finite-difference derivatives.
+
+The NBI LAML fixture uses `mgcv::nb(theta=4, link="log")`, with
+`theta = 1/sigma` under the `gamlss.dist::NBI` variance convention. Torch
+supplies an empty `sigma` coefficient design plus the equivalent fixed
+log-scale offset, so both implementations optimize the same mean smooth. The
+negative LAML, likelihood, lambda, coefficients, predictor, fitted mean, and
+analytic outer Hessian agree. The small EDF difference is documented as an
+extended-family convention difference. A separate formula test estimates the
+NBI dispersion predictor and repeats lambda selection in bootstrap samples;
+the conditional fixture also runs on CUDA.
+
+The Student-t LAML fixture uses `mgcv::scat(theta=c(5, 0.8))`. Torch fixes
+the log-`sigma` and log-`nu` predictors through empty coefficient designs and
+offsets, leaving both implementations to optimize the same identity-link
+location smooth. The negative LAML, likelihood, lambda, coefficients,
+predictor, fitted location, and analytic outer Hessian agree numerically. The
+larger family-specific EDF convention difference is reported explicitly. A
+separate formula test estimates all three TF predictors and repeats lambda
+selection inside bootstrap samples; the conditional fixture runs on CUDA.
+
+The Beta LAML fixture uses `mgcv::betar(theta=12, link="logit")`. Since
+`mgcv` holds its precision fixed, Torch supplies an empty `sigma` coefficient
+design and the equivalent fixed offset under
+`phi = 1/sigma^2 - 1`. The negative LAML, likelihood, selected mean lambda,
+coefficients, predictor, fitted mean, and analytic outer Hessian agree. The
+small EDF difference is retained and documented because `mgcv` uses its
+extended-family EDF convention. A separate formula test estimates the Beta
+dispersion predictor and repeats lambda selection inside bootstrap samples;
+the conditional reference also runs on CUDA.
+
+The default implicit outer gradient and fully analytic Hessian are checked
+against the retained finite-difference implementation at the same Gamma
+profile. Initial and final gradients, the Hessian, accepted lambda update, and
+objective agree within the audit path's numerical tolerance. The implicit
+route uses 2 rather than 18 unique profile evaluations in the one-iteration
+audit and 8 rather than 48 at full convergence.
+
+Fixed tensor lambdas can also be fitted with the generic
+dense solver or constructed through formula `te()`/`ti()` terms for
+RS/CG/L-BFGS/mini-batch fitting. Formula tests verify construction, exact
+absorbed centering, stored interaction transforms, prediction, CUDA RS
+execution, external-constraint preservation, and numerical agreement between
+RS and CG. They also verify conditional and joint analytic covariance, new
+grids, multivariate tables, Gaussian bands, and zero covariance along explicit
+constraint directions. Seeded RS/CG bootstrap tests verify fitted-surface
+variation, vector-lambda storage, penalty-level labels, and scalar-result
+compatibility. Formula LAML tests additionally verify automatic `te()` and
+`ti()` selection, state updates, structural constraints, and local CUDA
+execution. Seeded LAML bootstrap tests verify repeated joint tensor-lambda
+selection, aligned fitted-surface variation, original-state isolation, and
+CPU/CUDA execution.
+
 ## Reproducing the fixtures
 
 From the repository root:
@@ -474,6 +565,10 @@ Rscript tools/generate_truncated_references.R
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_mgcv_tensor_reference.R
+Rscript tools/generate_mgcv_tensor_reference.R --check
+Rscript tools/generate_mgcv_laml_reference.R
+Rscript tools/generate_mgcv_laml_reference.R --check
 python tools/run_parity.py examples/normal_location_scale/parity.json `
   --output-dir work/parity/normal-location-scale
 python tools/run_parity.py examples/bccg_centile_curves/parity.json `
@@ -495,8 +590,12 @@ changing files and compares them with explicit tolerances.
   <https://cran.r-project.org/package=gamlss.tr>
 - `gamlss.cens` 5.0-7, distributed by CRAN under GPL-2 or GPL-3:
   <https://cran.r-project.org/package=gamlss.cens>
+- `mgcv` 1.9-4, distributed by CRAN under GPL-2 or later:
+  <https://cran.r-project.org/package=mgcv>
 - Rigby and Stasinopoulos (2005),
   <https://doi.org/10.1111/j.1467-9876.2005.00510.x>
+- Wood (2006),
+  <https://doi.org/10.1111/j.1541-0420.2006.00574.x>
 
 The RS and CG implementations follow the working-response, diagonal, and
 cross-parameter Fisher-weight updates in `gamlss` 5.5-0, `R/gamlss-5.R`.

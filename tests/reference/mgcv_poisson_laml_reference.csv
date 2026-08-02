@@ -1,0 +1,2 @@
+"mgcv_version","objective","log_likelihood","lambda_mu","effective_degrees_of_freedom","outer_iterations","outer_convergence","gradient_mu","hessian_mu_mu","coefficient_count"
+"1.9.4",232.207477963756,-224.486829153121,9.09059115480874,4.90661361937488,3,"full convergence",7.11768892713849e-08,1.43549168555703,8

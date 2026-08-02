@@ -30,6 +30,8 @@ python -m compileall -q src/torchgamlss
 Rscript tools/generate_r_references.R --check
 Rscript tools/generate_truncated_references.R --check
 Rscript tools/generate_censored_references.R --check
+Rscript tools/generate_mgcv_tensor_reference.R --check
+Rscript tools/generate_mgcv_laml_reference.R --check
 ```
 
 Build both supported distribution formats into a fresh output directory:
@@ -52,8 +54,11 @@ Push-Location $env:TEMP
 Pop-Location
 ```
 
-The smoke test checks installed metadata, imports, formula fitting,
-prediction, and the public `plot()`, `wp()`, and `bp()` APIs.
+The smoke test checks installed metadata, imports, formula fitting, generic
+tensor-product construction and penalties, constrained formula `te()`
+RS fitting, automatic formula LAML selection, analytic inference,
+vector-lambda RS and LAML bootstrap, prediction, and the public `plot()`,
+`wp()`, and `bp()` APIs.
 
 ## Continuous integration
 

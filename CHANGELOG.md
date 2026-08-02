@@ -11,6 +11,46 @@ Development cycle toward the third alpha release.
 
 ### Added
 
+- A generic dense penalized weighted least-squares solver supporting multiple
+  fixed coefficient-space penalties, linear constraints through null-space
+  reparameterization, effective degrees of freedom, rank diagnostics, and
+  CPU/CUDA execution while preserving the classical `pb()` fitting path.
+- Full tensor-product smooths and highest-order ANOVA tensor interactions with
+  row-wise Kronecker designs, one fixed penalty per marginal direction,
+  explicit centering transforms, prediction-state round trips, CPU/CUDA
+  execution, and exact algebraic checks against `mgcv`.
+- Fixed-lambda `te()` and `ti()` formula terms with per-margin basis options,
+  exact absorbed identifiability constraints, stored prediction transforms,
+  RS/CG backfitting through the generic constrained solver, full-batch
+  L-BFGS, mini-batch Adam, and CUDA execution.
+- Conditional and joint analytic tensor inference with combined
+  multiple-penalty information, constrained coefficient covariance, new-grid
+  prediction, multivariate tables, and simultaneous Gaussian bands.
+- RS/CG parametric smooth bootstrap for multiply penalized tensor terms, with
+  backward-compatible scalar results, one replicate column per tensor
+  penalty, penalty-level joint labels and slices, and multivariate tables.
+- Dense whole-model LAML with a family-driven likelihood core for additive
+  Normal location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV,
+  Beta mean/dispersion, and Student-t location/scale/shape models, formula and
+  tensor-level `fit_laml` APIs, jointly
+  selected scalar and tensor log
+  lambdas, structural null-space constraints, model-state updates,
+  penalty-level result labels, implicit-function outer gradients, CPU/CUDA
+  execution, and direct `mgcv` REML parity.
+- A finite-difference fallback for auditing LAML outer derivatives, a fully
+  analytic outer Hessian from second-order implicit coefficient sensitivities
+  and exact autograd partials, and profile-evaluation diagnostics; the
+  two-lambda Gamma reference drops from 48 to 8 unique profile evaluations at
+  equivalent fitted results.
+- Fixed-design LAML bootstrap refits for supported Normal, Poisson, NBI,
+  Gamma, Beta, and Student-t models, including joint scalar/tensor lambda
+  reselection, aligned smooth
+  covariance and bands, response-quantile/centile inference, retry accounting,
+  and CPU/CUDA execution.
+- Conditional-parameter low-level LAML designs with zero coefficient columns
+  and a fixed link-scale offset, plus direct `mgcv::betar`, `mgcv::nb`, and
+  `mgcv::scat` parity for Beta, NBI, and Student-t mean smoothing at fixed
+  family parameters.
 - Weibull (`WEI`) and log-normal (`LOGNO`) event-time families with
   `gamlss.dist` parity for density, CDF, quantiles, survival functions,
   hazards, moments, scores, working derivatives, and starting values.

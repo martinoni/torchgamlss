@@ -49,6 +49,30 @@ model = GAMLSS.from_formula(
 fit = model.fit_rs_data(data, weights="weight")
 ```
 
+## Whole-model LAML
+
+Standard identity/log/identity/log BCT models can jointly select automatic
+`pb()`, `te()`, and `ti()` smoothing parameters. Start from a compatible RS
+fit because the observed joint information for `tau` can be indefinite near
+a generic family start:
+
+```python
+from torchgamlss import LAMLControl
+
+model.fit_rs_data(data, weights="weight")
+fit = model.fit_laml_data(
+    data,
+    weights="weight",
+    warm_start=True,
+    control=LAMLControl(),
+)
+```
+
+The same family is supported by `algorithm="laml"` smooth, quantile, and
+centile bootstrap refits and by CPU or CUDA execution. LAML requires the
+standard links listed above; use RS, CG, or the generic Torch optimizers for
+custom-link BCT models.
+
 As with BCCG, the identity link for `mu` matches R but does not itself enforce
 positivity. A log link can be supplied when the predictor could cross zero:
 
@@ -89,6 +113,8 @@ Committed R fixtures cover:
 - autograd through the Student t CDF and all four predictors;
 - the `nu = 0` log-Student-t limit and large-`tau` BCCG limit;
 - a converged weighted RS fit with parameter-specific formulas and offsets;
+- a fixed-lambda warm-started LAML fit against `gamlss`, an independent outer
+  derivative audit, automatic formula selection, LAML bootstrap, and CUDA;
 - prediction, full-Hessian inference, likelihood criteria, and quantile
   residuals;
 - response sampling and conditional quantiles matched to `qBCT`.

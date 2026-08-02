@@ -17,6 +17,12 @@ the Lopatatzidis-Green parameterization and approaches a log-normal
 distribution with median `mu` as `nu` approaches zero. Stable series avoid
 the cancellation present in a literal evaluation around that limit.
 
+Whole-model LAML is available for uncensored GG, LOGNO, and WEI models with
+their standard links. The censoring wrappers currently remain on their
+existing RS, CG, L-BFGS, and mini-batch routes; LAML should not yet be selected
+for `CensoredFamily(GG(), ...)`, `CensoredFamily(LOGNO(), ...)`, or
+`CensoredFamily(WEI(), ...)`.
+
 ## Response representation
 
 `CensoredResponse` stores fixed censoring metadata alongside the numeric

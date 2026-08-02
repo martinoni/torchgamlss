@@ -105,6 +105,12 @@ bccg_rs_reference_path <- file.path(reference_dir, "bccg_rs_reference.csv")
 bct_reference_path <- file.path(reference_dir, "bct_reference.csv")
 bct_fit_data_path <- file.path(reference_dir, "bct_fit_data.csv")
 bct_rs_reference_path <- file.path(reference_dir, "bct_rs_reference.csv")
+bct_laml_fixed_reference_path <- file.path(
+  reference_dir, "bct_laml_fixed_reference.csv"
+)
+bct_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "bct_laml_fixed_fitted_reference.csv"
+)
 bct_cg_reference_path <- file.path(reference_dir, "bct_cg_reference.csv")
 tf_reference_path <- file.path(reference_dir, "tf_reference.csv")
 tf_fit_data_path <- file.path(reference_dir, "tf_fit_data.csv")
@@ -113,10 +119,43 @@ tf_cg_reference_path <- file.path(reference_dir, "tf_cg_reference.csv")
 pe_reference_path <- file.path(reference_dir, "pe_reference.csv")
 pe_fit_data_path <- file.path(reference_dir, "pe_fit_data.csv")
 pe_rs_reference_path <- file.path(reference_dir, "pe_rs_reference.csv")
+pe_laml_fixed_reference_path <- file.path(
+  reference_dir, "pe_laml_fixed_reference.csv"
+)
+pe_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "pe_laml_fixed_fitted_reference.csv"
+)
 pe_cg_reference_path <- file.path(reference_dir, "pe_cg_reference.csv")
+gg_fit_data_path <- file.path(reference_dir, "gg_fit_data.csv")
+gg_laml_fixed_reference_path <- file.path(
+  reference_dir, "gg_laml_fixed_reference.csv"
+)
+gg_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "gg_laml_fixed_fitted_reference.csv"
+)
+wei_fit_data_path <- file.path(reference_dir, "wei_fit_data.csv")
+wei_laml_fixed_reference_path <- file.path(
+  reference_dir, "wei_laml_fixed_reference.csv"
+)
+wei_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "wei_laml_fixed_fitted_reference.csv"
+)
+logno_fit_data_path <- file.path(reference_dir, "logno_fit_data.csv")
+logno_laml_fixed_reference_path <- file.path(
+  reference_dir, "logno_laml_fixed_reference.csv"
+)
+logno_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "logno_laml_fixed_fitted_reference.csv"
+)
 bcpe_reference_path <- file.path(reference_dir, "bcpe_reference.csv")
 bcpe_fit_data_path <- file.path(reference_dir, "bcpe_fit_data.csv")
 bcpe_rs_reference_path <- file.path(reference_dir, "bcpe_rs_reference.csv")
+bcpe_laml_fixed_reference_path <- file.path(
+  reference_dir, "bcpe_laml_fixed_reference.csv"
+)
+bcpe_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "bcpe_laml_fixed_fitted_reference.csv"
+)
 inference_table_path <- file.path(reference_dir, "inference_table_reference.csv")
 inference_covariance_path <- file.path(
   reference_dir, "inference_covariance_reference.csv"
@@ -1403,6 +1442,45 @@ bct_rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+bct_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  tau.formula = ~ 1,
+  weights = weight,
+  family = BCT(),
+  method = RS(),
+  data = bct_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+bct_laml_fixed_smooth <- getSmo(
+  bct_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+bct_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(bct_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(bct_laml_fixed_fit)),
+  smoothing_parameter = bct_laml_fixed_smooth$lambda,
+  outer_iterations = bct_laml_fixed_fit$iter,
+  converged = bct_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+bct_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(bct_laml_fixed_fit, what = "mu"),
+  sigma = fitted(bct_laml_fixed_fit, what = "sigma"),
+  nu = fitted(bct_laml_fixed_fit, what = "nu"),
+  tau = fitted(bct_laml_fixed_fit, what = "tau")
+)
+
 bct_cg_fit <- gamlss(
   y ~ x + offset(mu_offset),
   sigma.formula = ~ z + offset(sigma_offset),
@@ -1580,6 +1658,43 @@ pe_rs_reference <- data.frame(
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
 )
 
+pe_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  weights = weight,
+  family = PE(),
+  method = RS(),
+  data = pe_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+pe_laml_fixed_smooth <- getSmo(
+  pe_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+pe_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(pe_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pe_laml_fixed_fit)),
+  smoothing_parameter = pe_laml_fixed_smooth$lambda,
+  outer_iterations = pe_laml_fixed_fit$iter,
+  converged = pe_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pe_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(pe_laml_fixed_fit, what = "mu"),
+  sigma = fitted(pe_laml_fixed_fit, what = "sigma"),
+  nu = fitted(pe_laml_fixed_fit, what = "nu")
+)
+
 pe_cg_fit <- gamlss(
   y ~ x + offset(mu_offset),
   sigma.formula = ~ z + offset(sigma_offset),
@@ -1612,6 +1727,188 @@ pe_cg_reference <- data.frame(
   converged = pe_cg_fit$converged,
   gamlss_version = as.character(packageVersion("gamlss")),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+gg_n <- 160
+gg_x <- seq(-1, 1, length.out = gg_n)
+gg_z <- cos(seq(0, 2 * pi, length.out = gg_n))
+gg_w <- sin(seq(0, 2 * pi, length.out = gg_n))
+gg_mu_offset <- 0.04 * cos(seq(0, 3 * pi, length.out = gg_n))
+gg_sigma_offset <- 0.02 * sin(seq(0, 4 * pi, length.out = gg_n))
+gg_nu_offset <- 0.03 * cos(seq(0, 5 * pi, length.out = gg_n))
+gg_weight <- rep(c(1, 1.5, 2, 0.75), length.out = gg_n)
+gg_mu <- exp(0.5 + 0.35 * gg_x + gg_mu_offset)
+gg_sigma <- exp(-0.55 + 0.12 * gg_z + gg_sigma_offset)
+gg_nu <- 0.7 + 0.08 * gg_w + gg_nu_offset
+gg_probability <- (((seq_len(gg_n) * 71) %% gg_n) + 0.5) / gg_n
+gg_fit_data <- data.frame(
+  x = gg_x,
+  z = gg_z,
+  w = gg_w,
+  y = qGG(
+    gg_probability,
+    mu = gg_mu,
+    sigma = gg_sigma,
+    nu = gg_nu
+  ),
+  weight = gg_weight,
+  mu_offset = gg_mu_offset,
+  sigma_offset = gg_sigma_offset,
+  nu_offset = gg_nu_offset
+)
+gg_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  weights = weight,
+  family = GG(),
+  method = RS(),
+  data = gg_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+gg_laml_fixed_smooth <- getSmo(
+  gg_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+gg_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(gg_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(gg_laml_fixed_fit)),
+  smoothing_parameter = gg_laml_fixed_smooth$lambda,
+  outer_iterations = gg_laml_fixed_fit$iter,
+  converged = gg_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+gg_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(gg_laml_fixed_fit, what = "mu"),
+  sigma = fitted(gg_laml_fixed_fit, what = "sigma"),
+  nu = fitted(gg_laml_fixed_fit, what = "nu")
+)
+
+wei_n <- 160
+wei_x <- seq(-1, 1, length.out = wei_n)
+wei_z <- cos(seq(0, 2 * pi, length.out = wei_n))
+wei_mu_offset <- 0.03 * cos(seq(0, 3 * pi, length.out = wei_n))
+wei_sigma_offset <- 0.02 * sin(seq(0, 4 * pi, length.out = wei_n))
+wei_weight <- rep(c(1, 1.5, 2, 0.75), length.out = wei_n)
+wei_mu <- exp(
+  0.35 + 0.55 * wei_x - 0.2 * wei_x^2 +
+    0.1 * wei_x^3 + wei_mu_offset
+)
+wei_sigma <- exp(0.05 + 0.25 * wei_z + wei_sigma_offset)
+wei_probability <- (((seq_len(wei_n) * 71) %% wei_n) + 0.5) / wei_n
+wei_fit_data <- data.frame(
+  x = wei_x,
+  z = wei_z,
+  y = qWEI(
+    wei_probability,
+    mu = wei_mu,
+    sigma = wei_sigma
+  ),
+  weight = wei_weight,
+  mu_offset = wei_mu_offset,
+  sigma_offset = wei_sigma_offset
+)
+wei_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  weights = weight,
+  family = WEI(),
+  method = RS(),
+  data = wei_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+wei_laml_fixed_smooth <- getSmo(
+  wei_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+wei_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(wei_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(wei_laml_fixed_fit)),
+  smoothing_parameter = wei_laml_fixed_smooth$lambda,
+  outer_iterations = wei_laml_fixed_fit$iter,
+  converged = wei_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+wei_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(wei_laml_fixed_fit, what = "mu"),
+  sigma = fitted(wei_laml_fixed_fit, what = "sigma")
+)
+
+logno_n <- 160
+logno_x <- seq(-1, 1, length.out = logno_n)
+logno_z <- cos(seq(0, 2 * pi, length.out = logno_n))
+logno_mu_offset <- 0.04 * cos(seq(0, 3 * pi, length.out = logno_n))
+logno_sigma_offset <- 0.02 * sin(seq(0, 4 * pi, length.out = logno_n))
+logno_weight <- rep(c(1, 1.5, 2, 0.75), length.out = logno_n)
+logno_mu <- (
+  0.4 + 0.7 * logno_x - 0.25 * logno_x^2 +
+    0.15 * logno_x^3 + logno_mu_offset
+)
+logno_sigma <- exp(-0.65 + 0.15 * logno_z + logno_sigma_offset)
+logno_probability <- (((seq_len(logno_n) * 73) %% logno_n) + 0.5) / logno_n
+logno_fit_data <- data.frame(
+  x = logno_x,
+  z = logno_z,
+  y = qLOGNO(
+    logno_probability,
+    mu = logno_mu,
+    sigma = logno_sigma
+  ),
+  weight = logno_weight,
+  mu_offset = logno_mu_offset,
+  sigma_offset = logno_sigma_offset
+)
+logno_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  weights = weight,
+  family = LOGNO(),
+  method = RS(),
+  data = logno_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+logno_laml_fixed_smooth <- getSmo(
+  logno_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+logno_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(logno_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(logno_laml_fixed_fit)),
+  smoothing_parameter = logno_laml_fixed_smooth$lambda,
+  outer_iterations = logno_laml_fixed_fit$iter,
+  converged = logno_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+logno_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(logno_laml_fixed_fit, what = "mu"),
+  sigma = fitted(logno_laml_fixed_fit, what = "sigma")
 )
 
 bcpe_n <- 160
@@ -1671,6 +1968,45 @@ bcpe_rs_reference <- data.frame(
   converged = bcpe_rs_fit$converged,
   gamlss_version = as.character(packageVersion("gamlss")),
   gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+
+bcpe_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  nu.formula = ~ 1,
+  tau.formula = ~ 1,
+  weights = weight,
+  family = BCPE(),
+  method = RS(),
+  data = bcpe_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+bcpe_laml_fixed_smooth <- getSmo(
+  bcpe_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+bcpe_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(bcpe_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(bcpe_laml_fixed_fit)),
+  smoothing_parameter = bcpe_laml_fixed_smooth$lambda,
+  outer_iterations = bcpe_laml_fixed_fit$iter,
+  converged = bcpe_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+bcpe_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(bcpe_laml_fixed_fit, what = "mu"),
+  sigma = fitted(bcpe_laml_fixed_fit, what = "sigma"),
+  nu = fitted(bcpe_laml_fixed_fit, what = "nu"),
+  tau = fitted(bcpe_laml_fixed_fit, what = "tau")
 )
 
 rs_fit_data <- read.csv(rs_fit_data_path)
@@ -2855,6 +3191,16 @@ if (check_only) {
   assert_close(bct_reference, bct_reference_path, tolerance = 1e-9)
   assert_close(bct_fit_data, bct_fit_data_path, tolerance = 1e-12)
   assert_close(bct_rs_reference, bct_rs_reference_path, tolerance = 1e-6)
+  assert_close(
+    bct_laml_fixed_reference,
+    bct_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    bct_laml_fixed_fitted_reference,
+    bct_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(bct_cg_reference, bct_cg_reference_path, tolerance = 1e-8)
   assert_close(tf_reference, tf_reference_path, tolerance = 1e-10)
   assert_close(tf_fit_data, tf_fit_data_path, tolerance = 1e-12)
@@ -2863,10 +3209,63 @@ if (check_only) {
   assert_close(pe_reference, pe_reference_path, tolerance = 1e-9)
   assert_close(pe_fit_data, pe_fit_data_path, tolerance = 1e-12)
   assert_close(pe_rs_reference, pe_rs_reference_path, tolerance = 1e-6)
+  assert_close(
+    pe_laml_fixed_reference,
+    pe_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    pe_laml_fixed_fitted_reference,
+    pe_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(pe_cg_reference, pe_cg_reference_path, tolerance = 1e-8)
+  assert_close(gg_fit_data, gg_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    gg_laml_fixed_reference,
+    gg_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    gg_laml_fixed_fitted_reference,
+    gg_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(wei_fit_data, wei_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    wei_laml_fixed_reference,
+    wei_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    wei_laml_fixed_fitted_reference,
+    wei_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(logno_fit_data, logno_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    logno_laml_fixed_reference,
+    logno_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    logno_laml_fixed_fitted_reference,
+    logno_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(bcpe_reference, bcpe_reference_path, tolerance = 1e-9)
   assert_close(bcpe_fit_data, bcpe_fit_data_path, tolerance = 1e-12)
   assert_close(bcpe_rs_reference, bcpe_rs_reference_path, tolerance = 1e-6)
+  assert_close(
+    bcpe_laml_fixed_reference,
+    bcpe_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    bcpe_laml_fixed_fitted_reference,
+    bcpe_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(
     inference_table_reference, inference_table_path, tolerance = 1e-6
   )
@@ -3048,6 +3447,11 @@ if (check_only) {
   write_csv_lf(bct_reference, bct_reference_path)
   write_csv_lf(bct_fit_data, bct_fit_data_path)
   write_csv_lf(bct_rs_reference, bct_rs_reference_path)
+  write_csv_lf(bct_laml_fixed_reference, bct_laml_fixed_reference_path)
+  write_csv_lf(
+    bct_laml_fixed_fitted_reference,
+    bct_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(bct_cg_reference, bct_cg_reference_path)
   write_csv_lf(tf_reference, tf_reference_path)
   write_csv_lf(tf_fit_data, tf_fit_data_path)
@@ -3056,10 +3460,38 @@ if (check_only) {
   write_csv_lf(pe_reference, pe_reference_path)
   write_csv_lf(pe_fit_data, pe_fit_data_path)
   write_csv_lf(pe_rs_reference, pe_rs_reference_path)
+  write_csv_lf(pe_laml_fixed_reference, pe_laml_fixed_reference_path)
+  write_csv_lf(
+    pe_laml_fixed_fitted_reference,
+    pe_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(pe_cg_reference, pe_cg_reference_path)
+  write_csv_lf(gg_fit_data, gg_fit_data_path)
+  write_csv_lf(gg_laml_fixed_reference, gg_laml_fixed_reference_path)
+  write_csv_lf(
+    gg_laml_fixed_fitted_reference,
+    gg_laml_fixed_fitted_reference_path
+  )
+  write_csv_lf(wei_fit_data, wei_fit_data_path)
+  write_csv_lf(wei_laml_fixed_reference, wei_laml_fixed_reference_path)
+  write_csv_lf(
+    wei_laml_fixed_fitted_reference,
+    wei_laml_fixed_fitted_reference_path
+  )
+  write_csv_lf(logno_fit_data, logno_fit_data_path)
+  write_csv_lf(logno_laml_fixed_reference, logno_laml_fixed_reference_path)
+  write_csv_lf(
+    logno_laml_fixed_fitted_reference,
+    logno_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(bcpe_reference, bcpe_reference_path)
   write_csv_lf(bcpe_fit_data, bcpe_fit_data_path)
   write_csv_lf(bcpe_rs_reference, bcpe_rs_reference_path)
+  write_csv_lf(bcpe_laml_fixed_reference, bcpe_laml_fixed_reference_path)
+  write_csv_lf(
+    bcpe_laml_fixed_fitted_reference,
+    bcpe_laml_fixed_fitted_reference_path
+  )
   write_csv_lf(inference_table_reference, inference_table_path)
   write_csv_lf(inference_covariance_reference, inference_covariance_path)
   write_csv_lf(

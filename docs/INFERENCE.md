@@ -105,6 +105,21 @@ because that component is already represented by the linear predictor. The
 diagonal reproduces the `var` component created by `gamlss.pb()` and
 subsequently used by `predict.gamlss(..., se.fit=TRUE)`.
 
+For a multiply penalized tensor term, the corresponding system is
+
+```text
+B' W B + sum_j lambda_j S_j.
+```
+
+An explicit tensor constraint is imposed through the same null-space
+reparameterization used during fitting. Formula `te()` has already absorbed
+its sum-to-zero constraint; `ti()` has already absorbed its marginal
+interaction transforms. Their remaining penalty null spaces are not
+subtracted because, unlike `gamlss::pb()`, those directions are not duplicated
+in the linear predictor. `smoothing_parameter` is a tuple for these terms.
+For multivariate covariates, `to_dataframe()` names the inputs
+`covariate_0`, `covariate_1`, and so on.
+
 Intervals use pointwise normal critical values. They are conditional on the
 fitted smoothing parameter and final working weights: they do not incorporate
 selection uncertainty in `lambda`.
@@ -188,12 +203,13 @@ Z_a' W_ab Z_b,
 ```
 
 where `W_ab` is the expected link-scale information, including case weights.
-The diagonal spline blocks additionally contain `lambda D'D`. Each spline is
-restricted to the complement of its unpenalized null-function space under its
-parameter's working weights. This is the joint form of the null-space
-subtraction used by `gamlss.pb()`: it removes the non-identifiable allocation
-of a polynomial component between the linear and smooth predictors without
-discarding cross-smooth or cross-parameter covariance.
+The diagonal smooth blocks additionally contain either `lambda D'D` or
+`sum_j lambda_j S_j`. A scalar `pb()` spline is restricted to the complement
+of its unpenalized null-function space under its parameter's working weights.
+This is the joint form of the null-space subtraction used by `gamlss.pb()`.
+A tensor instead uses its explicit coefficient constraint, if any, without
+discarding its distinct lower-order null directions. Both routes retain
+cross-smooth and cross-parameter covariance.
 
 `coefficient_covariance_matrix` follows `coefficient_names`;
 `linear_coefficient_slices` and `smooth_coefficient_slices` locate its blocks.
@@ -248,17 +264,57 @@ bootstrap_band = mu_x_bootstrap.simultaneous_confidence_band()
 bootstrap_table = mu_x_bootstrap.to_dataframe()
 ```
 
+The same result supports both scalar- and multiple-penalty terms. For `pb()`,
+`smoothing_parameter` remains a float and
+`bootstrap_smoothing_parameters` retains its historical `(replicates,)`
+shape. For a `te()` or `ti()` term with `J` marginal penalties,
+`smoothing_parameter` is a `J`-tuple and the bootstrap tensor has shape
+`(replicates, J)`. The smoothing-parameter mean, standard error, and bias are
+floats for a scalar term and length-`J` tensors for a multiple-penalty term;
+its percentile intervals have shape `(J, 2)`.
+
 For each successful replicate, TorchGAMLSS:
 
 1. draws one response at every original design row from the fitted
    distribution;
 2. clones the fitted model;
-3. reruns RS or CG, including ML, GAIC, GCV, or target-EDF lambda selection;
+3. reruns RS or CG, including ML, GAIC, GCV, or target-EDF lambda selection,
+   or reruns whole-model LAML with joint scalar/tensor lambda selection;
 4. evaluates every smooth on the requested covariate values.
 
 Use the same `algorithm=` and `control=` settings as the original fit so the
 bootstrap distribution represents the estimator that produced the reported
-model.
+model. For a supported Normal, Poisson, NBI, Gamma, Beta, Student-t, BCCG, BCT,
+BCPE, PE, uncensored GG, uncensored LOGNO, or uncensored WEI model fitted with
+`fit_laml_data()`, use:
+
+```python
+from torchgamlss import LAMLControl
+
+bootstrap = model.smooth_joint_bootstrap_data(
+    data,
+    new_data=new_data,
+    replicates=999,
+    algorithm="laml",
+    control=LAMLControl(),
+    generator=torch.Generator().manual_seed(2026),
+)
+```
+
+This repeats the complete nested LAML optimization in every successful
+replicate. Automatic `pb()`, `te()`, and `ti()` lambdas are selected jointly;
+fixed formula lambdas remain fixed. LAML bootstrap currently supports additive
+Normal models with identity-`mu`/log-`sigma` links, Poisson models with a
+log-`mu` link, NBI and Gamma models with log-`mu`/log-`sigma` links, Beta
+models with logit-`mu`/logit-`sigma` links, and Student-t models with
+identity-`mu`/log-`sigma`/log-`nu` links, plus BCCG models with
+identity-`mu`/log-`sigma`/identity-`nu` links and BCT models with
+identity-`mu`/log-`sigma`/identity-`nu`/log-`tau` links. BCPE uses the same
+four standard links; PE uses identity-`mu`/log-`sigma`/log-`nu`. It is followed
+by uncensored GG with log-`mu`/log-`sigma`/identity-`nu`, uncensored LOGNO with
+identity-`mu`/log-`sigma`, and uncensored WEI with log-`mu`/log-`sigma`. LAML
+bootstrap is materially more expensive than RS or CG bootstrap, so use
+`max_attempts` and inspect `failure_rate`.
 
 The reported pointwise intervals are percentile bootstrap intervals.
 `standard_errors` and `covariance_matrix` are empirical across the successful
@@ -294,6 +350,8 @@ mu_sigma_covariance = joint.covariance_block(
 )
 
 joint.bootstrap_smoothing_parameters
+joint.smoothing_parameter_labels
+joint.smoothing_parameter_slices
 joint.smoothing_parameter_covariance_matrix
 joint.smoothing_parameter_correlation_matrix
 
@@ -308,6 +366,13 @@ and complete model refit. `term_order`, `term_slices`, and `point_labels`
 identify the stacked curve coordinates. `covariance_block()` can therefore
 measure dependence between different smooths, including smooths attached to
 different distribution parameters.
+
+Joint smoothing-parameter arrays are flattened at the penalty level rather
+than the term level. `smoothing_parameter_labels` records
+`(parameter, term, penalty_index)` for every column, while
+`smoothing_parameter_slices` locates all penalties belonging to each term.
+This is unchanged for scalar-only models: every term still contributes one
+column.
 
 `simultaneous_confidence_bands()` calibrates one max-|t| critical value over
 all points of all selected smooths. Pass a sequence such as
@@ -348,7 +413,10 @@ Each successful replicate simulates one training response, refits every
 distribution parameter, repeats configured smoothing selection, predicts all
 parameters on `new_data`, and then evaluates the requested family quantiles.
 Thus a BCT or BCPE centile curve, for example, propagates the joint variation
-of `mu`, `sigma`, `nu`, and `tau`.
+of `mu`, `sigma`, `nu`, and `tau`. RS and CG are available for every
+sampleable supported family. `algorithm="laml"` is additionally available for
+every family listed in the LAML bootstrap scope above and repeats joint
+scalar/tensor selection before evaluating each quantile curve.
 
 Pointwise limits are percentile bootstrap intervals. The flattened
 `covariance_matrix` follows prediction row first and probability second.
@@ -494,12 +562,16 @@ or non-identifiable designs are rejected rather than pseudo-inverted.
 Parametric inference supports models fitted by RS, CG, or Torch L-BFGS.
 Conditional linear-coefficient inference supports additive RS and CG fits.
 Conditional smooth inference and within-curve simultaneous bands support
-additive RS and CG fits. Fixed-lambda analytic inference provides joint
-covariance across linear coefficients, spline coefficients, smooth terms, and
-distribution parameters. Parametric-bootstrap smooth inference supports both
-algorithms, repeats smoothing-parameter selection, and provides empirical
-joint covariance, simultaneous bands, and derived-curve functionals across
-fitted smooths.
+additive RS and CG fits, including fixed-lambda `te()` and `ti()` terms.
+Fixed-lambda analytic inference provides joint covariance across linear
+coefficients, smooth coefficients, smooth terms, and distribution parameters.
+Parametric-bootstrap smooth inference supports scalar- and multiple-penalty
+terms with RS, CG, and supported whole-model LAML refits. It repeats available
+smoothing-parameter selection, stores one lambda column per penalty, and
+provides empirical joint covariance, simultaneous bands, and derived-curve
+functionals across fitted smooths. Tensor lambdas must be fixed for RS/CG
+refits, while `algorithm="laml"` reselects automatic tensor lambdas jointly
+in every successful bootstrap sample.
 
 The Hessian and conditional smooth calculations are local Wald
 approximations. They do not replace profile likelihood or robust sandwich

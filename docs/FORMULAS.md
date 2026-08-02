@@ -292,9 +292,60 @@ For familiarity, `lambda_`, `df`, `method`, `k`, and `inter` are accepted as
 aliases. Python reserves the word `lambda`, hence the trailing underscore in
 `lambda_`.
 
-`pb()` and `offset()` must currently be standalone additive terms. Smooth
-interactions, transformed smooth covariates, multiple offsets for one
-parameter, and missing-value row dropping are deliberately rejected.
+## Tensor-product smooths
+
+`te()` constructs a complete tensor-product surface with one smoothing
+parameter per marginal direction. Omit the lambdas to select them jointly:
+
+```python
+model = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": (
+            "y ~ te(x, z, intervals=(6, 4), "
+            "name='surface')"
+        ),
+        "sigma": "~ 1",
+    },
+    data,
+)
+result = model.fit_laml_data(data)
+```
+
+The complete surface absorbs a training-data sum-to-zero constraint, keeping
+it identifiable with the formula intercept and preserving that mapping during
+prediction. `ti()` instead constructs only the highest-order interaction; add
+the desired lower-order main effects separately:
+
+```python
+"y ~ x + z + ti(x, z, initial_lambda_=(2, 8))"
+```
+
+The canonical options are `smoothing_parameters`,
+`initial_smoothing_parameters`, `intervals`, `degree`, `penalty_order`, and
+`name`. `lambda_` aliases fixed `smoothing_parameters`; `initial_lambda_`
+aliases the starting values used by LAML; and `inter` aliases `intervals`.
+When neither lambda option is present, every margin starts at 10 and is
+estimated. Basis options may be scalar or contain one integer per marginal
+covariate. `te()` also accepts `center=False` for advanced models that impose
+identifiability elsewhere.
+
+Formula tensor terms work with `fit_rs_data()`, `fit_cg_data()`, `fit_data()`,
+and `fit_minibatch_data()` on CPU or CUDA when `lambda_=` fixes every margin.
+RS and CG use the generic multiple-penalty solver during backfitting while
+preserving the original scalar `pb()` path. `fit_laml_data()` instead selects
+all automatic `pb()`, `te()`, and `ti()` lambdas jointly for the current
+Normal location-scale slice, exposes the outer gradient/Hessian, and updates
+the model state. Parametric bootstrap stores one lambda column per marginal
+penalty. Fixed tensor terms can refit through RS or CG; automatic tensor terms
+use `algorithm="laml"` to repeat whole-model selection in every successful
+replicate. See
+[`TENSOR_SMOOTHS.md`](TENSOR_SMOOTHS.md).
+
+`pb()`, `te()`, `ti()`, and `offset()` must currently be standalone additive
+terms over simple column names. Transformed smooth covariates, multiple
+offsets for one parameter, and missing-value row dropping are deliberately
+rejected.
 
 ## Formula semantics
 

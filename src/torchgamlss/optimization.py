@@ -2343,14 +2343,15 @@ def _validate_inputs(
         normalized_smooth_covariates[parameter] = {}
         for term_name, covariate in supplied.items():
             if (
-                covariate.shape != response.shape
+                covariate.ndim < 1
+                or covariate.shape[0] != response.numel()
                 or covariate.dtype != response.dtype
                 or covariate.device != response.device
                 or not torch.isfinite(covariate).all()
             ):
                 raise ValueError(
                     f"smooth covariate {term_name!r} for {parameter!r} "
-                    "must be finite with one value per response and matching "
+                    "must be finite with one row per response and matching "
                     "dtype and device"
                 )
             normalized_smooth_covariates[parameter][term_name] = covariate

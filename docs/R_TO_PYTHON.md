@@ -336,8 +336,8 @@ Canonical Python option names are:
 The aliases `lambda_`, `df`, `method`, `k`, and `inter` are accepted in
 formulas. Use `penalty_order` for R's `order`.
 
-The current smoother scope is one-dimensional P-splines. A `pb()` call must be
-a standalone additive term over a simple numeric column. Multiple `pb()` terms
+The current `pb()` scope is one-dimensional P-splines. A `pb()` call must be a
+standalone additive term over a simple numeric column. Multiple `pb()` terms
 can be attached to one predictor, and different distribution parameters can
 contain smooths simultaneously.
 
@@ -356,16 +356,51 @@ fit.smoothing_iterations["mu"]["x"]
 
 See [`SMOOTHS.md`](SMOOTHS.md) for the tensor-level `PSpline` API.
 
+## Translating `mgcv::te()` and `mgcv::ti()`
+
+TorchGAMLSS formula tensor terms use equally spaced P-spline marginals and
+support fixed or jointly LAML-selected smoothing parameters:
+
+| `mgcv` concept | TorchGAMLSS formula |
+| --- | --- |
+| automatic full tensor surface | `te(x, z)` |
+| automatic pure tensor interaction | `ti(x, z)` |
+| fixed tensor lambdas | `te(x, z, lambda_=(2, 8))` |
+| LAML starting lambdas | `te(x, z, initial_lambda_=(2, 8))` |
+| marginal basis sizes | `intervals=(6, 4)` |
+| named contribution | `name='surface'` |
+
+`te()` contains the complete surface and absorbs a global sum-to-zero
+constraint when constructed from a formula. `ti()` removes the marginal
+main-effect directions, so include the desired lower-order terms explicitly:
+
+```python
+formulas = {
+    "mu": "y ~ x + z + ti(x, z, intervals=(6, 4))",
+    "sigma": "~ 1",
+}
+model = GAMLSS.from_formula(Normal(), formulas, data)
+fit = model.fit_laml_data(data)
+```
+
+`fit_laml_data()` selects all automatic scalar and tensor lambdas jointly for
+the current Normal location-scale slice. Formula `te()`/`ti()` also works
+through RS, CG, L-BFGS, or mini-batch Adam when `lambda_=` fixes each margin.
+RS and CG use the generic constrained solver for the tensor update and retain
+the GAMLSS-compatible scalar solver for `pb()`. See
+[`TENSOR_SMOOTHS.md`](TENSOR_SMOOTHS.md).
+
 ## Fitting algorithm mapping
 
 | R | TorchGAMLSS |
 | --- | --- |
 | `method=RS()` | `model.fit_rs_data(...)` |
 | `method=CG()` | `model.fit_cg_data(...)` |
+| `mgcv` REML/LAML smoothing selection | `model.fit_laml_data(...)` |
 | no direct equivalent | `model.fit_data(...)` using Torch L-BFGS |
 
 The methods without the `_data` suffix are the low-level tensor equivalents:
-`fit_rs()`, `fit_cg()`, and `fit()`.
+`fit_rs()`, `fit_cg()`, `fit_laml()`, and `fit()`.
 
 RS and CG support fixed, ML, target-EDF, GAIC, and GCV smoothing-parameter
 selection. The L-BFGS path requires fixed smoothing parameters.
@@ -676,10 +711,25 @@ bootstrap = model.smooth_bootstrap_data(
 mu_x_bootstrap = bootstrap["mu"]["x"]
 ```
 
-Every replicate simulates from the fitted family and reruns the complete RS or
-CG fit, so automatic `pb()` lambda selection is repeated. This is a
-TorchGAMLSS extension rather than a claim of direct `gamlss` output parity;
-the underlying fit and conditional variance remain covered by the R fixtures.
+Every replicate simulates from the fitted family and reruns the selected
+complete estimator. RS and CG repeat their available `pb()` lambda updates.
+Fixed-lambda `te()`/`ti()` models use the same workflow and store one lambda
+column per marginal penalty; those columns have zero variance. For an
+automatic tensor model fitted by LAML, pass `algorithm="laml"` and
+`control=LAMLControl()` to repeat joint scalar/tensor selection in every
+successful sample. This is a TorchGAMLSS extension rather than a claim of
+direct `gamlss` output parity; the underlying fit and conditional variance
+remain covered by the R fixtures.
+
+Whole-model LAML uses implicit-function outer gradients and Hessians by
+default, matching the outer-derivative strategy used by `mgcv`. Set
+`LAMLControl(outer_derivative_method="finite_difference")` only to audit
+against the original profile-difference implementation.
+
+The low-level `fit_gamlss_laml()` API can condition on a fixed distribution
+parameter by pairing an `n x 0` design with its link-scale offset. This is used
+for direct Beta parity with `mgcv::betar(theta=...)`; regular Beta formula
+models estimate both `mu` and `sigma` predictors.
 
 Use `smooth_joint_bootstrap_data()` when several fitted smooths must remain
 aligned within each replicate:
@@ -796,8 +846,14 @@ TorchGAMLSS is pre-alpha and currently covers a focused subset of R `gamlss`.
 Important exclusions include:
 
 - families other than the ten listed above;
-- smoothers other than the current `pb()` implementation;
-- transformed or interaction smooth terms;
+- smoothers other than `pb()` and the current P-spline `te()`/`ti()` slice;
+- transformed smooth covariates and tensor LAML beyond the standard Normal
+  location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and
+  Beta mean/dispersion, Student-t location/scale/shape, BCCG
+  location/scale/shape, BCT location/scale/skewness/tail-shape, and BCPE
+  location/scale/skewness/kurtosis, PE location/scale/shape, and uncensored GG
+  positive-location/scale/shape, uncensored LOGNO mean-log/scale, and
+  uncensored WEI scale/shape families;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;

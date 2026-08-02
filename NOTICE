@@ -91,6 +91,21 @@ gamlss 5.5-0, in particular R/add.r and R/pb.R. The latter credits work by
 Mikis Stasinopoulos, Robert Rigby, Paul Eilers, and Simon Wood. The translated
 implementation remains under GPL-3.0-only.
 
+Tensor-product design and marginal-penalty embedding are independently
+implemented from the construction described by Wood (2006) and checked
+against tensor.prod.model.matrix() and tensor.prod.penalties() in mgcv 1.9-4,
+distributed under GPL-2 or later. Tensor-interaction identifiability follows
+the marginal-constraint construction documented for mgcv::ti(). TorchGAMLSS
+remains under GPL-3.0-only. The te()/ti() formula layer uses those independently
+implemented bases, penalties, and null-space transforms with fixed smoothing
+or the whole-model selection described next.
+
+The whole-model LAML criterion, Normal location-scale parameterization, and
+reference fixtures follow Wood, Pya, and Säfken (2016) and mgcv 1.9-4,
+particularly R/gamlss.r and gaulss(). mgcv is distributed under GPL version 2
+or later. The Torch implementation uses autograd inner derivatives and
+converged-profile numerical outer derivatives and remains under GPL-3.0-only.
+
 The fetal abdominal-circumference observations in
 examples/bccg_centile_curves/data.csv are copied from the abdom dataset in
 gamlss.data 6.0-7, distributed under GPL-2 or GPL-3. The package identifies
