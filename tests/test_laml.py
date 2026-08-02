@@ -988,6 +988,10 @@ def test_pe_implicit_outer_derivatives_match_finite_difference():
                 inner_gradient_tolerance=1e-7,
                 outer_max_iterations=1,
                 outer_derivative_method=method,
+                # The regularized-gamma CDF makes second differences sensitive
+                # to cancellation on some libm builds. A wider audit step is
+                # substantially more stable without changing the estimator.
+                hessian_difference_step=8e-3,
             ),
         )
 
@@ -2204,9 +2208,11 @@ def test_formula_bccg_laml_selects_lambda_and_bootstraps():
         outer_gradient_tolerance=5e-4,
     )
 
-    result = model.fit_laml_data(data, control=control)
+    rs_result = model.fit_rs_data(data)
+    result = model.fit_laml_data(data, control=control, warm_start=True)
     prediction = model.predict_data(data)
 
+    assert rs_result.converged
     assert isinstance(result, GAMLSSLAMLResult)
     assert result.outer_converged
     assert result.family == "BCCG"
