@@ -6,8 +6,9 @@ mean/coefficient-of-variation, NBI mean/dispersion, Beta mean/dispersion,
 Student-t location/scale/shape, BCCG location/scale/shape, BCT
 location/scale/skewness/tail-shape, and BCPE
 location/scale/skewness/kurtosis, PE location/scale/shape, and GG
-positive-location/scale/shape, uncensored LOGNO mean-log/scale, and uncensored
-WEI scale/shape models. A Normal formula model uses:
+positive-location/scale/shape, uncensored IG mean/dispersion, uncensored LOGNO
+mean-log/scale, and uncensored WEI scale/shape models. A Normal formula model
+uses:
 
 ```python
 from torchgamlss import GAMLSS, LAMLControl, Normal
@@ -332,6 +333,16 @@ weights to its likelihood; weighted behavior is covered separately by the
 `gamlss::gamlss(WEI())` and finite-difference derivative gates. Censored WEI
 remains outside the current LAML scope.
 
+For inverse Gaussian, the standard log/log links parameterize positive mean
+`mu` and dispersion `sigma`, with
+`Var(Y) = sigma^2 * mu^3`. This is the `gamlss.dist::IG` convention. Although
+an inverse Gaussian is mathematically a Tweedie model with variance power
+`p=3`, `mgcv::Tweedie()` only accepts `1<p<=2`; it therefore cannot provide a
+direct LAML reference for this vertical. The validation instead combines a
+weighted fixed-lambda `gamlss::gamlss(IG())` comparison with independent
+finite-difference audits of the implicit outer gradient and analytic Hessian.
+Censored IG remains outside the current LAML scope.
+
 ## Formula and model integration
 
 The high-level adapter:
@@ -367,6 +378,56 @@ Use `initial_smoothing_parameters=(4, 7)` or its
 retaining automatic selection. Supplying `lambda_=(4, 7)` instead fixes both
 lambdas. RS, CG, L-BFGS, and mini-batch fitting continue to require fixed
 tensor lambdas; automatic tensor terms explicitly direct callers to LAML.
+
+Formula `pbc()` terms contribute one circular-difference penalty and select
+one lambda like an ordinary scalar smooth while retaining periodic prediction.
+Formula `pbz()` terms contribute the roughness and first-difference shrinkage
+penalties as two independent coordinates. Use `lambda_=(a, b)` to fix both
+for RS/CG, or `initial_lambda_=(a, b)` to select both by LAML. Automatic
+`pbz()` cannot be warm-started through RS/CG because classical automatic
+selection is deliberately unavailable for multiply penalized terms; its LAML
+fit starts directly from the supplied positive lambda pair.
+
+Formula `tp()` contributes one isotropic thin-plate penalty. Its polynomial
+null space and empirical sum-to-zero constraint are incorporated into the
+stored low-rank prediction mapping, so no extra constraint coordinate is
+needed during fitting. Use `lambda_=a` for a fixed smoother or
+`initial_lambda_=a` to select its lambda by LAML. Automatic `tp()` terms start
+directly with LAML; fixed terms can also be fitted through RS, CG, L-BFGS, or
+mini-batch optimization. Bootstrap LAML refits retain the fitted spectral
+basis and reselect lambda on each resampled response.
+
+Formula `ad()` contributes one penalty coordinate for every column of its
+local roughness basis. For example, `ad(x, k=20, m=5)` has a 20-column raw
+function basis, an absorbed centering constraint, and five jointly selected
+lambdas. Use `lambda_=(...)` to fix all components or
+`initial_lambda_=(...)` to provide positive LAML starts. Bootstrap LAML refits
+reselect the complete lambda vector and retain one reported column per local
+penalty component. In two dimensions, `ad(x, z, k=(7, 6), m=(3, 3))` uses a
+tensor function basis and nine local penalty coordinates spanning both second
+differences and the mixed derivative. The same joint selection and bootstrap
+rules apply.
+
+Formula `mrf(region, edges=..., area_count=...)`, or its categorical companion
+`mrf(region, adjacency=...)`, contributes one graph Laplacian penalty
+coordinate. `lambda_=` fixes it for the classical and gradient fitters, while
+`initial_lambda_=` selects it through LAML. Bootstrap refits keep both the
+graph and fitted label order fixed and reselect lambda for every simulated
+response.
+
+`mrf(region, penalty=...)` follows the same single-lambda path with a supplied
+positive-semidefinite spatial penalty instead of a Laplacian reconstructed
+from neighbors. The matrix remains fixed while LAML and bootstrap reselect its
+scalar multiplier.
+
+`mrf(region, polygons=...)` first derives a fixed neighbor graph using
+`mgcv::pol2nb` shared-vertex semantics. The polygon coordinates do not enter
+the iterative optimizer; LAML and bootstrap operate on the resulting
+Laplacian exactly as they do for explicit adjacency.
+
+Supplying `k` first projects onto the `k` least-penalized natural graph
+coordinates; LAML then selects the retained low-rank penalty in exactly the
+same way.
 
 ## Low-level matrix API
 
@@ -727,16 +788,27 @@ sign-reversed coefficients, fitted parameters, and the complete outer
 Hessian. Formula selection and ten-replicate LAML bootstrap estimate both
 predictors, and the complete uncensored path runs on CUDA.
 
+## Inverse-Gaussian reference and derivative gates
+
+The committed IG reference fixes the `mu` P-spline lambda at 10 and compares
+the weighted warm-started joint inner fit with `gamlss::gamlss()` for all 160
+fitted `mu` and `sigma` values and the negative log likelihood. A separate
+weighted audit compares the implicit outer gradient and analytic Hessian with
+finite differences. Formula selection and ten-replicate LAML bootstrap
+estimate both predictors, and the complete uncensored path runs on CUDA.
+There is no direct `mgcv` gate because its Tweedie implementation excludes the
+inverse-Gaussian variance power `p=3`.
+
 ## Current limits
 
 - whole-model integration currently accepts standard Normal identity/log,
   Poisson log-link, NBI and Gamma log/log, Beta logit/logit, and Student-t
   identity/log/log, BCCG identity/log/identity, BCT
   identity/log/identity/log, BCPE identity/log/identity/log, and PE
-  identity/log/log, plus uncensored GG log/log/identity, uncensored LOGNO
-  identity/log, and uncensored WEI log/log models; the low-level family-driven
-  core is deliberately exposed, but other families are not yet claimed as
-  validated;
+  identity/log/log, plus uncensored GG log/log/identity, uncensored IG
+  log/log, uncensored LOGNO identity/log, and uncensored WEI log/log models;
+  this covers the current uncensored base-family catalog, while censored and
+  composed-family LAML remain outside the validated scope;
 - the dense exact Hessian uses likelihood derivatives through fourth order;
   it avoids repeated inner fits and finite-difference noise, but its local
   autograd work can be expensive for models with many coefficients or free

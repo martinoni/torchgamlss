@@ -3,6 +3,7 @@ check_only <- "--check" %in% args
 
 suppressPackageStartupMessages(library(gamlss.dist))
 suppressPackageStartupMessages(library(gamlss))
+suppressPackageStartupMessages(library(mgcv))
 
 reference_dir <- file.path("tests", "reference")
 cases_path <- file.path(reference_dir, "no_cases.csv")
@@ -27,6 +28,131 @@ pb_reference_path <- file.path(reference_dir, "no_pb_reference.csv")
 pb_fitted_reference_path <- file.path(reference_dir, "no_pb_fitted_reference.csv")
 pb_coefficient_reference_path <- file.path(
   reference_dir, "no_pb_coefficient_reference.csv"
+)
+pbc_fit_data_path <- file.path(reference_dir, "no_pbc_fit_data.csv")
+pbc_basis_reference_path <- file.path(reference_dir, "no_pbc_basis_reference.csv")
+pbc_penalty_reference_path <- file.path(
+  reference_dir, "no_pbc_penalty_reference.csv"
+)
+pbc_reference_path <- file.path(reference_dir, "no_pbc_reference.csv")
+pbc_fitted_reference_path <- file.path(
+  reference_dir, "no_pbc_fitted_reference.csv"
+)
+pbc_coefficient_reference_path <- file.path(
+  reference_dir, "no_pbc_coefficient_reference.csv"
+)
+pbz_fit_data_path <- file.path(reference_dir, "no_pbz_fit_data.csv")
+pbz_reference_path <- file.path(reference_dir, "no_pbz_reference.csv")
+pbz_fitted_reference_path <- file.path(
+  reference_dir, "no_pbz_fitted_reference.csv"
+)
+tp_fit_data_path <- file.path(reference_dir, "tp_fit_data.csv")
+tp_prediction_data_path <- file.path(
+  reference_dir, "tp_prediction_data.csv"
+)
+tp_fixed_reference_path <- file.path(
+  reference_dir, "tp_fixed_reference.csv"
+)
+tp_fixed_fitted_reference_path <- file.path(
+  reference_dir, "tp_fixed_fitted_reference.csv"
+)
+tp_fixed_prediction_reference_path <- file.path(
+  reference_dir, "tp_fixed_prediction_reference.csv"
+)
+adaptive_fit_data_path <- file.path(reference_dir, "adaptive_fit_data.csv")
+adaptive_prediction_data_path <- file.path(
+  reference_dir, "adaptive_prediction_data.csv"
+)
+adaptive_fixed_reference_path <- file.path(
+  reference_dir, "adaptive_fixed_reference.csv"
+)
+adaptive_fixed_fitted_reference_path <- file.path(
+  reference_dir, "adaptive_fixed_fitted_reference.csv"
+)
+adaptive_fixed_prediction_reference_path <- file.path(
+  reference_dir, "adaptive_fixed_prediction_reference.csv"
+)
+adaptive_2d_fit_data_path <- file.path(
+  reference_dir, "adaptive_2d_fit_data.csv"
+)
+adaptive_2d_prediction_data_path <- file.path(
+  reference_dir, "adaptive_2d_prediction_data.csv"
+)
+adaptive_2d_fixed_reference_path <- file.path(
+  reference_dir, "adaptive_2d_fixed_reference.csv"
+)
+adaptive_2d_fixed_fitted_reference_path <- file.path(
+  reference_dir, "adaptive_2d_fixed_fitted_reference.csv"
+)
+adaptive_2d_fixed_prediction_reference_path <- file.path(
+  reference_dir, "adaptive_2d_fixed_prediction_reference.csv"
+)
+mrf_fit_data_path <- file.path(reference_dir, "mrf_fit_data.csv")
+mrf_prediction_data_path <- file.path(
+  reference_dir, "mrf_prediction_data.csv"
+)
+mrf_fixed_reference_path <- file.path(
+  reference_dir, "mrf_fixed_reference.csv"
+)
+mrf_fixed_fitted_reference_path <- file.path(
+  reference_dir, "mrf_fixed_fitted_reference.csv"
+)
+mrf_fixed_prediction_reference_path <- file.path(
+  reference_dir, "mrf_fixed_prediction_reference.csv"
+)
+mrf_low_rank_fixed_reference_path <- file.path(
+  reference_dir, "mrf_low_rank_fixed_reference.csv"
+)
+mrf_low_rank_fixed_fitted_reference_path <- file.path(
+  reference_dir, "mrf_low_rank_fixed_fitted_reference.csv"
+)
+mrf_low_rank_fixed_prediction_reference_path <- file.path(
+  reference_dir, "mrf_low_rank_fixed_prediction_reference.csv"
+)
+mrf_penalty_fixed_reference_path <- file.path(
+  reference_dir, "mrf_penalty_fixed_reference.csv"
+)
+mrf_penalty_fixed_fitted_reference_path <- file.path(
+  reference_dir, "mrf_penalty_fixed_fitted_reference.csv"
+)
+mrf_penalty_fixed_prediction_reference_path <- file.path(
+  reference_dir, "mrf_penalty_fixed_prediction_reference.csv"
+)
+mrf_penalty_low_rank_fixed_reference_path <- file.path(
+  reference_dir, "mrf_penalty_low_rank_fixed_reference.csv"
+)
+mrf_penalty_low_rank_fixed_fitted_reference_path <- file.path(
+  reference_dir, "mrf_penalty_low_rank_fixed_fitted_reference.csv"
+)
+mrf_penalty_low_rank_fixed_prediction_reference_path <- file.path(
+  reference_dir, "mrf_penalty_low_rank_fixed_prediction_reference.csv"
+)
+mrf_polygon_fit_data_path <- file.path(
+  reference_dir, "mrf_polygon_fit_data.csv"
+)
+mrf_polygon_prediction_data_path <- file.path(
+  reference_dir, "mrf_polygon_prediction_data.csv"
+)
+mrf_polygon_adjacency_reference_path <- file.path(
+  reference_dir, "mrf_polygon_adjacency_reference.csv"
+)
+mrf_polygon_fixed_reference_path <- file.path(
+  reference_dir, "mrf_polygon_fixed_reference.csv"
+)
+mrf_polygon_fixed_fitted_reference_path <- file.path(
+  reference_dir, "mrf_polygon_fixed_fitted_reference.csv"
+)
+mrf_polygon_fixed_prediction_reference_path <- file.path(
+  reference_dir, "mrf_polygon_fixed_prediction_reference.csv"
+)
+mrf_polygon_low_rank_fixed_reference_path <- file.path(
+  reference_dir, "mrf_polygon_low_rank_fixed_reference.csv"
+)
+mrf_polygon_low_rank_fixed_fitted_reference_path <- file.path(
+  reference_dir, "mrf_polygon_low_rank_fixed_fitted_reference.csv"
+)
+mrf_polygon_low_rank_fixed_prediction_reference_path <- file.path(
+  reference_dir, "mrf_polygon_low_rank_fixed_prediction_reference.csv"
 )
 pb_ml_reference_path <- file.path(reference_dir, "no_pb_ml_reference.csv")
 pb_ml_fitted_reference_path <- file.path(
@@ -139,6 +265,13 @@ wei_laml_fixed_reference_path <- file.path(
 )
 wei_laml_fixed_fitted_reference_path <- file.path(
   reference_dir, "wei_laml_fixed_fitted_reference.csv"
+)
+ig_fit_data_path <- file.path(reference_dir, "ig_fit_data.csv")
+ig_laml_fixed_reference_path <- file.path(
+  reference_dir, "ig_laml_fixed_reference.csv"
+)
+ig_laml_fixed_fitted_reference_path <- file.path(
+  reference_dir, "ig_laml_fixed_fitted_reference.csv"
 )
 logno_fit_data_path <- file.path(reference_dir, "logno_fit_data.csv")
 logno_laml_fixed_reference_path <- file.path(
@@ -1852,6 +1985,65 @@ wei_laml_fixed_fitted_reference <- data.frame(
   sigma = fitted(wei_laml_fixed_fit, what = "sigma")
 )
 
+ig_n <- 160
+ig_x <- seq(-1, 1, length.out = ig_n)
+ig_z <- cos(seq(0, 2 * pi, length.out = ig_n))
+ig_mu_offset <- 0.03 * cos(seq(0, 3 * pi, length.out = ig_n))
+ig_sigma_offset <- 0.02 * sin(seq(0, 4 * pi, length.out = ig_n))
+ig_weight <- rep(c(1, 1.5, 2, 0.75), length.out = ig_n)
+ig_mu <- exp(
+  0.35 + 0.55 * ig_x - 0.2 * ig_x^2 +
+    0.1 * ig_x^3 + ig_mu_offset
+)
+ig_sigma <- exp(-1.0 + 0.15 * ig_z + ig_sigma_offset)
+ig_probability <- (((seq_len(ig_n) * 67) %% ig_n) + 0.5) / ig_n
+ig_fit_data <- data.frame(
+  x = ig_x,
+  z = ig_z,
+  y = qIG(
+    ig_probability,
+    mu = ig_mu,
+    sigma = ig_sigma
+  ),
+  weight = ig_weight,
+  mu_offset = ig_mu_offset,
+  sigma_offset = ig_sigma_offset
+)
+ig_laml_fixed_fit <- gamlss(
+  y ~ pb(x, lambda = 10),
+  sigma.formula = ~ 1,
+  weights = weight,
+  family = IG(),
+  method = RS(),
+  data = ig_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 300, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8,
+    cyc = 300,
+    bf.tol = 1e-8,
+    bf.cyc = 300,
+    glm.trace = FALSE
+  )
+)
+ig_laml_fixed_smooth <- getSmo(
+  ig_laml_fixed_fit,
+  parameter = "mu",
+  which = 1
+)
+ig_laml_fixed_reference <- data.frame(
+  global_deviance = unname(deviance(ig_laml_fixed_fit)),
+  negative_log_likelihood = -as.numeric(logLik(ig_laml_fixed_fit)),
+  smoothing_parameter = ig_laml_fixed_smooth$lambda,
+  outer_iterations = ig_laml_fixed_fit$iter,
+  converged = ig_laml_fixed_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+ig_laml_fixed_fitted_reference <- data.frame(
+  mu = fitted(ig_laml_fixed_fit, what = "mu"),
+  sigma = fitted(ig_laml_fixed_fit, what = "sigma")
+)
+
 logno_n <- 160
 logno_x <- seq(-1, 1, length.out = logno_n)
 logno_z <- cos(seq(0, 2 * pi, length.out = logno_n))
@@ -2175,6 +2367,688 @@ pb_fitted_reference <- data.frame(
 )
 pb_coefficient_reference <- data.frame(
   coefficient = drop(pb_smooth$coef)
+)
+
+pbc_bbase <- function(x, xl, xr, intervals, degree) {
+  truncated_power <- function(value, knot, power) {
+    (value - knot)^power * (value > knot)
+  }
+  spacing <- (xr - xl) / intervals
+  knots <- seq(
+    xl - degree * spacing,
+    xr + degree * spacing,
+    by = spacing
+  )
+  powers <- outer(x, knots, truncated_power, degree)
+  difference <- diff(diag(length(knots)), diff = degree + 1) /
+    (gamma(degree + 1) * spacing^degree)
+  (-1)^(degree + 1) * powers %*% t(difference)
+}
+
+pbc_cbase <- function(x, xl, xr, intervals, degree) {
+  full_basis <- pbc_bbase(x, xl, xr, intervals, degree)
+  basis <- full_basis[, seq_len(intervals), drop = FALSE]
+  basis[, seq_len(degree)] <- basis[, seq_len(degree), drop = FALSE] +
+    full_basis[, intervals + seq_len(degree), drop = FALSE]
+  basis
+}
+
+pbc_cdiff <- function(size, order = 2, sine_penalty = TRUE) {
+  if (order == 1) {
+    extended <- matrix(0, size, size + 1)
+    for (index in seq_len(size)) {
+      extended[index, (0:1) + index] <- c(1, -1)
+    }
+    penalty <- extended[, 2:(size + 1), drop = FALSE]
+    penalty[, size] <- penalty[, size] + extended[, 1]
+    return(penalty)
+  }
+  extended <- matrix(0, size, size + 2)
+  stencil <- if (sine_penalty) {
+    c(-1, 2 * cos(2 * pi / size), -1)
+  } else {
+    c(-1, 2, -1)
+  }
+  for (index in seq_len(size)) {
+    extended[index, (0:2) + index] <- stencil
+  }
+  penalty <- extended[, 2:(size + 1), drop = FALSE]
+  penalty[, 1] <- penalty[, 1] + extended[, size + 2]
+  penalty[, size] <- penalty[, size] + extended[, 1]
+  penalty
+}
+
+pbc_x <- seq(0, 2 * pi, length.out = 120)
+pbc_fit_data <- data.frame(
+  x = pbc_x,
+  y = 0.45 + 0.85 * sin(pbc_x) - 0.3 * cos(2 * pbc_x) +
+    0.08 * sin(17 * pbc_x) + 0.04 * cos(23 * pbc_x)
+)
+pbc_basis_reference <- as.data.frame(
+  pbc_cbase(pbc_x, min(pbc_x), max(pbc_x), 12, 3)
+)
+pbc_penalty_reference <- as.data.frame(pbc_cdiff(12, 2, TRUE))
+pbc_fit <- gamlss(
+  y ~ pbc(x, lambda = 12, control = pbc.control(inter = 12)),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = RS(),
+  data = pbc_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8, cyc = 200, bf.tol = 1e-8, bf.cyc = 1000
+  )
+)
+pbc_smooth <- getSmo(pbc_fit, parameter = "mu", which = 1)
+pbc_reference <- data.frame(
+  mu_intercept = unname(coef(pbc_fit, what = "mu")[[1]]),
+  sigma_intercept = unname(coef(pbc_fit, what = "sigma")[[1]]),
+  smoothing_parameter = unname(pbc_smooth$lambda),
+  smooth_edf = unname(pbc_smooth$edf),
+  global_deviance = unname(deviance(pbc_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pbc_fit)),
+  outer_iterations = pbc_fit$iter,
+  converged = pbc_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pbc_fitted_reference <- data.frame(
+  mu = fitted(pbc_fit, what = "mu"),
+  sigma = fitted(pbc_fit, what = "sigma"),
+  mu_linear_predictor = pbc_fit$mu.lp,
+  mu_smooth = drop(pbc_fit$mu.s[, 1])
+)
+pbc_coefficient_reference <- data.frame(
+  coefficient = drop(pbc_smooth$coef)
+)
+
+pbz_x <- seq(-1, 1, length.out = 120)
+pbz_fit_data <- data.frame(
+  x = pbz_x,
+  y = 0.35 + 0.03 * pbz_x + 0.08 * sin(17 * pbz_x) +
+    0.04 * cos(23 * pbz_x)
+)
+pbz_fit <- gamlss(
+  y ~ pbz(x, lambda = 1e5, start = c(1, 50), inter = 20),
+  sigma.formula = ~ 1,
+  family = NO(),
+  method = RS(),
+  data = pbz_fit_data,
+  control = gamlss.control(c.crit = 1e-8, n.cyc = 200, trace = FALSE),
+  i.control = glim.control(
+    cc = 1e-8, cyc = 200, bf.tol = 1e-8, bf.cyc = 1000
+  )
+)
+pbz_smooth <- getSmo(pbz_fit, parameter = "mu", which = 1)
+pbz_reference <- data.frame(
+  mu_intercept = unname(coef(pbz_fit, what = "mu")[[1]]),
+  sigma_intercept = unname(coef(pbz_fit, what = "sigma")[[1]]),
+  roughness_smoothing_parameter = unname(pbz_smooth$lambda),
+  shrinkage_smoothing_parameter = 50,
+  smooth_edf = unname(pbz_smooth$edf - 1),
+  global_deviance = unname(deviance(pbz_fit)),
+  negative_log_likelihood = -as.numeric(logLik(pbz_fit)),
+  outer_iterations = pbz_fit$iter,
+  converged = pbz_fit$converged,
+  gamlss_version = as.character(packageVersion("gamlss")),
+  gamlss_dist_version = as.character(packageVersion("gamlss.dist"))
+)
+pbz_fitted_reference <- data.frame(
+  mu = fitted(pbz_fit, what = "mu"),
+  sigma = fitted(pbz_fit, what = "sigma"),
+  mu_linear_predictor = pbz_fit$mu.lp,
+  mu_smooth = drop(pbz_fit$mu.s[, 1])
+)
+
+tp_observation <- seq_len(90)
+tp_fit_data <- data.frame(
+  x = ((37 * tp_observation) %% 97) / 96,
+  z = ((53 * tp_observation + 11) %% 101) / 100
+)
+tp_fit_data$y <- with(
+  tp_fit_data,
+  0.7 + sin(2 * pi * x) + 0.6 * cos(2 * pi * z) + 0.25 * x * z
+)
+tp_prediction_data <- data.frame(
+  x = c(0.1, 0.3, 0.7, 0.9, 0.18, 0.52, 0.83),
+  z = c(0.8, 0.2, 0.6, 0.4, 0.33, 0.91, 0.07)
+)
+tp_smooth <- smoothCon(
+  s(x, z, bs = "tp", k = 15, m = 2),
+  data = tp_fit_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+tp_smoothing_parameter <- 2.5
+tp_design <- cbind(intercept = 1, tp_smooth$X)
+tp_penalty <- matrix(0, ncol(tp_design), ncol(tp_design))
+tp_penalty[-1, -1] <- tp_smoothing_parameter * tp_smooth$S[[1]]
+tp_coefficient <- solve(
+  crossprod(tp_design) + tp_penalty,
+  crossprod(tp_design, tp_fit_data$y)
+)
+tp_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(tp_smooth, tp_prediction_data)
+)
+tp_fixed_reference <- data.frame(
+  basis_size = ncol(tp_smooth$X),
+  penalty_rank = tp_smooth$rank,
+  penalty_nullity = tp_smooth$null.space.dim,
+  smoothing_parameter = tp_smoothing_parameter,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+tp_fixed_fitted_reference <- data.frame(
+  fitted = drop(tp_design %*% tp_coefficient)
+)
+tp_fixed_prediction_reference <- data.frame(
+  fitted = drop(tp_prediction_design %*% tp_coefficient)
+)
+
+adaptive_x <- seq(-1, 1, length.out = 100)
+adaptive_fit_data <- data.frame(
+  x = adaptive_x,
+  y = 0.4 + sin(2 * pi * adaptive_x) / (1 + 3 * adaptive_x^2) +
+    0.05 * cos(19 * adaptive_x)
+)
+adaptive_prediction_data <- data.frame(
+  x = c(-1.3, -1, -0.65, -0.1, 0.35, 0.9, 1, 1.25)
+)
+adaptive_smooth <- smoothCon(
+  s(x, bs = "ad", k = 20, m = 5),
+  data = adaptive_fit_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+adaptive_smoothing_parameters <- c(0.4, 1.2, 4, 1.8, 0.6)
+adaptive_design <- cbind(intercept = 1, adaptive_smooth$X)
+adaptive_penalty <- matrix(
+  0,
+  ncol(adaptive_design),
+  ncol(adaptive_design)
+)
+adaptive_penalty[-1, -1] <- Reduce(
+  "+",
+  Map(
+    function(smoothing_parameter, penalty) {
+      smoothing_parameter * penalty
+    },
+    adaptive_smoothing_parameters,
+    adaptive_smooth$S
+  )
+)
+adaptive_coefficient <- solve(
+  crossprod(adaptive_design) + adaptive_penalty,
+  crossprod(adaptive_design, adaptive_fit_data$y)
+)
+adaptive_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(adaptive_smooth, adaptive_prediction_data)
+)
+adaptive_fixed_reference <- data.frame(
+  basis_size = ncol(adaptive_smooth$X),
+  penalty_count = length(adaptive_smooth$S),
+  penalty_nullity = adaptive_smooth$null.space.dim,
+  lambda_0 = adaptive_smoothing_parameters[[1]],
+  lambda_1 = adaptive_smoothing_parameters[[2]],
+  lambda_2 = adaptive_smoothing_parameters[[3]],
+  lambda_3 = adaptive_smoothing_parameters[[4]],
+  lambda_4 = adaptive_smoothing_parameters[[5]],
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+adaptive_fixed_fitted_reference <- data.frame(
+  fitted = drop(adaptive_design %*% adaptive_coefficient)
+)
+adaptive_fixed_prediction_reference <- data.frame(
+  fitted = drop(adaptive_prediction_design %*% adaptive_coefficient)
+)
+
+adaptive_2d_observation_count <- 120
+adaptive_2d_index <- seq_len(adaptive_2d_observation_count)
+adaptive_2d_x <- seq(-1, 1, length.out = adaptive_2d_observation_count)
+adaptive_2d_z <- sin(adaptive_2d_index * sqrt(2))
+adaptive_2d_fit_data <- data.frame(
+  x = adaptive_2d_x,
+  z = adaptive_2d_z,
+  y = 0.5 + sin(2.3 * adaptive_2d_x) * cos(1.4 * adaptive_2d_z) +
+    0.15 * adaptive_2d_x * adaptive_2d_z +
+    0.03 * cos(adaptive_2d_index)
+)
+adaptive_2d_prediction_data <- data.frame(
+  x = c(-1.3, -1, -0.55, 0.1, 0.7, 1, 1.25),
+  z = c(-1.2, -0.8, 0.3, -0.4, 0.9, 0.2, 1.1)
+)
+adaptive_2d_smooth <- smoothCon(
+  s(x, z, bs = "ad", k = c(7, 6), m = c(3, 3)),
+  data = adaptive_2d_fit_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+adaptive_2d_smoothing_parameters <- c(
+  0.3, 0.7, 1.5, 3, 2.2, 1.1, 0.8, 1.7, 0.5
+)
+adaptive_2d_design <- cbind(intercept = 1, adaptive_2d_smooth$X)
+adaptive_2d_penalty <- matrix(
+  0,
+  ncol(adaptive_2d_design),
+  ncol(adaptive_2d_design)
+)
+adaptive_2d_penalty[-1, -1] <- Reduce(
+  "+",
+  Map(
+    function(smoothing_parameter, penalty) {
+      smoothing_parameter * penalty
+    },
+    adaptive_2d_smoothing_parameters,
+    adaptive_2d_smooth$S
+  )
+)
+adaptive_2d_coefficient <- solve(
+  crossprod(adaptive_2d_design) + adaptive_2d_penalty,
+  crossprod(adaptive_2d_design, adaptive_2d_fit_data$y)
+)
+adaptive_2d_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(adaptive_2d_smooth, adaptive_2d_prediction_data)
+)
+adaptive_2d_fixed_reference <- data.frame(
+  basis_size = ncol(adaptive_2d_smooth$X),
+  penalty_count = length(adaptive_2d_smooth$S),
+  penalty_nullity = adaptive_2d_smooth$null.space.dim,
+  first_basis_size = 7,
+  second_basis_size = 6,
+  first_penalty_basis_size = 3,
+  second_penalty_basis_size = 3,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+for (index in seq_along(adaptive_2d_smoothing_parameters)) {
+  adaptive_2d_fixed_reference[[paste0("lambda_", index - 1)]] <-
+    adaptive_2d_smoothing_parameters[[index]]
+}
+adaptive_2d_fixed_fitted_reference <- data.frame(
+  fitted = drop(adaptive_2d_design %*% adaptive_2d_coefficient)
+)
+adaptive_2d_fixed_prediction_reference <- data.frame(
+  fitted = drop(adaptive_2d_prediction_design %*% adaptive_2d_coefficient)
+)
+
+mrf_area_count <- 9
+mrf_edges <- matrix(
+  c(
+    0, 1, 1, 2, 3, 4, 4, 5, 6, 7, 7, 8,
+    0, 3, 1, 4, 2, 5, 3, 6, 4, 7, 5, 8
+  ),
+  ncol = 2,
+  byrow = TRUE
+)
+mrf_area_names <- as.character(0:(mrf_area_count - 1))
+mrf_neighbors <- setNames(vector("list", mrf_area_count), mrf_area_names)
+for (edge_index in seq_len(nrow(mrf_edges))) {
+  first <- mrf_edges[edge_index, 1] + 1
+  second <- mrf_edges[edge_index, 2] + 1
+  mrf_neighbors[[first]] <- c(mrf_neighbors[[first]], mrf_area_names[[second]])
+  mrf_neighbors[[second]] <- c(mrf_neighbors[[second]], mrf_area_names[[first]])
+}
+mrf_observation_count <- 135
+mrf_index <- seq_len(mrf_observation_count)
+mrf_region <- rep(0:(mrf_area_count - 1), length.out = mrf_observation_count)
+mrf_effect <- c(-0.8, -0.35, 0.05, -0.5, 0.1, 0.55, -0.15, 0.45, 0.75)
+mrf_fit_data <- data.frame(
+  region = mrf_region,
+  y = 1.2 + mrf_effect[mrf_region + 1] + 0.05 * sin(0.7 * mrf_index)
+)
+mrf_factor_data <- transform(mrf_fit_data, region = factor(region))
+mrf_prediction_data <- data.frame(region = 0:(mrf_area_count - 1))
+mrf_prediction_factor_data <- transform(
+  mrf_prediction_data,
+  region = factor(region, levels = mrf_area_names)
+)
+mrf_smooth <- smoothCon(
+  s(region, bs = "mrf", xt = list(nb = mrf_neighbors)),
+  data = mrf_factor_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+mrf_smoothing_parameter <- 2.4
+mrf_design <- cbind(intercept = 1, mrf_smooth$X)
+mrf_penalty <- matrix(0, ncol(mrf_design), ncol(mrf_design))
+mrf_penalty[-1, -1] <- mrf_smoothing_parameter * mrf_smooth$S[[1]]
+mrf_coefficient <- solve(
+  crossprod(mrf_design) + mrf_penalty,
+  crossprod(mrf_design, mrf_fit_data$y)
+)
+mrf_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(mrf_smooth, mrf_prediction_factor_data)
+)
+mrf_fixed_reference <- data.frame(
+  basis_size = ncol(mrf_smooth$X),
+  penalty_count = length(mrf_smooth$S),
+  penalty_nullity = mrf_smooth$null.space.dim,
+  area_count = mrf_area_count,
+  edge_count = nrow(mrf_edges),
+  lambda = mrf_smoothing_parameter,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+mrf_fixed_fitted_reference <- data.frame(
+  fitted = drop(mrf_design %*% mrf_coefficient)
+)
+mrf_fixed_prediction_reference <- data.frame(
+  fitted = drop(mrf_prediction_design %*% mrf_coefficient)
+)
+
+mrf_low_rank_requested_basis_size <- 6
+mrf_low_rank_smooth <- smoothCon(
+  s(
+    region,
+    bs = "mrf",
+    k = mrf_low_rank_requested_basis_size,
+    xt = list(nb = mrf_neighbors)
+  ),
+  data = mrf_factor_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+mrf_low_rank_smoothing_parameter <- 1.7
+mrf_low_rank_design <- cbind(intercept = 1, mrf_low_rank_smooth$X)
+mrf_low_rank_penalty <- matrix(
+  0,
+  ncol(mrf_low_rank_design),
+  ncol(mrf_low_rank_design)
+)
+mrf_low_rank_penalty[-1, -1] <-
+  mrf_low_rank_smoothing_parameter * mrf_low_rank_smooth$S[[1]]
+mrf_low_rank_coefficient <- solve(
+  crossprod(mrf_low_rank_design) + mrf_low_rank_penalty,
+  crossprod(mrf_low_rank_design, mrf_fit_data$y)
+)
+mrf_low_rank_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(mrf_low_rank_smooth, mrf_prediction_factor_data)
+)
+mrf_low_rank_fixed_reference <- data.frame(
+  requested_basis_size = mrf_low_rank_requested_basis_size,
+  basis_size = ncol(mrf_low_rank_smooth$X),
+  penalty_count = length(mrf_low_rank_smooth$S),
+  penalty_rank = mrf_low_rank_smooth$rank,
+  penalty_nullity = mrf_low_rank_smooth$null.space.dim,
+  lambda = mrf_low_rank_smoothing_parameter,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+mrf_low_rank_fixed_fitted_reference <- data.frame(
+  fitted = drop(mrf_low_rank_design %*% mrf_low_rank_coefficient)
+)
+mrf_low_rank_fixed_prediction_reference <- data.frame(
+  fitted = drop(
+    mrf_low_rank_prediction_design %*% mrf_low_rank_coefficient
+  )
+)
+
+mrf_penalty_weights <- c(
+  0.7, 1.1, 0.9, 1.4, 0.8, 1.3,
+  1.05, 0.65, 1.55, 1.2, 0.95, 1.35
+)
+mrf_supplied_penalty <- matrix(
+  0,
+  mrf_area_count,
+  mrf_area_count,
+  dimnames = list(mrf_area_names, mrf_area_names)
+)
+for (edge_index in seq_len(nrow(mrf_edges))) {
+  first <- mrf_edges[edge_index, 1] + 1
+  second <- mrf_edges[edge_index, 2] + 1
+  edge_weight <- mrf_penalty_weights[[edge_index]]
+  mrf_supplied_penalty[first, first] <-
+    mrf_supplied_penalty[first, first] + edge_weight
+  mrf_supplied_penalty[second, second] <-
+    mrf_supplied_penalty[second, second] + edge_weight
+  mrf_supplied_penalty[first, second] <-
+    mrf_supplied_penalty[first, second] - edge_weight
+  mrf_supplied_penalty[second, first] <-
+    mrf_supplied_penalty[second, first] - edge_weight
+}
+mrf_penalty_smoothing_parameter <- 1.9
+mrf_penalty_smooth <- smoothCon(
+  s(
+    region,
+    bs = "mrf",
+    xt = list(penalty = mrf_supplied_penalty)
+  ),
+  data = mrf_factor_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+mrf_penalty_design <- cbind(intercept = 1, mrf_penalty_smooth$X)
+mrf_penalty_system <- matrix(
+  0,
+  ncol(mrf_penalty_design),
+  ncol(mrf_penalty_design)
+)
+mrf_penalty_system[-1, -1] <-
+  mrf_penalty_smoothing_parameter * mrf_penalty_smooth$S[[1]]
+mrf_penalty_coefficient <- solve(
+  crossprod(mrf_penalty_design) + mrf_penalty_system,
+  crossprod(mrf_penalty_design, mrf_fit_data$y)
+)
+mrf_penalty_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(mrf_penalty_smooth, mrf_prediction_factor_data)
+)
+mrf_penalty_fixed_reference <- data.frame(
+  requested_basis_size = mrf_area_count,
+  basis_size = ncol(mrf_penalty_smooth$X),
+  penalty_rank = mrf_penalty_smooth$rank,
+  penalty_nullity = mrf_penalty_smooth$null.space.dim,
+  lambda = mrf_penalty_smoothing_parameter,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+mrf_penalty_fixed_fitted_reference <- data.frame(
+  fitted = drop(mrf_penalty_design %*% mrf_penalty_coefficient)
+)
+mrf_penalty_fixed_prediction_reference <- data.frame(
+  fitted = drop(
+    mrf_penalty_prediction_design %*% mrf_penalty_coefficient
+  )
+)
+
+mrf_penalty_low_rank_requested_basis_size <- 6
+mrf_penalty_low_rank_smooth <- smoothCon(
+  s(
+    region,
+    bs = "mrf",
+    k = mrf_penalty_low_rank_requested_basis_size,
+    xt = list(penalty = mrf_supplied_penalty)
+  ),
+  data = mrf_factor_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+mrf_penalty_low_rank_design <- cbind(
+  intercept = 1,
+  mrf_penalty_low_rank_smooth$X
+)
+mrf_penalty_low_rank_system <- matrix(
+  0,
+  ncol(mrf_penalty_low_rank_design),
+  ncol(mrf_penalty_low_rank_design)
+)
+mrf_penalty_low_rank_system[-1, -1] <-
+  mrf_penalty_smoothing_parameter * mrf_penalty_low_rank_smooth$S[[1]]
+mrf_penalty_low_rank_coefficient <- solve(
+  crossprod(mrf_penalty_low_rank_design) + mrf_penalty_low_rank_system,
+  crossprod(mrf_penalty_low_rank_design, mrf_fit_data$y)
+)
+mrf_penalty_low_rank_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(mrf_penalty_low_rank_smooth, mrf_prediction_factor_data)
+)
+mrf_penalty_low_rank_fixed_reference <- data.frame(
+  requested_basis_size = mrf_penalty_low_rank_requested_basis_size,
+  basis_size = ncol(mrf_penalty_low_rank_smooth$X),
+  penalty_rank = mrf_penalty_low_rank_smooth$rank,
+  penalty_nullity = mrf_penalty_low_rank_smooth$null.space.dim,
+  lambda = mrf_penalty_smoothing_parameter,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+mrf_penalty_low_rank_fixed_fitted_reference <- data.frame(
+  fitted = drop(
+    mrf_penalty_low_rank_design %*% mrf_penalty_low_rank_coefficient
+  )
+)
+mrf_penalty_low_rank_fixed_prediction_reference <- data.frame(
+  fitted = drop(
+    mrf_penalty_low_rank_prediction_design %*%
+      mrf_penalty_low_rank_coefficient
+  )
+)
+
+mrf_polygon_names <- paste0("area_", 0:5)
+mrf_polygons <- setNames(
+  lapply(0:5, function(index) {
+    matrix(
+      c(
+        index, 0,
+        index + 1, 0,
+        index + 0.5, 0.8
+      ),
+      ncol = 2,
+      byrow = TRUE
+    )
+  }),
+  mrf_polygon_names
+)
+mrf_polygon_neighbors <- mgcv:::pol2nb(mrf_polygons)$nb
+mrf_polygon_adjacency_reference <- do.call(
+  rbind,
+  lapply(seq_along(mrf_polygon_neighbors), function(first) {
+    second <- mrf_polygon_neighbors[[first]]
+    second <- second[second > first]
+    if (!length(second)) return(NULL)
+    data.frame(
+      first = rep(mrf_polygon_names[[first]], length(second)),
+      second = mrf_polygon_names[second]
+    )
+  })
+)
+rownames(mrf_polygon_adjacency_reference) <- NULL
+mrf_polygon_observation_count <- 90
+mrf_polygon_index <- seq_len(mrf_polygon_observation_count)
+mrf_polygon_region <- rep(
+  mrf_polygon_names,
+  length.out = mrf_polygon_observation_count
+)
+mrf_polygon_effect <- c(-0.7, -0.25, 0.2, -0.1, 0.4, 0.8)
+mrf_polygon_fit_data <- data.frame(
+  region = mrf_polygon_region,
+  y = 1.1 +
+    mrf_polygon_effect[match(mrf_polygon_region, mrf_polygon_names)] +
+    0.04 * cos(0.51 * mrf_polygon_index)
+)
+mrf_polygon_factor_data <- transform(
+  mrf_polygon_fit_data,
+  region = factor(region, levels = mrf_polygon_names)
+)
+mrf_polygon_prediction_data <- data.frame(region = mrf_polygon_names)
+mrf_polygon_prediction_factor_data <- transform(
+  mrf_polygon_prediction_data,
+  region = factor(region, levels = mrf_polygon_names)
+)
+mrf_polygon_smoothing_parameter <- 1.6
+mrf_polygon_smooth <- smoothCon(
+  s(region, bs = "mrf", xt = list(polys = mrf_polygons)),
+  data = mrf_polygon_factor_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+mrf_polygon_design <- cbind(intercept = 1, mrf_polygon_smooth$X)
+mrf_polygon_system <- matrix(
+  0,
+  ncol(mrf_polygon_design),
+  ncol(mrf_polygon_design)
+)
+mrf_polygon_system[-1, -1] <-
+  mrf_polygon_smoothing_parameter * mrf_polygon_smooth$S[[1]]
+mrf_polygon_coefficient <- solve(
+  crossprod(mrf_polygon_design) + mrf_polygon_system,
+  crossprod(mrf_polygon_design, mrf_polygon_fit_data$y)
+)
+mrf_polygon_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(mrf_polygon_smooth, mrf_polygon_prediction_factor_data)
+)
+mrf_polygon_fixed_reference <- data.frame(
+  requested_basis_size = length(mrf_polygon_names),
+  basis_size = ncol(mrf_polygon_smooth$X),
+  edge_count = nrow(mrf_polygon_adjacency_reference),
+  penalty_rank = mrf_polygon_smooth$rank,
+  penalty_nullity = mrf_polygon_smooth$null.space.dim,
+  lambda = mrf_polygon_smoothing_parameter,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+mrf_polygon_fixed_fitted_reference <- data.frame(
+  fitted = drop(mrf_polygon_design %*% mrf_polygon_coefficient)
+)
+mrf_polygon_fixed_prediction_reference <- data.frame(
+  fitted = drop(
+    mrf_polygon_prediction_design %*% mrf_polygon_coefficient
+  )
+)
+
+mrf_polygon_low_rank_requested_basis_size <- 4
+mrf_polygon_low_rank_smoothing_parameter <- 1.3
+mrf_polygon_low_rank_smooth <- smoothCon(
+  s(
+    region,
+    bs = "mrf",
+    k = mrf_polygon_low_rank_requested_basis_size,
+    xt = list(polys = mrf_polygons)
+  ),
+  data = mrf_polygon_factor_data,
+  absorb.cons = TRUE,
+  scale.penalty = FALSE
+)[[1]]
+mrf_polygon_low_rank_design <- cbind(
+  intercept = 1,
+  mrf_polygon_low_rank_smooth$X
+)
+mrf_polygon_low_rank_system <- matrix(
+  0,
+  ncol(mrf_polygon_low_rank_design),
+  ncol(mrf_polygon_low_rank_design)
+)
+mrf_polygon_low_rank_system[-1, -1] <-
+  mrf_polygon_low_rank_smoothing_parameter *
+    mrf_polygon_low_rank_smooth$S[[1]]
+mrf_polygon_low_rank_coefficient <- solve(
+  crossprod(mrf_polygon_low_rank_design) + mrf_polygon_low_rank_system,
+  crossprod(mrf_polygon_low_rank_design, mrf_polygon_fit_data$y)
+)
+mrf_polygon_low_rank_prediction_design <- cbind(
+  intercept = 1,
+  PredictMat(
+    mrf_polygon_low_rank_smooth,
+    mrf_polygon_prediction_factor_data
+  )
+)
+mrf_polygon_low_rank_fixed_reference <- data.frame(
+  requested_basis_size = mrf_polygon_low_rank_requested_basis_size,
+  basis_size = ncol(mrf_polygon_low_rank_smooth$X),
+  edge_count = nrow(mrf_polygon_adjacency_reference),
+  penalty_rank = mrf_polygon_low_rank_smooth$rank,
+  penalty_nullity = mrf_polygon_low_rank_smooth$null.space.dim,
+  lambda = mrf_polygon_low_rank_smoothing_parameter,
+  mgcv_version = as.character(packageVersion("mgcv"))
+)
+mrf_polygon_low_rank_fixed_fitted_reference <- data.frame(
+  fitted = drop(
+    mrf_polygon_low_rank_design %*% mrf_polygon_low_rank_coefficient
+  )
+)
+mrf_polygon_low_rank_fixed_prediction_reference <- data.frame(
+  fitted = drop(
+    mrf_polygon_low_rank_prediction_design %*%
+      mrf_polygon_low_rank_coefficient
+  )
 )
 
 diagnostic_reference <- function(fit, family_code) {
@@ -3080,6 +3954,199 @@ if (check_only) {
   assert_close(
     pb_coefficient_reference, pb_coefficient_reference_path, tolerance = 1e-7
   )
+  assert_close(pbc_fit_data, pbc_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    pbc_basis_reference, pbc_basis_reference_path, tolerance = 1e-12
+  )
+  assert_close(
+    pbc_penalty_reference, pbc_penalty_reference_path, tolerance = 1e-12
+  )
+  assert_close(pbc_reference, pbc_reference_path, tolerance = 1e-7)
+  assert_close(
+    pbc_fitted_reference, pbc_fitted_reference_path, tolerance = 1e-7
+  )
+  assert_close(
+    pbc_coefficient_reference,
+    pbc_coefficient_reference_path,
+    tolerance = 1e-7
+  )
+  assert_close(pbz_fit_data, pbz_fit_data_path, tolerance = 1e-12)
+  assert_close(pbz_reference, pbz_reference_path, tolerance = 1e-7)
+  assert_close(
+    pbz_fitted_reference, pbz_fitted_reference_path, tolerance = 1e-7
+  )
+  assert_close(tp_fit_data, tp_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    tp_prediction_data, tp_prediction_data_path, tolerance = 1e-12
+  )
+  assert_close(tp_fixed_reference, tp_fixed_reference_path, tolerance = 1e-12)
+  assert_close(
+    tp_fixed_fitted_reference,
+    tp_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    tp_fixed_prediction_reference,
+    tp_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(adaptive_fit_data, adaptive_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    adaptive_prediction_data,
+    adaptive_prediction_data_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    adaptive_fixed_reference,
+    adaptive_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    adaptive_fixed_fitted_reference,
+    adaptive_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    adaptive_fixed_prediction_reference,
+    adaptive_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    adaptive_2d_fit_data,
+    adaptive_2d_fit_data_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    adaptive_2d_prediction_data,
+    adaptive_2d_prediction_data_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    adaptive_2d_fixed_reference,
+    adaptive_2d_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    adaptive_2d_fixed_fitted_reference,
+    adaptive_2d_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    adaptive_2d_fixed_prediction_reference,
+    adaptive_2d_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(mrf_fit_data, mrf_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    mrf_prediction_data,
+    mrf_prediction_data_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_fixed_reference,
+    mrf_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_fixed_fitted_reference,
+    mrf_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_fixed_prediction_reference,
+    mrf_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_low_rank_fixed_reference,
+    mrf_low_rank_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_low_rank_fixed_fitted_reference,
+    mrf_low_rank_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_low_rank_fixed_prediction_reference,
+    mrf_low_rank_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_penalty_fixed_reference,
+    mrf_penalty_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_penalty_fixed_fitted_reference,
+    mrf_penalty_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_penalty_fixed_prediction_reference,
+    mrf_penalty_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_penalty_low_rank_fixed_reference,
+    mrf_penalty_low_rank_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_penalty_low_rank_fixed_fitted_reference,
+    mrf_penalty_low_rank_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_penalty_low_rank_fixed_prediction_reference,
+    mrf_penalty_low_rank_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_polygon_fit_data,
+    mrf_polygon_fit_data_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_polygon_prediction_data,
+    mrf_polygon_prediction_data_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_polygon_adjacency_reference,
+    mrf_polygon_adjacency_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_polygon_fixed_reference,
+    mrf_polygon_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_polygon_fixed_fitted_reference,
+    mrf_polygon_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_polygon_fixed_prediction_reference,
+    mrf_polygon_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_polygon_low_rank_fixed_reference,
+    mrf_polygon_low_rank_fixed_reference_path,
+    tolerance = 1e-12
+  )
+  assert_close(
+    mrf_polygon_low_rank_fixed_fitted_reference,
+    mrf_polygon_low_rank_fixed_fitted_reference_path,
+    tolerance = 1e-10
+  )
+  assert_close(
+    mrf_polygon_low_rank_fixed_prediction_reference,
+    mrf_polygon_low_rank_fixed_prediction_reference_path,
+    tolerance = 1e-10
+  )
   assert_close(pb_ml_reference, pb_ml_reference_path, tolerance = 1e-7)
   assert_close(
     pb_ml_fitted_reference, pb_ml_fitted_reference_path, tolerance = 1e-7
@@ -3242,6 +4309,17 @@ if (check_only) {
     wei_laml_fixed_fitted_reference_path,
     tolerance = 3e-6
   )
+  assert_close(ig_fit_data, ig_fit_data_path, tolerance = 1e-12)
+  assert_close(
+    ig_laml_fixed_reference,
+    ig_laml_fixed_reference_path,
+    tolerance = 3e-6
+  )
+  assert_close(
+    ig_laml_fixed_fitted_reference,
+    ig_laml_fixed_fitted_reference_path,
+    tolerance = 3e-6
+  )
   assert_close(logno_fit_data, logno_fit_data_path, tolerance = 1e-12)
   assert_close(
     logno_laml_fixed_reference,
@@ -3346,6 +4424,128 @@ if (check_only) {
     pb_coefficient_reference_path,
     row.names = FALSE,
     quote = FALSE
+  )
+  write_csv_lf(pbc_fit_data, pbc_fit_data_path)
+  write_csv_lf(pbc_basis_reference, pbc_basis_reference_path)
+  write_csv_lf(pbc_penalty_reference, pbc_penalty_reference_path)
+  write_csv_lf(pbc_reference, pbc_reference_path)
+  write_csv_lf(pbc_fitted_reference, pbc_fitted_reference_path)
+  write_csv_lf(pbc_coefficient_reference, pbc_coefficient_reference_path)
+  write_csv_lf(pbz_fit_data, pbz_fit_data_path)
+  write_csv_lf(pbz_reference, pbz_reference_path)
+  write_csv_lf(pbz_fitted_reference, pbz_fitted_reference_path)
+  write_csv_lf(tp_fit_data, tp_fit_data_path)
+  write_csv_lf(tp_prediction_data, tp_prediction_data_path)
+  write_csv_lf(tp_fixed_reference, tp_fixed_reference_path)
+  write_csv_lf(tp_fixed_fitted_reference, tp_fixed_fitted_reference_path)
+  write_csv_lf(
+    tp_fixed_prediction_reference,
+    tp_fixed_prediction_reference_path
+  )
+  write_csv_lf(adaptive_fit_data, adaptive_fit_data_path)
+  write_csv_lf(adaptive_prediction_data, adaptive_prediction_data_path)
+  write_csv_lf(adaptive_fixed_reference, adaptive_fixed_reference_path)
+  write_csv_lf(
+    adaptive_fixed_fitted_reference,
+    adaptive_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    adaptive_fixed_prediction_reference,
+    adaptive_fixed_prediction_reference_path
+  )
+  write_csv_lf(adaptive_2d_fit_data, adaptive_2d_fit_data_path)
+  write_csv_lf(
+    adaptive_2d_prediction_data,
+    adaptive_2d_prediction_data_path
+  )
+  write_csv_lf(adaptive_2d_fixed_reference, adaptive_2d_fixed_reference_path)
+  write_csv_lf(
+    adaptive_2d_fixed_fitted_reference,
+    adaptive_2d_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    adaptive_2d_fixed_prediction_reference,
+    adaptive_2d_fixed_prediction_reference_path
+  )
+  write_csv_lf(mrf_fit_data, mrf_fit_data_path)
+  write_csv_lf(mrf_prediction_data, mrf_prediction_data_path)
+  write_csv_lf(mrf_fixed_reference, mrf_fixed_reference_path)
+  write_csv_lf(
+    mrf_fixed_fitted_reference,
+    mrf_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    mrf_fixed_prediction_reference,
+    mrf_fixed_prediction_reference_path
+  )
+  write_csv_lf(
+    mrf_low_rank_fixed_reference,
+    mrf_low_rank_fixed_reference_path
+  )
+  write_csv_lf(
+    mrf_low_rank_fixed_fitted_reference,
+    mrf_low_rank_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    mrf_low_rank_fixed_prediction_reference,
+    mrf_low_rank_fixed_prediction_reference_path
+  )
+  write_csv_lf(
+    mrf_penalty_fixed_reference,
+    mrf_penalty_fixed_reference_path
+  )
+  write_csv_lf(
+    mrf_penalty_fixed_fitted_reference,
+    mrf_penalty_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    mrf_penalty_fixed_prediction_reference,
+    mrf_penalty_fixed_prediction_reference_path
+  )
+  write_csv_lf(
+    mrf_penalty_low_rank_fixed_reference,
+    mrf_penalty_low_rank_fixed_reference_path
+  )
+  write_csv_lf(
+    mrf_penalty_low_rank_fixed_fitted_reference,
+    mrf_penalty_low_rank_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    mrf_penalty_low_rank_fixed_prediction_reference,
+    mrf_penalty_low_rank_fixed_prediction_reference_path
+  )
+  write_csv_lf(mrf_polygon_fit_data, mrf_polygon_fit_data_path)
+  write_csv_lf(
+    mrf_polygon_prediction_data,
+    mrf_polygon_prediction_data_path
+  )
+  write_csv_lf(
+    mrf_polygon_adjacency_reference,
+    mrf_polygon_adjacency_reference_path
+  )
+  write_csv_lf(
+    mrf_polygon_fixed_reference,
+    mrf_polygon_fixed_reference_path
+  )
+  write_csv_lf(
+    mrf_polygon_fixed_fitted_reference,
+    mrf_polygon_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    mrf_polygon_fixed_prediction_reference,
+    mrf_polygon_fixed_prediction_reference_path
+  )
+  write_csv_lf(
+    mrf_polygon_low_rank_fixed_reference,
+    mrf_polygon_low_rank_fixed_reference_path
+  )
+  write_csv_lf(
+    mrf_polygon_low_rank_fixed_fitted_reference,
+    mrf_polygon_low_rank_fixed_fitted_reference_path
+  )
+  write_csv_lf(
+    mrf_polygon_low_rank_fixed_prediction_reference,
+    mrf_polygon_low_rank_fixed_prediction_reference_path
   )
   write.csv(
     pb_ml_reference, pb_ml_reference_path, row.names = FALSE, quote = FALSE
@@ -3477,6 +4677,12 @@ if (check_only) {
   write_csv_lf(
     wei_laml_fixed_fitted_reference,
     wei_laml_fixed_fitted_reference_path
+  )
+  write_csv_lf(ig_fit_data, ig_fit_data_path)
+  write_csv_lf(ig_laml_fixed_reference, ig_laml_fixed_reference_path)
+  write_csv_lf(
+    ig_laml_fixed_fitted_reference,
+    ig_laml_fixed_fitted_reference_path
   )
   write_csv_lf(logno_fit_data, logno_fit_data_path)
   write_csv_lf(logno_laml_fixed_reference, logno_laml_fixed_reference_path)

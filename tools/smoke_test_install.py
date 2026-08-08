@@ -24,23 +24,29 @@ from torchgamlss import (
     PE,
     TF,
     WEI,
+    AdaptivePSpline,
+    AdaptiveTensorPSpline,
     Beta,
     CensoredFamily,
     CensoredResponse,
+    CyclicPSpline,
     GAMLSSLAMLResult,
     Gamma,
     GeneralizedGamma,
     InverseGaussian,
     LAMLControl,
     LogNormal,
+    MarkovRandomField,
     NegativeBinomial,
     Normal,
     NormalLAMLResult,
     PenalizedLeastSquaresResult,
     PowerExponential,
     PSpline,
+    ShrinkagePSpline,
     StudentT,
     TensorProductSmooth,
+    ThinPlateSpline,
     TruncatedFamily,
     Weibull,
     solve_penalized_least_squares,
@@ -260,6 +266,333 @@ def main() -> None:
         ),
     ):
         raise RuntimeError("installed te() LAML state update is invalid")
+
+    cyclic_x = torch.linspace(0.0, 2.0 * torch.pi, 80, dtype=torch.float64)
+    cyclic_y = (
+        0.4
+        + 0.8 * torch.sin(cyclic_x)
+        - 0.25 * torch.cos(2.0 * cyclic_x)
+        + 0.04 * torch.sin(17.0 * cyclic_x)
+    )
+    cyclic_frame = pd.DataFrame(
+        {"x": cyclic_x.numpy(), "y": cyclic_y.numpy()}
+    )
+    cyclic_model = GAMLSS.from_formula(
+        Normal(),
+        {"mu": "y ~ pbc(x, intervals=8)", "sigma": "~ 1"},
+        cyclic_frame,
+    )
+    cyclic_rs_fit = cyclic_model.fit_rs_data(cyclic_frame)
+    cyclic_laml_fit = cyclic_model.fit_laml_data(
+        cyclic_frame,
+        warm_start=True,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=25,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    cyclic_term = cyclic_model.smooth_terms["mu"]["x"]
+    if not isinstance(cyclic_term, CyclicPSpline):
+        raise RuntimeError("installed pbc() term has the wrong type")
+    if not cyclic_rs_fit.converged or not cyclic_laml_fit.outer_converged:
+        raise RuntimeError("installed pbc() LAML fit did not converge")
+    cyclic_period = float(cyclic_x[-1] - cyclic_x[0])
+    cyclic_prediction = cyclic_model.predict_data(
+        pd.DataFrame({"x": [0.2, 0.2 + cyclic_period]})
+    )["mu"]
+    if not torch.allclose(cyclic_prediction[0], cyclic_prediction[1]):
+        raise RuntimeError("installed pbc() prediction is not periodic")
+
+    shrinkage_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    shrinkage_y = (
+        0.35
+        + 0.03 * shrinkage_x
+        + 0.08 * torch.sin(17.0 * shrinkage_x)
+        + 0.04 * torch.cos(23.0 * shrinkage_x)
+    )
+    shrinkage_frame = pd.DataFrame(
+        {"x": shrinkage_x.numpy(), "y": shrinkage_y.numpy()}
+    )
+    shrinkage_model = GAMLSS.from_formula(
+        Normal(),
+        {
+            "mu": "y ~ pbz(x, initial_lambda_=(10, 10), intervals=8)",
+            "sigma": "~ 1",
+        },
+        shrinkage_frame,
+    )
+    shrinkage_laml_fit = shrinkage_model.fit_laml_data(
+        shrinkage_frame,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=25,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    shrinkage_term = shrinkage_model.smooth_terms["mu"]["x"]
+    if not isinstance(shrinkage_term, ShrinkagePSpline):
+        raise RuntimeError("installed pbz() term has the wrong type")
+    if not shrinkage_laml_fit.outer_converged:
+        raise RuntimeError("installed pbz() LAML fit did not converge")
+    if shrinkage_laml_fit.smoothing_parameters.shape != (2,):
+        raise RuntimeError("installed pbz() did not select two lambdas")
+
+    thin_plate_observation = torch.arange(1, 71, dtype=torch.float64)
+    thin_plate_x = (37.0 * thin_plate_observation).remainder(97.0) / 96.0
+    thin_plate_z = (
+        53.0 * thin_plate_observation + 11.0
+    ).remainder(101.0) / 100.0
+    thin_plate_y = (
+        0.7
+        + torch.sin(2.0 * torch.pi * thin_plate_x)
+        + 0.6 * torch.cos(2.0 * torch.pi * thin_plate_z)
+        + 0.25 * thin_plate_x * thin_plate_z
+    )
+    thin_plate_frame = pd.DataFrame(
+        {
+            "x": thin_plate_x.numpy(),
+            "z": thin_plate_z.numpy(),
+            "y": thin_plate_y.numpy(),
+        }
+    )
+    thin_plate_model = GAMLSS.from_formula(
+        Normal(),
+        {
+            "mu": (
+                "y ~ tp(x, z, k=10, m=2, initial_lambda_=1, "
+                "name='surface')"
+            ),
+            "sigma": "~ 1",
+        },
+        thin_plate_frame,
+    )
+    thin_plate_fit = thin_plate_model.fit_laml_data(
+        thin_plate_frame,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=30,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    thin_plate_term = thin_plate_model.smooth_terms["mu"]["surface"]
+    if not isinstance(thin_plate_term, ThinPlateSpline):
+        raise RuntimeError("installed tp() term has the wrong type")
+    if not thin_plate_fit.outer_converged:
+        raise RuntimeError("installed tp() LAML fit did not converge")
+    if thin_plate_fit.smoothing_parameters.shape != (1,):
+        raise RuntimeError("installed tp() did not select one lambda")
+    thin_plate_prediction = thin_plate_model.predict_data(
+        pd.DataFrame({"x": [0.15, 0.85], "z": [0.7, 0.2]})
+    )["mu"]
+    if not torch.isfinite(thin_plate_prediction).all():
+        raise RuntimeError("installed tp() prediction is non-finite")
+
+    adaptive_x = torch.linspace(-1.0, 1.0, 70, dtype=torch.float64)
+    adaptive_y = (
+        0.4
+        + torch.sin(2.0 * torch.pi * adaptive_x)
+        / (1.0 + 3.0 * adaptive_x.square())
+        + 0.05 * torch.cos(19.0 * adaptive_x)
+    )
+    adaptive_frame = pd.DataFrame(
+        {"x": adaptive_x.numpy(), "y": adaptive_y.numpy()}
+    )
+    adaptive_model = GAMLSS.from_formula(
+        Normal(),
+        {
+            "mu": (
+                "y ~ ad(x, k=12, m=3, initial_lambda_=(1, 1, 1), "
+                "name='trend')"
+            ),
+            "sigma": "~ 1",
+        },
+        adaptive_frame,
+    )
+    adaptive_fit = adaptive_model.fit_laml_data(
+        adaptive_frame,
+        control=LAMLControl(
+            inner_gradient_tolerance=1e-6,
+            outer_max_iterations=35,
+            outer_gradient_tolerance=5e-4,
+        ),
+    )
+    adaptive_term = adaptive_model.smooth_terms["mu"]["trend"]
+    if not isinstance(adaptive_term, AdaptivePSpline):
+        raise RuntimeError("installed ad() term has the wrong type")
+    if not adaptive_fit.outer_converged:
+        raise RuntimeError("installed ad() LAML fit did not converge")
+    if adaptive_fit.smoothing_parameters.shape != (3,):
+        raise RuntimeError("installed ad() did not select three lambdas")
+
+    adaptive_2d_z = torch.sin(
+        torch.arange(70, dtype=torch.float64) * 0.37
+    )
+    adaptive_2d_frame = pd.DataFrame(
+        {
+            "x": adaptive_x.numpy(),
+            "z": adaptive_2d_z.numpy(),
+            "y": (adaptive_y + 0.1 * adaptive_2d_z).numpy(),
+        }
+    )
+    adaptive_2d_model = GAMLSS.from_formula(
+        Normal(),
+        {
+            "mu": (
+                "y ~ ad(x, z, k=(6, 6), m=(3, 3), "
+                "lambda_=(1, 1, 1, 1, 1, 1, 1, 1, 1), name='surface')"
+            ),
+            "sigma": "~ 1",
+        },
+        adaptive_2d_frame,
+    )
+    adaptive_2d_fit = adaptive_2d_model.fit_rs_data(adaptive_2d_frame)
+    adaptive_2d_term = adaptive_2d_model.smooth_terms["mu"]["surface"]
+    if not isinstance(adaptive_2d_term, AdaptiveTensorPSpline):
+        raise RuntimeError("installed two-dimensional ad() has the wrong type")
+    if len(adaptive_2d_term.penalty_matrices()) != 9:
+        raise RuntimeError("installed two-dimensional ad() lost its penalties")
+    if not torch.isfinite(
+        torch.as_tensor(adaptive_2d_fit.negative_log_likelihood)
+    ):
+        raise RuntimeError("installed two-dimensional ad() fit is non-finite")
+
+    mrf_edges = (
+        (0, 1),
+        (1, 2),
+        (3, 4),
+        (4, 5),
+        (6, 7),
+        (7, 8),
+        (0, 3),
+        (1, 4),
+        (2, 5),
+        (3, 6),
+        (4, 7),
+        (5, 8),
+    )
+    mrf_labels = (
+        "north_west",
+        "north",
+        "north_east",
+        "west",
+        "center",
+        "east",
+        "south_west",
+        "south",
+        "south_east",
+    )
+    mrf_adjacency = {
+        label: tuple(
+            mrf_labels[second if first == index else first]
+            for first, second in mrf_edges
+            if index in (first, second)
+        )
+        for index, label in enumerate(mrf_labels)
+    }
+    mrf_region_codes = torch.arange(9, dtype=torch.float64).repeat(5)
+    mrf_effect = torch.tensor(
+        [-0.8, -0.35, 0.05, -0.5, 0.1, 0.55, -0.15, 0.45, 0.75],
+        dtype=torch.float64,
+    )
+    mrf_frame = pd.DataFrame(
+        {
+            "region": [
+                mrf_labels[int(code)] for code in mrf_region_codes
+            ],
+            "y": (
+                1.2
+                + mrf_effect[mrf_region_codes.to(torch.long)]
+                + 0.03 * torch.sin(torch.arange(45, dtype=torch.float64))
+            ).numpy(),
+        }
+    )
+    mrf_model = GAMLSS.from_formula(
+        Normal(),
+        {
+            "mu": (
+                f"y ~ mrf(region, adjacency={mrf_adjacency!r}, "
+                "k=6, lambda_=2.4, name='area')"
+            ),
+            "sigma": "~ 1",
+        },
+        mrf_frame,
+    )
+    mrf_fit = mrf_model.fit_rs_data(mrf_frame)
+    mrf_term = mrf_model.smooth_terms["mu"]["area"]
+    if not isinstance(mrf_term, MarkovRandomField):
+        raise RuntimeError("installed mrf() term has the wrong type")
+    if (
+        mrf_term.area_count != 9
+        or mrf_term.basis_size != 6
+        or len(mrf_term.edges) != 12
+        or mrf_term.region_labels != mrf_labels
+    ):
+        raise RuntimeError("installed mrf() lost its graph state")
+    mrf_prediction = mrf_model.predict_data(
+        pd.DataFrame({"region": ["south_east", "center"]})
+    )["mu"]
+    if not torch.isfinite(mrf_prediction).all():
+        raise RuntimeError("installed labelled mrf() prediction is non-finite")
+    if not torch.isfinite(torch.as_tensor(mrf_fit.negative_log_likelihood)):
+        raise RuntimeError("installed mrf() fit is non-finite")
+    mrf_penalty = torch.zeros((9, 9), dtype=torch.float64)
+    mrf_edge_weights = (
+        0.7,
+        1.1,
+        0.9,
+        1.4,
+        0.8,
+        1.3,
+        1.05,
+        0.65,
+        1.55,
+        1.2,
+        0.95,
+        1.35,
+    )
+    for (first, second), weight in zip(
+        mrf_edges,
+        mrf_edge_weights,
+        strict=True,
+    ):
+        mrf_penalty[first, first] += weight
+        mrf_penalty[second, second] += weight
+        mrf_penalty[first, second] -= weight
+        mrf_penalty[second, first] -= weight
+    supplied_mrf = MarkovRandomField.from_labels(
+        mrf_frame["region"],
+        graph_penalty=mrf_penalty,
+        levels=mrf_labels,
+        smoothing_parameter=1.9,
+        basis_size=6,
+    )
+    if (
+        not supplied_mrf.uses_supplied_penalty
+        or supplied_mrf.edges
+        or not torch.isfinite(
+            supplied_mrf.predict_design_labels(("south_east", "center"))
+        ).all()
+    ):
+        raise RuntimeError("installed supplied-penalty mrf() is invalid")
+    polygon_shapes = {
+        "north": ((0.0, 0.0), (1.0, 0.0), (0.5, 0.8)),
+        "center": ((1.0, 0.0), (2.0, 0.0), (1.5, 0.8)),
+        "south": ((2.0, 0.0), (3.0, 0.0), (2.5, 0.8)),
+    }
+    polygon_mrf = MarkovRandomField.from_polygons(
+        ("north", "center", "south") * 3,
+        polygon_shapes,
+        smoothing_parameter=1.2,
+    )
+    if (
+        not polygon_mrf.uses_polygon_adjacency
+        or polygon_mrf.edges != ((0, 1), (1, 2))
+        or not torch.isfinite(
+            polygon_mrf.predict_design_labels(("south", "north"))
+        ).all()
+    ):
+        raise RuntimeError("installed polygon-derived mrf() is invalid")
 
     beta_x = torch.linspace(-1.0, 1.0, 60, dtype=torch.float64)
     beta_mu = torch.sigmoid(-0.2 + 0.9 * torch.sin(torch.pi * beta_x))
@@ -545,6 +878,36 @@ def main() -> None:
         raise RuntimeError("installed WEI LAML fit did not converge")
     if not torch.isfinite(wei_laml_fit.outer_hessian).all():
         raise RuntimeError("installed WEI LAML Hessian is non-finite")
+
+    ig_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
+    ig_mu = torch.exp(0.25 + 0.4 * torch.sin(torch.pi * ig_x) + 0.1 * ig_x)
+    ig_sigma = torch.full_like(ig_mu, 0.36)
+    ig_probability = (
+        torch.arange(80, dtype=torch.float64).mul(37).remainder(80) + 0.5
+    ) / 80
+    ig_y = IG().quantile(
+        ig_probability,
+        {"mu": ig_mu, "sigma": ig_sigma},
+    ).diagonal()
+    ig_frame = pd.DataFrame({"x": ig_x.numpy(), "y": ig_y.numpy()})
+    ig_laml_model = GAMLSS.from_formula(
+        IG(),
+        {
+            "mu": "y ~ pb(x, intervals=3, lambda_=10)",
+            "sigma": "~ 1",
+        },
+        ig_frame,
+    )
+    ig_rs_fit = ig_laml_model.fit_rs_data(ig_frame)
+    ig_laml_fit = ig_laml_model.fit_laml_data(ig_frame, warm_start=True)
+    if not ig_rs_fit.converged:
+        raise RuntimeError("installed IG RS warm start did not converge")
+    if not isinstance(ig_laml_fit, GAMLSSLAMLResult):
+        raise RuntimeError("installed IG LAML result is invalid")
+    if not ig_laml_fit.outer_converged:
+        raise RuntimeError("installed IG LAML fit did not converge")
+    if not torch.isfinite(ig_laml_fit.outer_hessian).all():
+        raise RuntimeError("installed IG LAML Hessian is non-finite")
 
     logno_x = torch.linspace(-1.0, 1.0, 80, dtype=torch.float64)
     logno_mu = 0.2 + 0.45 * torch.sin(torch.pi * logno_x) + 0.1 * logno_x

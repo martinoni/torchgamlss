@@ -168,14 +168,16 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 - [x] Uncensored WEI log/log LAML with weighted fixed-lambda `gamlss` parity,
   exact Gumbel transformed-response `mgcv` parity, derivative audits,
   bootstrap, and CUDA
+- [x] Uncensored IG log/log LAML with weighted fixed-lambda `gamlss` parity,
+  derivative audits, bootstrap, CUDA, and an explicit record that
+  `mgcv::Tweedie()` excludes the mathematically corresponding `p=3`
 - [x] Implicit-function outer LAML gradients with a finite-difference audit
   fallback and reduced profile-evaluation diagnostics
 - [x] Fully analytic outer LAML Hessian from second-order implicit coefficient
   sensitivities and exact autograd partials, with no displaced profile fits
-- [ ] Extend whole-model LAML to the remaining multi-parameter families,
-  beginning with inverse-Gaussian, while retaining an explicit reference
-  strategy for families without a directly overlapping `mgcv` location-scale
-  family
+- [x] Complete whole-model LAML validation for every currently implemented
+  uncensored base family, retaining fixed-lambda `gamlss` and derivative gates
+  where no directly overlapping `mgcv` location-scale family exists
 - [x] Fixed-lambda tensor-product full smooths and ANOVA-style tensor
   interactions through the generic dense solver
 - [x] Fixed-lambda `te()`/`ti()` formula construction, prediction, L-BFGS,
@@ -189,7 +191,29 @@ next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
 - [x] Fixed-design LAML bootstrap refits with joint scalar/tensor lambda
   reselection for smooth and response-quantile inference
 - [x] Random intercepts and slopes represented as ridge-penalized terms
-- [ ] Thin-plate, cyclic, shrinkage, adaptive, spatial, and GMRF smooths
+- [x] Cyclic `pbc()` smooths with exact basis/penalty and fixed-fit R parity,
+  periodic prediction, LAML/bootstrap, and CUDA
+- [x] Double-penalty shrinkage `pbz()` smooths with activated fixed-fit R
+  parity, joint two-lambda LAML/bootstrap, centering, and CUDA
+- [x] Low-rank isotropic thin-plate regression splines with `tp()` formula
+  construction, invariant `mgcv` smoother/prediction parity, LAML/bootstrap,
+  and CUDA
+- [x] One-dimensional adaptive `ad()` P-splines with `mgcv` basis/penalty and
+  extrapolation parity, multi-lambda LAML/bootstrap, and CUDA
+- [x] Two-dimensional adaptive `ad()` tensor P-splines with directional and
+  mixed-derivative `mgcv` parity, nine-lambda LAML/bootstrap, and CUDA
+- [x] Full-rank areal `mrf()` graph smooths with explicit edges, exact `mgcv`
+  Laplacian/smoother parity, LAML/bootstrap, and CUDA
+- [x] Low-rank `mrf(k=...)` natural parameterization with unobserved-region
+  support, exact `mgcv` smoother parity, LAML/bootstrap, and CUDA
+- [x] Textual/factor MRF regions, named adjacency mappings, stable fitted-level
+  prediction, LAML/bootstrap, and CUDA
+- [x] Directly supplied MRF penalty matrices with full-/low-rank `mgcv`
+  parity, label ordering, LAML/bootstrap, and CUDA
+- [x] Polygon-derived MRF adjacency with exact `mgcv::pol2nb` shared-vertex
+  semantics, multiple components, full-/low-rank parity, LAML/bootstrap, and
+  CUDA
+- [ ] Continuous spatial smooths
 - [ ] Discretized marginal bases and structured crossproducts for large data
 - [ ] Unconditional covariance including log-smoothing-parameter uncertainty
 - [ ] Basis-dimension, concurvity, rank, and conditioning diagnostics

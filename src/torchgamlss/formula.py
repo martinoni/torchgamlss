@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 import warnings
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,9 +21,125 @@ def _identity_transform(value: Any, *args: Any, **kwargs: Any) -> Any:
     return value
 
 
+def _mrf_region_labels(
+    *,
+    adjacency: Any = None,
+    edges: Any = None,
+    levels: Any = None,
+    polygons: Any = None,
+) -> tuple[object, ...] | None:
+    """Resolve the categorical region order declared by an MRF formula."""
+    if levels is not None:
+        if isinstance(levels, (str, bytes)) or not isinstance(levels, Sequence):
+            raise ValueError("mrf() levels must be a sequence of region labels")
+        normalized = tuple(levels)
+        if len(normalized) < 2:
+            raise ValueError("mrf() levels must contain at least two labels")
+        return normalized
+    if adjacency is not None:
+        if not isinstance(adjacency, Mapping):
+            raise ValueError("mrf() adjacency must be a mapping of named neighbors")
+        normalized = tuple(adjacency)
+        if len(normalized) < 2:
+            raise ValueError("mrf() adjacency must name at least two regions")
+        return normalized
+    if polygons is not None:
+        if not isinstance(polygons, Mapping):
+            raise ValueError("mrf() polygons must be a mapping of region shapes")
+        normalized = tuple(polygons)
+        if len(normalized) < 2:
+            raise ValueError("mrf() polygons must name at least two regions")
+        return normalized
+    if edges is None:
+        return None
+    if isinstance(edges, (str, bytes)) or not isinstance(edges, Sequence):
+        raise ValueError("mrf() edges must contain two-region pairs")
+    endpoints: list[object] = []
+    for index, edge in enumerate(edges):
+        if (
+            isinstance(edge, (str, bytes))
+            or not isinstance(edge, Sequence)
+            or len(edge) != 2
+        ):
+            raise ValueError(f"mrf() edge {index} must contain two regions")
+        endpoints.extend(edge)
+    if all(
+        isinstance(endpoint, int) and not isinstance(endpoint, bool)
+        for endpoint in endpoints
+    ):
+        return None
+    normalized = tuple(dict.fromkeys(endpoints))
+    if len(normalized) < 2:
+        raise ValueError("mrf() labelled edges must contain at least two regions")
+    return normalized
+
+
+def _mrf_transform(
+    value: Any,
+    *args: Any,
+    adjacency: Any = None,
+    nb: Any = None,
+    edges: Any = None,
+    graph_penalty: Any = None,
+    levels: Any = None,
+    penalty: Any = None,
+    polygons: Any = None,
+    **kwargs: Any,
+) -> Any:
+    """Encode named MRF regions before Formulaic expands categorical data."""
+    del args, kwargs
+    if adjacency is not None and nb is not None:
+        raise ValueError("mrf() accepts either adjacency or nb, not both")
+    declared_adjacency = adjacency if adjacency is not None else nb
+    spatial_source_count = sum(
+        (
+            declared_adjacency is not None,
+            edges is not None,
+            polygons is not None,
+            graph_penalty is not None or penalty is not None,
+        )
+    )
+    if spatial_source_count > 1:
+        raise ValueError(
+            "mrf() accepts exactly one of edges, adjacency, polygons, or penalty"
+        )
+    region_labels = _mrf_region_labels(
+        adjacency=declared_adjacency,
+        edges=edges,
+        levels=levels,
+        polygons=polygons,
+    )
+    if region_labels is None:
+        if graph_penalty is not None or penalty is not None:
+            try:
+                pd.to_numeric(pd.Series(value))
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    "mrf() levels are required when a supplied penalty is "
+                    "used with categorical regions"
+                ) from error
+        return value
+    label_codes = {label: index for index, label in enumerate(region_labels)}
+    series = pd.Series(
+        value,
+        index=getattr(value, "index", None),
+        name=getattr(value, "name", None),
+    )
+    encoded = series.map(label_codes)
+    if encoded.isna().any():
+        unknown = tuple(dict.fromkeys(series.loc[encoded.isna()].tolist()))
+        raise ValueError(f"mrf() contains unknown region labels: {unknown!r}")
+    return encoded.astype(float)
+
+
 _FORMULA_CONTEXT = {
     "offset": _identity_transform,
     "pb": _identity_transform,
+    "pbc": _identity_transform,
+    "pbz": _identity_transform,
+    "ad": _identity_transform,
+    "mrf": _mrf_transform,
+    "tp": _identity_transform,
     "te": _identity_transform,
     "ti": _identity_transform,
 }
@@ -31,19 +147,22 @@ _FORMULA_CONTEXT = {
 
 @dataclass(frozen=True)
 class SmoothFormulaSpec:
-    """Configuration extracted from one ``pb(...)`` formula factor."""
+    """Configuration extracted from one scalar smooth formula factor."""
 
     name: str
     covariate: str
+    kind: str
     options: Mapping[str, Any]
+    factor_expression: str
 
 
 @dataclass(frozen=True)
 class TensorFormulaSpec:
-    """Configuration extracted from one ``te(...)`` or ``ti(...)`` factor."""
+    """Configuration extracted from a multivariate smooth formula factor."""
 
     name: str
     covariates: tuple[str, ...]
+    kind: str
     interaction: bool
     options: Mapping[str, Any]
     factor_expression: str
@@ -140,11 +259,17 @@ class FormulaEncoder:
             tensor_factors = {
                 spec.factor_expression for spec in parameter_tensors
             }
+            standalone_smooth_factors = {
+                spec.factor_expression
+                for spec in parameter_smooths
+                if spec.kind in {"pbc", "pbz", "ad", "mrf"}
+            }
             columns = tuple(
                 str(column)
                 for column in matrix.columns
                 if str(column) not in parameter_offset_factors
                 and str(column) not in tensor_factors
+                and str(column) not in standalone_smooth_factors
             )
             if not columns:
                 raise ValueError(
@@ -202,12 +327,27 @@ class FormulaEncoder:
                     context=f"offset for {parameter!r}",
                 )
             smooth_covariates[parameter] = {
-                spec.name: _column_tensor(
-                    frame,
-                    spec.covariate,
-                    dtype=dtype,
-                    device=device,
-                    context=f"smooth covariate {spec.name!r} for {parameter!r}",
+                spec.name: (
+                    _mrf_column_tensor(
+                        frame,
+                        spec.covariate,
+                        tuple(spec.options["region_labels"]),
+                        dtype=dtype,
+                        device=device,
+                        context=(
+                            f"smooth covariate {spec.name!r} for {parameter!r}"
+                        ),
+                    )
+                    if spec.kind == "mrf" and "region_labels" in spec.options
+                    else _column_tensor(
+                        frame,
+                        spec.covariate,
+                        dtype=dtype,
+                        device=device,
+                        context=(
+                            f"smooth covariate {spec.name!r} for {parameter!r}"
+                        ),
+                    )
                 )
                 for spec in self.smooth_specs[parameter]
             }
@@ -370,21 +510,36 @@ def _special_factors(
             nested_special = any(
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id in {"offset", "pb", "te", "ti"}
+                and node.func.id
+                in {
+                    "offset",
+                    "pb",
+                    "pbc",
+                    "pbz",
+                    "ad",
+                    "mrf",
+                    "tp",
+                    "te",
+                    "ti",
+                }
                 for node in ast.walk(ast.parse(expression, mode="eval"))
             )
             if call is None:
                 if nested_special:
                     raise ValueError(
-                        "pb(), te(), ti(), and offset() must be standalone "
+                        "pb(), pbc(), pbz(), ad(), mrf(), tp(), te(), ti(), "
+                        "and "
+                        "offset() must be "
+                        "standalone "
                         "additive formula terms"
                     )
                 continue
             name, parsed_call = call
             if len(term.factors) != 1:
                 raise ValueError(
-                    "pb(), te(), ti(), and offset() cannot be used in "
-                    "formula interactions"
+                    "pb(), pbc(), pbz(), ad(), mrf(), tp(), te(), ti(), and "
+                    "offset() cannot be "
+                    "used in formula interactions"
                 )
             if name == "offset":
                 covariate = _simple_covariate(parsed_call, "offset")
@@ -393,9 +548,27 @@ def _special_factors(
                 offsets[expression] = covariate
                 continue
 
-            if name in {"te", "ti"}:
-                covariates = _tensor_covariates(parsed_call, name)
-                options = _tensor_options(parsed_call, name, len(covariates))
+            if name in {"tp", "te", "ti"} or (
+                name == "ad" and len(parsed_call.args) == 2
+            ):
+                covariates = (
+                    _thin_plate_covariates(parsed_call)
+                    if name == "tp"
+                    else _tensor_covariates(parsed_call, name)
+                )
+                options = (
+                    _thin_plate_options(parsed_call, len(covariates))
+                    if name == "tp"
+                    else (
+                        _adaptive_options(parsed_call, len(covariates))
+                        if name == "ad"
+                        else _tensor_options(
+                            parsed_call,
+                            name,
+                            len(covariates),
+                        )
+                    )
+                )
                 default_name = f"{name}_{'_'.join(covariates)}"
                 smooth_name = options.pop("name", default_name)
                 _validate_smooth_name(smooth_name, name)
@@ -408,6 +581,7 @@ def _special_factors(
                     TensorFormulaSpec(
                         name=smooth_name,
                         covariates=covariates,
+                        kind=name,
                         interaction=name == "ti",
                         options=options,
                         factor_expression=expression,
@@ -415,10 +589,22 @@ def _special_factors(
                 )
                 continue
 
-            covariate = _simple_covariate(parsed_call, "pb")
-            options = _pb_options(parsed_call)
+            covariate = _simple_covariate(parsed_call, name)
+            options = (
+                _pbz_options(parsed_call)
+                if name == "pbz"
+                else (
+                    _mrf_options(parsed_call)
+                    if name == "mrf"
+                    else (
+                        _adaptive_options(parsed_call, 1)
+                        if name == "ad"
+                        else _pb_options(parsed_call, function_name=name)
+                    )
+                )
+            )
             smooth_name = options.pop("name", covariate)
-            _validate_smooth_name(smooth_name, "pb")
+            _validate_smooth_name(smooth_name, name)
             if smooth_name in smooth_names:
                 raise ValueError(f"duplicate smooth name: {smooth_name!r}")
             smooth_names.add(smooth_name)
@@ -426,7 +612,9 @@ def _special_factors(
                 SmoothFormulaSpec(
                     name=smooth_name,
                     covariate=covariate,
+                    kind=name,
                     options=options,
+                    factor_expression=expression,
                 )
             )
     return smooths, tensors, offsets
@@ -440,7 +628,8 @@ def _special_call(expression: str) -> tuple[str, ast.Call] | None:
     if (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
-        and node.func.id in {"offset", "pb", "te", "ti"}
+        and node.func.id
+        in {"offset", "pb", "pbc", "pbz", "ad", "mrf", "tp", "te", "ti"}
     ):
         return node.func.id, node
     return None
@@ -463,6 +652,17 @@ def _tensor_covariates(call: ast.Call, function_name: str) -> tuple[str, ...]:
     return tuple(argument.id for argument in call.args)
 
 
+def _thin_plate_covariates(call: ast.Call) -> tuple[str, ...]:
+    if not call.args or any(
+        not isinstance(argument, ast.Name) for argument in call.args
+    ):
+        raise ValueError(
+            "tp() requires one or more simple numeric column names followed "
+            "by keyword options"
+        )
+    return tuple(argument.id for argument in call.args)
+
+
 def _validate_smooth_name(value: Any, function_name: str) -> None:
     if not isinstance(value, str) or not value or "." in value:
         raise ValueError(
@@ -470,9 +670,15 @@ def _validate_smooth_name(value: Any, function_name: str) -> None:
         )
 
 
-def _pb_options(call: ast.Call) -> dict[str, Any]:
+def _pb_options(
+    call: ast.Call,
+    *,
+    function_name: str = "pb",
+) -> dict[str, Any]:
     if len(call.args) != 1:
-        raise ValueError("pb() accepts one column followed by keyword options")
+        raise ValueError(
+            f"{function_name}() accepts one column followed by keyword options"
+        )
     aliases = {
         "df": "degrees_of_freedom",
         "inter": "intervals",
@@ -480,6 +686,8 @@ def _pb_options(call: ast.Call) -> dict[str, Any]:
         "lambda_": "smoothing_parameter",
         "method": "smoothing_method",
     }
+    if function_name == "pbc":
+        aliases["sin"] = "sine_penalty"
     allowed = {
         "criterion_penalty",
         "degree",
@@ -491,19 +699,250 @@ def _pb_options(call: ast.Call) -> dict[str, Any]:
         "smoothing_method",
         "smoothing_parameter",
     }
+    if function_name == "pbc":
+        allowed.add("sine_penalty")
     options: dict[str, Any] = {}
     for keyword in call.keywords:
         if keyword.arg is None:
-            raise ValueError("pb() does not accept expanded keyword arguments")
+            raise ValueError(
+                f"{function_name}() does not accept expanded keyword arguments"
+            )
         name = aliases.get(keyword.arg, keyword.arg)
         if name not in allowed:
-            raise ValueError(f"unsupported pb() option: {keyword.arg!r}")
+            raise ValueError(
+                f"unsupported {function_name}() option: {keyword.arg!r}"
+            )
         if name in options:
-            raise ValueError(f"duplicate pb() option: {name!r}")
+            raise ValueError(f"duplicate {function_name}() option: {name!r}")
         try:
             options[name] = ast.literal_eval(keyword.value)
         except (ValueError, TypeError) as error:
-            raise ValueError(f"pb() option {name!r} must be a literal") from error
+            raise ValueError(
+                f"{function_name}() option {name!r} must be a literal"
+            ) from error
+    return options
+
+
+def _pbz_options(call: ast.Call) -> dict[str, Any]:
+    if len(call.args) != 1:
+        raise ValueError("pbz() accepts one column followed by keyword options")
+    aliases = {
+        "inter": "intervals",
+        "initial_lambda_": "initial_smoothing_parameters",
+        "lambda_": "smoothing_parameters",
+        "order": "penalty_order",
+        "start": "initial_smoothing_parameters",
+    }
+    allowed = {
+        "degree",
+        "initial_smoothing_parameters",
+        "intervals",
+        "name",
+        "penalty_order",
+        "smoothing_parameters",
+    }
+    options: dict[str, Any] = {}
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            raise ValueError("pbz() does not accept expanded keyword arguments")
+        name = aliases.get(keyword.arg, keyword.arg)
+        if name not in allowed:
+            raise ValueError(f"unsupported pbz() option: {keyword.arg!r}")
+        if name in options:
+            raise ValueError(f"duplicate pbz() option: {name!r}")
+        try:
+            options[name] = ast.literal_eval(keyword.value)
+        except (ValueError, TypeError) as error:
+            raise ValueError(f"pbz() option {name!r} must be a literal") from error
+
+    fixed = "smoothing_parameters" in options
+    if fixed and "initial_smoothing_parameters" in options:
+        raise ValueError(
+            "pbz() accepts either smoothing_parameters or "
+            "initial_smoothing_parameters, not both"
+        )
+    smoothing_parameters = options.pop(
+        "initial_smoothing_parameters",
+        options.get("smoothing_parameters", (1e-4, 1e-4)),
+    )
+    if (
+        not isinstance(smoothing_parameters, (list, tuple))
+        or len(smoothing_parameters) != 2
+    ):
+        raise ValueError("pbz() smoothing_parameters must contain two values")
+    options["smoothing_parameters"] = tuple(smoothing_parameters)
+    options["estimate_smoothing"] = not fixed
+    return options
+
+
+def _thin_plate_options(
+    call: ast.Call,
+    covariate_count: int,
+) -> dict[str, Any]:
+    if len(call.args) != covariate_count:
+        raise ValueError(
+            "tp() accepts covariate columns followed by keyword options"
+        )
+    aliases = {
+        "initial_lambda_": "initial_smoothing_parameter",
+        "k": "basis_size",
+        "lambda_": "smoothing_parameter",
+        "m": "penalty_order",
+    }
+    allowed = {
+        "basis_size",
+        "initial_smoothing_parameter",
+        "max_knots",
+        "name",
+        "penalty_order",
+        "smoothing_parameter",
+    }
+    options: dict[str, Any] = {}
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            raise ValueError("tp() does not accept expanded keyword arguments")
+        name = aliases.get(keyword.arg, keyword.arg)
+        if name not in allowed:
+            raise ValueError(f"unsupported tp() option: {keyword.arg!r}")
+        if name in options:
+            raise ValueError(f"duplicate tp() option: {name!r}")
+        try:
+            options[name] = ast.literal_eval(keyword.value)
+        except (ValueError, TypeError) as error:
+            raise ValueError(f"tp() option {name!r} must be a literal") from error
+    if (
+        "smoothing_parameter" in options
+        and "initial_smoothing_parameter" in options
+    ):
+        raise ValueError(
+            "tp() accepts either lambda_ or initial_lambda_, not both"
+        )
+    return options
+
+
+def _adaptive_options(
+    call: ast.Call,
+    covariate_count: int,
+) -> dict[str, Any]:
+    if len(call.args) != covariate_count or covariate_count not in {1, 2}:
+        raise ValueError(
+            "ad() accepts one or two columns followed by keyword options"
+        )
+    aliases = {
+        "initial_lambda_": "initial_smoothing_parameters",
+        "k": "basis_size",
+        "lambda_": "smoothing_parameters",
+        "m": "penalty_basis_size",
+    }
+    allowed = {
+        "basis_size",
+        "initial_smoothing_parameters",
+        "name",
+        "penalty_basis_size",
+        "smoothing_parameters",
+    }
+    options: dict[str, Any] = {}
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            raise ValueError("ad() does not accept expanded keyword arguments")
+        name = aliases.get(keyword.arg, keyword.arg)
+        if name not in allowed:
+            raise ValueError(f"unsupported ad() option: {keyword.arg!r}")
+        if name in options:
+            raise ValueError(f"duplicate ad() option: {name!r}")
+        try:
+            options[name] = ast.literal_eval(keyword.value)
+        except (ValueError, TypeError) as error:
+            raise ValueError(f"ad() option {name!r} must be a literal") from error
+    if (
+        "smoothing_parameters" in options
+        and "initial_smoothing_parameters" in options
+    ):
+        raise ValueError(
+            "ad() accepts either lambda_ or initial_lambda_, not both"
+        )
+    return options
+
+
+def _mrf_options(call: ast.Call) -> dict[str, Any]:
+    if len(call.args) != 1:
+        raise ValueError("mrf() accepts one region column and keyword options")
+    aliases = {
+        "initial_lambda_": "initial_smoothing_parameter",
+        "k": "basis_size",
+        "lambda_": "smoothing_parameter",
+        "nb": "adjacency",
+        "penalty": "graph_penalty",
+    }
+    allowed = {
+        "adjacency",
+        "area_count",
+        "basis_size",
+        "edges",
+        "graph_penalty",
+        "initial_smoothing_parameter",
+        "levels",
+        "name",
+        "polygons",
+        "smoothing_parameter",
+    }
+    options: dict[str, Any] = {}
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            raise ValueError("mrf() does not accept expanded keyword arguments")
+        name = aliases.get(keyword.arg, keyword.arg)
+        if name not in allowed:
+            raise ValueError(f"unsupported mrf() option: {keyword.arg!r}")
+        if name in options:
+            raise ValueError(f"duplicate mrf() option: {name!r}")
+        try:
+            options[name] = ast.literal_eval(keyword.value)
+        except (ValueError, TypeError) as error:
+            raise ValueError(f"mrf() option {name!r} must be a literal") from error
+    graph_options = {
+        "adjacency",
+        "edges",
+        "graph_penalty",
+        "polygons",
+    }.intersection(options)
+    if not graph_options:
+        raise ValueError(
+            "mrf() requires edges, adjacency, polygons, or a graph penalty"
+        )
+    if len(graph_options) > 1:
+        raise ValueError(
+            "mrf() accepts exactly one of edges, adjacency, polygons, or penalty"
+        )
+    adjacency = options.pop("adjacency", None)
+    edges = options.get("edges")
+    polygons = options.get("polygons")
+    levels = options.pop("levels", None)
+    region_labels = _mrf_region_labels(
+        adjacency=adjacency,
+        edges=edges,
+        levels=levels,
+        polygons=polygons,
+    )
+    if adjacency is not None:
+        options["edges"] = adjacency
+    if region_labels is not None:
+        if len(set(region_labels)) != len(region_labels):
+            raise ValueError("mrf() region labels must be unique")
+        options["region_labels"] = region_labels
+        supplied_area_count = options.get("area_count")
+        if supplied_area_count is None:
+            options["area_count"] = len(region_labels)
+        elif supplied_area_count != len(region_labels):
+            raise ValueError(
+                "mrf() area_count must equal the number of region labels"
+            )
+    if (
+        "smoothing_parameter" in options
+        and "initial_smoothing_parameter" in options
+    ):
+        raise ValueError(
+            "mrf() accepts either lambda_ or initial_lambda_, not both"
+        )
     return options
 
 
@@ -612,4 +1051,35 @@ def _column_tensor(
         raise ValueError(f"{context} column {column!r} must be one-dimensional")
     if not torch.isfinite(tensor).all():
         raise ValueError(f"{context} column {column!r} must be finite")
+    return tensor
+
+
+def _mrf_column_tensor(
+    frame: pd.DataFrame,
+    column: str,
+    region_labels: tuple[object, ...],
+    *,
+    dtype: torch.dtype,
+    device: torch.device | str | None,
+    context: str,
+) -> Tensor:
+    """Encode a named MRF column with its fitted graph-level ordering."""
+    if column not in frame.columns:
+        raise ValueError(f"{context} column {column!r} is missing")
+    label_codes = {label: index for index, label in enumerate(region_labels)}
+    values = frame[column]
+    encoded = values.map(label_codes)
+    if encoded.isna().any():
+        unknown = tuple(dict.fromkeys(values.loc[encoded.isna()].tolist()))
+        raise ValueError(
+            f"{context} column {column!r} contains unknown MRF regions: "
+            f"{unknown!r}"
+        )
+    tensor = torch.as_tensor(
+        encoded.to_numpy(dtype=float, copy=True),
+        dtype=dtype,
+        device=device,
+    )
+    if tensor.ndim != 1:
+        raise ValueError(f"{context} column {column!r} must be one-dimensional")
     return tensor

@@ -147,7 +147,25 @@ in their separate sibling worktrees; remaining term families are pending.
 - [x] whole-model LAML selection for each tensor marginal penalty;
 - [x] random intercept and slope terms with full-rank ridge penalties,
   complete in the sibling `agent/random-effect-terms` worktree;
-- sum-to-zero constraints and shrinkage/double penalties.
+- [x] cyclic P-splines with circular differences and periodic prediction;
+- [x] sum-to-zero constraints and shrinkage/double penalties for `pbz()`;
+- [x] isotropic low-rank thin-plate regression splines with absorbed
+  centering, prediction mapping, LAML/bootstrap, and CUDA execution;
+- [x] one-dimensional adaptive P-splines with a low-rank penalty basis and
+  jointly selected local roughness components;
+- [x] two-dimensional adaptive tensor P-splines with directional and
+  mixed-derivative local penalty components;
+- [x] full-rank areal MRF smooths with explicit graph edges and a Laplacian
+  penalty;
+- [x] low-rank MRF natural parameterization with reproducible eigenspace
+  truncation and unobserved-region support;
+- [x] textual/factor MRF levels and named adjacency mappings with stable
+  train/prediction encoding;
+- [x] user-supplied positive-semidefinite MRF penalty matrices in full and
+  natural low-rank parameterizations;
+- [x] polygon-derived MRF adjacency with exact shared-vertex `mgcv::pol2nb`
+  semantics and multiple region components;
+- [ ] continuous spatial smooth terms.
 
 ### 12E — structured large-data backend
 

@@ -82,6 +82,19 @@ The current implementation contains:
   linear and additive predictors;
 - fixed-lambda P-splines, penalized weighted least squares, additive
   backfitting, and effective degrees of freedom;
+- cyclic P-splines compatible with `gamlss::pbc()`, including periodic
+  out-of-range prediction, and double-penalty shrinkage P-splines compatible
+  with the activated `gamlss::pbz()` path;
+- low-rank isotropic thin-plate regression splines through `tp()`, with
+  `mgcv`-equivalent spectral truncation, absorbed centering, prediction,
+  whole-model LAML selection, bootstrap, and CPU/CUDA execution;
+- one- and two-dimensional adaptive P-splines through `ad()`, with local
+  roughness fields represented by multiple jointly selected directional and
+  mixed-derivative penalties and invariant fixed-smoother parity with `mgcv`;
+- full- and low-rank areal Markov random-field smooths through `mrf()`, using
+  integer edges, named categorical adjacency, polygon-derived neighbors, or
+  supplied PSD graph penalties, the `mgcv` natural parameterization, absorbed
+  centering, LAML/bootstrap selection, and CPU/CUDA execution;
 - a dense low-level solver for multiple fixed positive-semidefinite smooth
   penalties and null-space-reparameterized linear constraints on CPU or CUDA;
 - full tensor-product smooths and highest-order ANOVA tensor interactions,
@@ -92,10 +105,11 @@ The current implementation contains:
   location/scale/shape, BCCG location/scale/shape, BCT
   location/scale/skewness/tail-shape, and BCPE
   location/scale/skewness/kurtosis, PE location/scale/shape, and GG
-  positive-location/scale/shape, uncensored LOGNO mean-log/scale, and
-  uncensored WEI scale/shape models, including
-  formula `fit_laml_data()`, automatic scalar and tensor lambdas, null-space
-  constraints, outer diagnostics, implicit outer gradients and Hessians,
+  positive-location/scale/shape, uncensored IG mean/dispersion, uncensored
+  LOGNO mean-log/scale, and uncensored WEI scale/shape models, including
+  formula `fit_laml_data()`, automatic scalar, tensor, thin-plate, and adaptive
+  lambdas,
+  null-space constraints, outer diagnostics, implicit outer gradients and Hessians,
   CPU/CUDA execution, direct `mgcv` REML parity where an overlapping family
   exists, and
   fixed-lambda `gamlss` parity otherwise;
@@ -216,8 +230,9 @@ NBI mean/dispersion, Gamma mean/CV, Beta mean/dispersion, Student-t
 location/scale/shape, BCCG location/scale/shape, BCT
 location/scale/skewness/tail-shape, and BCPE
 location/scale/skewness/kurtosis, PE location/scale/shape, and GG
-positive-location/scale/shape, uncensored LOGNO mean-log/scale, and uncensored
-WEI scale/shape models. Their parametric bootstrap stores one value per
+positive-location/scale/shape, uncensored IG mean/dispersion, uncensored LOGNO
+mean-log/scale, and uncensored WEI scale/shape models. Their parametric
+bootstrap stores one value per
 marginal lambda while
 preserving the scalar `pb()` API; `algorithm="laml"`
 repeats automatic joint tensor selection in every successful bootstrap

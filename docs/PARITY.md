@@ -463,6 +463,102 @@ resampling follows R's paired resampling of residuals and prior weights;
 cross-language parity is asserted for the statistics rather than random
 sample indices.
 
+## Cyclic and shrinkage P-splines
+
+The cyclic fixture translates the internal `gamlss::pbc()` `cbase()` and
+`Cdiff()` constructions. It checks every element of the closed B-spline basis
+and circular difference root, then compares a fixed-lambda Normal fit for
+coefficients, EDF, likelihood, and all fitted values. Separate tests verify
+that training-boundary designs agree and that predictions repeat exactly one
+period above or below the fitted range.
+
+The shrinkage fixture targets the activated double-penalty branch of
+`gamlss::pbz()`, with a second-difference roughness penalty and a
+first-difference shrinkage penalty. R activates the latter conditionally after
+a preliminary EDF check; the committed fixed fixture chooses parameters that
+activate it. The centered Torch fit agrees within `9e-5` for fitted means and
+`7e-4` for global deviance. LAML then treats the two declared penalties as
+independent coordinates and checks joint selection, ten-replicate bootstrap
+reselection, constraints, and CUDA.
+
+## Thin-plate regression splines
+
+The thin-plate fixture uses `mgcv::smoothCon()` with a two-dimensional
+`bs="tp"`, 15-column pre-constraint basis, second-order penalty, absorbed
+sum-to-zero constraint, and penalty scaling disabled. Because truncated
+eigenbases are only identifiable up to signs and rotations, parity is asserted
+on invariant fitted and prediction operators rather than individual columns.
+
+With unit weights and fixed `lambda=2.5`, the Torch and `mgcv` penalized
+smoothers agree for all 90 training values and seven out-of-sample predictions
+at approximately machine precision. Separate tests cover the theoretical
+penalty nullity, empirical centering, state serialization, automatic LAML
+selection, ten-replicate bootstrap reselection, and local CUDA execution. The
+R generator records the `mgcv` version and checks these fixtures in the core R
+gate.
+
+## Adaptive P-splines
+
+The adaptive fixture uses one-dimensional
+`mgcv::s(x, bs="ad", k=20, m=5)`, absorbs its centering constraint, and leaves
+penalty scaling disabled. It fixes five distinct positive lambdas, then
+compares the invariant penalized smoother rather than basis-dependent
+coefficients. Torch and `mgcv` agree within `3e-13` for all 100 fitted values
+and eight predictions, including linear extrapolation below and above the
+training interval.
+
+The reference construction covers the cubic main P-spline basis, the smaller
+penalty-weight basis, and all five `D' diag(v_j) D` components. Separate tests
+exercise three-lambda automatic LAML selection, ten-replicate bootstrap
+reselection, state serialization, and local CUDA execution.
+
+The two-dimensional fixture uses
+`mgcv::s(x, z, bs="ad", k=c(7,6), m=c(3,3))`. Unequal main dimensions make a
+transposed or otherwise incorrect coefficient-grid ordering observable. It
+fixes nine distinct lambdas over both directional second differences and the
+scaled mixed derivative. Torch and `mgcv` agree within `6e-14` for all 120
+fitted values and seven in- and out-of-range predictions. Separate tests cover
+nine-lambda LAML selection, ten-replicate bootstrap reselection, state
+serialization, and CUDA execution.
+
+## Areal MRF smooths
+
+The MRF fixture uses a connected 3-by-3 region grid and supplies the symmetric
+neighbour graph to `mgcv::s(region, bs="mrf")`. With constraint absorption and
+penalty scaling disabled, TorchGAMLSS constructs the identical full-rank graph
+Laplacian smoothing operator. A fixed `lambda=2.4` agrees within `6e-15` for
+all 135 fitted values and all nine region predictions.
+
+The low-rank companion uses `k=6`, which retains a complete graph eigenspace,
+and `lambda=1.7`. TorchGAMLSS reproduces `mgcv::nat.param(type=0)`, including
+its Frobenius scaling and diagonal natural penalty; the invariant fits and
+nine predictions agree within `5e-15`. A requested dimension that cuts through
+a repeated eigenvalue is rejected because the truncated subspace would depend
+on the eigensolver's arbitrary rotation.
+
+Separate tests cover edge validation, state serialization, automatic LAML
+selection for both ranks, ten-replicate bootstrap reselection, missing-region
+prediction, and local CUDA execution. The R fixture already constructs the
+smooth from a factor and named neighbour list; a semantic relabeling test
+verifies that categorical formula encoding and named Python adjacency produce
+the same design, penalty, fitted smoother, and predictions. Polygon-derived
+neighbors remain outside this claim.
+
+A second 3-by-3 fixture replaces the unit-edge Laplacian with twelve distinct
+positive edge weights and supplies the resulting matrix through
+`xt=list(penalty=S)`. TorchGAMLSS receives the same matrix through
+`graph_penalty=`/formula `penalty=`. Full rank and `k=6` fixed-lambda fits and
+region predictions agree within `4e-15`, while separate tests cover matrix
+validation, labelled ordering, LAML/bootstrap reselection, and CUDA.
+
+The polygon fixture supplies six named triangular areas to
+`xt=list(polys=polygons)`. Each consecutive pair shares exactly one vertex,
+making every expected edge observable. `polygon_adjacency()` matches all five
+`mgcv::pol2nb` pairs; the full-rank and `k=4` fits and predictions agree within
+`5e-15`. Corner contact deliberately counts, matching `mgcv`, and separate
+tests cover multiple components, malformed geometry, LAML/bootstrap, and
+CUDA.
+
 ## Tensor-product algebra
 
 The tensor reference fixture compares TorchGAMLSS directly with
@@ -501,6 +597,14 @@ both lambdas, EDF, all coefficients, fitted scale/shape, and the complete
 outer Hessian. This `gumbls` fixture uses unit weights because that extended
 family does not apply prior weights to its likelihood; weighted WEI behavior
 is checked against `gamlss::gamlss()` and finite-difference derivatives.
+
+The inverse-Gaussian LAML fixture uses the `gamlss.dist::IG` mean/dispersion
+parameterization, where `Var(Y) = sigma^2 * mu^3`. It compares a weighted
+fixed-lambda fit against `gamlss::gamlss()` for the likelihood and all fitted
+parameter values, then audits the implicit outer gradient and analytic
+Hessian against finite differences. A direct `mgcv` reference is intentionally
+absent: inverse Gaussian corresponds to Tweedie variance power `p=3`, while
+`mgcv::Tweedie()` accepts only `1<p<=2`.
 
 The NBI LAML fixture uses `mgcv::nb(theta=4, link="log")`, with
 `theta = 1/sigma` under the `gamlss.dist::NBI` variance convention. Torch

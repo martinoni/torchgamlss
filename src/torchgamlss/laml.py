@@ -1098,6 +1098,7 @@ def fit_gamlss_model_laml(
         BoxCoxT,
         Gamma,
         GeneralizedGamma,
+        InverseGaussian,
         LogNormal,
         NegativeBinomial,
         Normal,
@@ -1113,6 +1114,7 @@ def fit_gamlss_model_laml(
     is_nbi = isinstance(model.family, NegativeBinomial)
     is_gamma = isinstance(model.family, Gamma)
     is_gg = isinstance(model.family, GeneralizedGamma)
+    is_inverse_gaussian = isinstance(model.family, InverseGaussian)
     is_log_normal = isinstance(model.family, LogNormal)
     is_weibull = isinstance(model.family, Weibull)
     is_beta = isinstance(model.family, Beta)
@@ -1127,6 +1129,7 @@ def fit_gamlss_model_laml(
         or is_nbi
         or is_gamma
         or is_gg
+        or is_inverse_gaussian
         or is_log_normal
         or is_weibull
         or is_beta
@@ -1138,8 +1141,8 @@ def fit_gamlss_model_laml(
     ):
         raise ValueError(
             "whole-model LAML currently supports Normal, Poisson, NBI, "
-            "Gamma, Beta, Student-t, BCCG, BCT, BCPE, PE, GG, LOGNO, and "
-            "WEI families"
+            "Gamma, Beta, Student-t, BCCG, BCT, BCPE, PE, GG, IG, LOGNO, "
+            "and WEI families"
         )
     if is_normal and (
         not isinstance(model.family.links["mu"], IdentityLink)
@@ -1171,6 +1174,11 @@ def fit_gamlss_model_laml(
             "whole-model GG LAML requires log mu, log sigma, "
             "and identity nu links"
         )
+    if is_inverse_gaussian and (
+        not isinstance(model.family.links["mu"], LogLink)
+        or not isinstance(model.family.links["sigma"], LogLink)
+    ):
+        raise ValueError("whole-model IG LAML requires log mu and log sigma links")
     if is_log_normal and (
         not isinstance(model.family.links["mu"], IdentityLink)
         or not isinstance(model.family.links["sigma"], LogLink)

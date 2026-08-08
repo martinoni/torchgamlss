@@ -1,8 +1,12 @@
 # Smooth terms
 
-TorchGAMLSS currently provides `PSpline`, a P-spline compatible with the core
-construction of `gamlss::pb()`. It uses an equally spaced cubic B-spline basis
-by default and penalizes second differences of adjacent spline coefficients.
+TorchGAMLSS provides `PSpline`, `CyclicPSpline`, `ShrinkagePSpline`,
+`AdaptivePSpline`, `AdaptiveTensorPSpline`, `MarkovRandomField`, and
+`ThinPlateSpline`. The GAMLSS-compatible terms follow the core constructions
+of `gamlss::pb()`, `gamlss::pbc()`, and `gamlss::pbz()`; the thin-plate,
+adaptive, and graph terms follow the corresponding constructions in `mgcv`.
+The ordinary P-spline uses an equally spaced cubic B-spline basis by default
+and penalizes second differences of adjacent spline coefficients.
 
 For basis matrix `B`, coefficient vector `gamma`, difference matrix `D`,
 working response `z`, and working weights `W`, each smoother update solves
@@ -254,6 +258,331 @@ gcv_term = PSpline.from_data(
 
 `smoothing_parameter` and `degrees_of_freedom` are mutually exclusive.
 
+## Cyclic and shrinkage P-splines
+
+`CyclicPSpline` closes the final B-spline columns into the first columns and
+uses the circular difference matrix from `pbc()`. Its default second-order
+stencil is `(-1, 2*cos(2*pi/K), -1)`, giving the sine/cosine null space used by
+R. Prediction wraps covariates by the fitted period, so values separated by
+any integer multiple of the training range have identical designs and fitted
+values.
+
+Formula syntax follows R while using Python-safe keyword names:
+
+```python
+cyclic = GAMLSS.from_formula(
+    Normal(),
+    {"mu": "y ~ pbc(angle, lambda_=12, intervals=12)", "sigma": "~ 1"},
+    data,
+)
+```
+
+Omit `lambda_` for local ML selection under RS/CG or whole-model selection
+under LAML. `df`, `method`, `k`, `inter`, and `sin` aliases follow the existing
+`pb()` conventions. The committed fixture compares the complete basis,
+circular difference root, coefficients, EDF, likelihood, and fitted values
+with `gamlss::pbc()`.
+
+`ShrinkagePSpline` implements the activated double-penalty branch of
+`gamlss::pbz()`: the ordinary difference penalty is accompanied by a
+first-difference penalty. A sum-to-zero constraint separates the smooth from
+the model intercept. Fixed RS/CG fits receive both lambdas explicitly:
+
+```python
+fixed = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": "y ~ pbz(x, lambda_=(100000, 50), intervals=20)",
+        "sigma": "~ 1",
+    },
+    data,
+)
+```
+
+For automatic whole-model LAML selection, use two positive starting values:
+
+```python
+automatic = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": "y ~ pbz(x, initial_lambda_=(10, 10), intervals=10)",
+        "sigma": "~ 1",
+    },
+    data,
+)
+fit = automatic.fit_laml_data(data)
+```
+
+Both selected lambdas are reported with distinct penalty indices and are
+reselected in every successful LAML bootstrap replicate. The R `pbz()` code
+activates its first-difference penalty only after the preliminary EDF falls
+below `lim`; Torch fixed-fit parity targets that activated branch, while LAML
+keeps both declared penalties active and selects them jointly. Formula
+L-BFGS/mini-batch fitting is not yet claimed for `pbz()` because those paths do
+not currently impose explicit coefficient constraints.
+
+## Thin-plate regression splines
+
+`ThinPlateSpline` implements a low-rank isotropic thin-plate regression spline
+without choosing knots by hand. It follows the `mgcv` construction:
+
+1. center the training coordinates;
+2. form the full thin-plate radial kernel at the unique locations;
+3. retain the eigenvectors with largest-magnitude eigenvalues;
+4. impose the polynomial side conditions and retain the penalty null space;
+5. scale the design columns and absorb the empirical sum-to-zero constraint.
+
+The absorbed constraint separates the surface from the formula intercept, so
+fixed-lambda `tp()` terms work through RS, CG, L-BFGS, and mini-batch fitting.
+Omitting `lambda_` marks the one penalty for whole-model LAML selection:
+
+```python
+model = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": "y ~ tp(x, z, k=15, m=2, initial_lambda_=1, name='surface')",
+        "sigma": "~ 1",
+    },
+    data,
+)
+fit = model.fit_laml_data(data)
+prediction = model.predict_data(new_data)["mu"]
+```
+
+The Python-safe formula aliases are `k` for `basis_size`, `m` for
+`penalty_order`, `lambda_` for a fixed smoothing parameter, and
+`initial_lambda_` for the LAML starting value. One or more covariates are
+accepted. Because the penalty is isotropic, coordinates should use comparable
+physical units; otherwise rescale them before fitting.
+
+The default basis dimensions match `mgcv`: null-space dimension plus 8, 27,
+or 100 columns for one, two, or at least three coordinates, respectively.
+After the sum-to-zero constraint is absorbed, the fitted coefficient count is
+one smaller. TorchGAMLSS currently caps the exact kernel eigendecomposition at
+500 unique locations by default and selects a deterministic subset above that
+threshold. This differs from `mgcv`'s larger randomized-knot/Lanczos path and
+is a deliberate dense-prototype limitation pending the structured backend.
+
+The committed two-dimensional reference compares the complete fixed-lambda
+smoothing operator and out-of-sample predictions with
+`mgcv::smoothCon(..., bs="tp", absorb.cons=TRUE, scale.penalty=FALSE)`.
+Agreement is at floating-point precision even though eigenvector signs and
+rotations need not match column by column. Automatic LAML selection,
+ten-replicate bootstrap reselection, and CUDA execution are tested separately.
+
+## Adaptive P-splines
+
+`AdaptivePSpline` implements the one-dimensional `mgcv` adaptive smooth. A
+cubic P-spline basis models the function, while a smaller non-negative
+B-spline basis models how the second-difference penalty changes along the
+coefficient sequence. If `D` is the second-difference root and `v_j` is one
+column of the penalty basis, each component is
+
+```text
+S_j = D' diag(v_j) D,
+```
+
+and the total penalty is `sum_j lambda_j S_j`. Different selected lambdas
+therefore allow roughness to vary across the covariate range rather than
+forcing one global smoothness level.
+
+Formula `ad()` mirrors the important `mgcv::s(..., bs="ad")` controls:
+
+```python
+model = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": (
+            "y ~ ad(x, k=20, m=5, initial_lambda_=(1, 1, 1, 1, 1), "
+            "name='trend')"
+        ),
+        "sigma": "~ 1",
+    },
+    data,
+)
+fit = model.fit_laml_data(data)
+```
+
+Here `k` is the main spline basis size and `m` is the penalty-basis size, hence
+the number of lambdas. `lambda_=(...)` fixes every component for RS, CG,
+L-BFGS, or mini-batch fitting; `initial_lambda_=(...)` supplies positive LAML
+starting values. Omitting both uses `m=5` with all starts equal to one. The
+empirical sum-to-zero constraint is absorbed into the stored design and
+prediction mapping.
+
+The main basis, penalty basis, local penalty matrices, and linear boundary
+extrapolation reproduce the one-dimensional `mgcv` construction. The parity
+fixture compares the invariant fixed smoothing operator on 100 training
+values and eight predictions, including values outside the training range.
+Individual centered basis columns are not compared because constraint
+null-space bases are only identifiable up to rotation.
+
+For two covariates, formula `ad()` constructs `AdaptiveTensorPSpline`:
+
+```python
+model = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": (
+            "y ~ ad(x, z, k=(7, 6), m=(3, 3), "
+            "initial_lambda_=(1, 1, 1, 1, 1, 1, 1, 1, 1), "
+            "name='surface')"
+        ),
+        "sigma": "~ 1",
+    },
+    data,
+)
+fit = model.fit_laml_data(data)
+```
+
+The raw function basis is the row tensor product of the two cubic P-spline
+bases. On the coefficient grid, `Drr` and `Dcc` take second differences in the
+two directions and `Dcr` is the scaled mixed derivative. If `v_j` denotes a
+column of the tensor penalty basis evaluated at the appropriate operator
+locations, then
+
+```text
+S_j = Drr' diag(vrr_j) Drr
+    + Dcc' diag(vcc_j) Dcc
+    + Dcr' diag(vcr_j) Dcr.
+```
+
+Here `k=(k1, k2)` gives the two main basis sizes and `m=(m1, m2)` gives the
+penalty-basis dimensions, so the term has `m1*m2` lambdas. Both penalty-basis
+dimensions must currently be at least three. The two-dimensional fixed
+reference deliberately uses unequal main dimensions to audit coefficient-grid
+ordering; Torch and `mgcv` agree within `6e-14` for 120 fits and seven
+predictions, including extrapolation. Automatic nine-lambda LAML selection,
+ten-replicate bootstrap reselection, and CUDA execution are tested separately.
+
+## Areal Markov random fields
+
+`MarkovRandomField` represents a discrete areal effect with one raw indicator
+coefficient per region. For each undirected edge `(a, b)`, the graph Laplacian
+adds one to diagonal entries `a` and `b` and minus one to the two off-diagonal
+entries. The resulting quadratic penalty is
+
+```text
+lambda * sum_(a,b in edges) (beta_a - beta_b)^2.
+```
+
+The formula interface accepts zero-based integer region codes:
+
+```python
+edges = ((0, 1), (1, 2), (0, 3), (1, 4), (2, 5))
+model = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": (
+            f"y ~ mrf(region, edges={edges}, area_count=6, "
+            "initial_lambda_=1, name='area')"
+        ),
+        "sigma": "~ 1",
+    },
+    data,
+)
+fit = model.fit_laml_data(data)
+```
+
+Categorical regions can instead use a mapping whose keys establish the fitted
+level order and whose values name neighboring regions:
+
+```python
+neighbors = {
+    "north": ("center",),
+    "center": ("north", "south"),
+    "south": ("center",),
+}
+model = GAMLSS.from_formula(
+    Normal(),
+    {
+        "mu": (
+            f"y ~ mrf(region, adjacency={neighbors!r}, k=3, "
+            "initial_lambda_=1, name='area')"
+        ),
+        "sigma": "~ 1",
+    },
+    data,
+)
+```
+
+`nb=` is an `mgcv`-style alias for `adjacency=`. For direct tensor workflows,
+`MarkovRandomField.from_labels(regions, neighbors, ...)` performs the same
+encoding, while `encode_regions()` and `predict_design_labels()` reuse it for
+new observations. Labelled edge pairs may use `levels=(...)` to declare an
+order explicitly.
+
+Polygon coordinates can generate that mapping directly:
+
+```python
+polygons = {
+    "north": ((0, 0), (1, 0), (0.5, 0.8)),
+    "center": ((1, 0), (2, 0), (1.5, 0.8)),
+    "south": ((2, 0), (3, 0), (2.5, 0.8)),
+}
+term = MarkovRandomField.from_polygons(regions, polygons, basis_size=3)
+
+# The same literal mapping is accepted by mrf(..., polygons=polygons).
+```
+
+`polygon_adjacency(polygons)` is also public when only the neighbor mapping is
+needed. It reproduces `mgcv::pol2nb`: any exactly shared vertex creates an
+edge, so corner contact counts. A region value may contain one `(n, 2)` ring
+or several components. Coordinates must be finite, with at least three unique
+vertices per component. There is intentionally no hidden snapping tolerance;
+clean or snap noisy GIS boundaries before passing them to the model.
+
+When the spatial penalty is already available, it can replace graph
+construction entirely:
+
+```python
+term = MarkovRandomField.from_labels(
+    regions,
+    graph_penalty=penalty_tensor,
+    levels=("north", "center", "south"),
+    basis_size=3,
+)
+
+# Formula options are literals, hence a nested numeric tuple/list:
+formula = (
+    "y ~ mrf(region, penalty=((1, -1), (-1, 1)), "
+    "levels=('north', 'south'), initial_lambda_=1)"
+)
+```
+
+Exactly one of edges, adjacency, polygons, or a supplied penalty is accepted.
+Supplied matrices must be square, finite, symmetric, positive semidefinite,
+and follow the integer-code or explicit `levels` order. All sources
+participate in the same centering and full-/low-rank natural parameterization.
+
+`area_count` may include regions absent from the training observations, while
+every observed code and edge endpoint must lie between zero and
+`area_count-1`. The empirical intercept constraint is absorbed into the
+stored design. Connected graphs therefore have no remaining penalty null
+space after centering. Fixed `lambda_` works with RS, CG, L-BFGS, and
+mini-batch fitting; `initial_lambda_` selects the graph penalty through LAML.
+
+By default `k=area_count`, giving the full graph basis. A smaller `k` applies
+the `mgcv::nat.param(type=0)` construction and retains the `k`
+least-penalized graph coordinates before absorbing centering. Unobserved
+regions receive the same temporary dummy rows used by `mgcv` during this
+construction, so their predictions remain connected to the fitted graph.
+Because truncating inside an exactly repeated eigenvalue is
+implementation-dependent, TorchGAMLSS rejects such a `k` and asks for a size
+that retains the complete eigenspace.
+
+The committed 3-by-3 grid fixture matches the full-rank
+`mgcv::s(region, bs="mrf")` smoothing operator for all 135 observations and
+nine region predictions within `6e-15`. A second fixture uses `k=6` and agrees
+for the low-rank fits and predictions within `5e-15`. Full- and low-rank LAML
+selection, ten-replicate bootstrap reselection, state serialization, missing
+region prediction, named-factor encoding, and CUDA execution are tested
+separately. Relabeling the reference graph leaves its invariant smoother and
+`mgcv` parity unchanged. A separately weighted supplied-Laplacian fixture
+checks full- and low-rank `xt=list(penalty=S)` parity within `4e-15`.
+A six-region polygon fixture checks `mgcv::pol2nb` adjacency and full-/low-rank
+fits and predictions within `5e-15`.
+
 ## Generic multiple-penalty systems
 
 The low-level dense solver accepts one or more fixed coefficient-space
@@ -312,8 +641,8 @@ penalty ranks, constraint rank and null space, and the reduced system condition
 number. Rank-deficient penalties are supported when the complete penalized
 system remains identifiable.
 
-This API currently uses fixed lambdas. It does not yet perform whole-model
-LAML selection. Classical `PSpline` fitting through RS and CG continues to use
+The low-level API uses fixed lambdas; whole-model selection is supplied by the
+model LAML adapter. Classical `PSpline` fitting through RS and CG continues to use
 the existing square-root augmented solver for exact `gamlss::pb()` numerical
 compatibility. A `PSpline` can nevertheless be passed explicitly through the
 generic contract with `term.design(x)`, `term.penalty_matrices()`,
@@ -355,7 +684,11 @@ low-level row-product and penalty embedding are checked against
 
 ## Current limitations
 
-- Only equally spaced P-splines are available as tensor marginal bases.
+- Only equally spaced ordinary P-splines are available as tensor-product
+  marginals; cyclic and shrinkage terms are one-dimensional, while thin-plate
+  terms are isotropic multivariate smooths rather than tensor marginals. The
+  current adaptive term is one-dimensional; the `mgcv` two-dimensional
+  adaptive construction is not yet implemented.
 - Generic multiple-penalty systems currently use the dense low-level solver
   directly, through fixed-lambda formula RS/CG/L-BFGS/mini-batch fitting, or
   through dense whole-model LAML for Normal location-scale, Poisson log-mean,
@@ -363,8 +696,8 @@ low-level row-product and penalty embedding are checked against
   location/scale/shape, BCCG location/scale/shape, BCT
   location/scale/skewness/tail-shape, and BCPE
   location/scale/skewness/kurtosis, PE location/scale/shape, and uncensored GG
-  positive-location/scale/shape, uncensored LOGNO mean-log/scale, and
-  uncensored WEI scale/shape models.
+  positive-location/scale/shape, uncensored IG mean/dispersion, uncensored
+  LOGNO mean-log/scale, and uncensored WEI scale/shape models.
 - Linear-coefficient inference, within-curve covariance, pointwise smooth
   intervals, and simultaneous smooth bands are available conditionally for
   additive models, including fixed-lambda tensor terms. Analytic inference
@@ -375,7 +708,8 @@ low-level row-product and penalty embedding are checked against
   penalty.
   LAML refits repeat joint scalar/tensor selection in each successful
   replicate.
-- Automatic smoothing selection is available through `fit_rs()` and
-  `fit_cg()`; joint L-BFGS fitting requires fixed smoothing parameters.
+- P-spline automatic smoothing selection is available through `fit_rs()` and
+  `fit_cg()`. Automatic tensor, shrinkage, thin-plate, and adaptive terms use
+  whole-model LAML; joint L-BFGS fitting requires fixed smoothing parameters.
 - Prediction uses the stored B-spline basis. Out-of-range extrapolation parity
   with R's natural-spline prediction helper has not been verified.

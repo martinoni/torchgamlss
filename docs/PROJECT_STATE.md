@@ -1,6 +1,6 @@
 # Project state and handoff
 
-Last updated: 2026-08-01, America/Sao_Paulo.
+Last updated: 2026-08-08, America/Sao_Paulo.
 
 This file is the persistent project memory for decisions that should survive a
 conversation or development-session boundary. Detailed feature tracking remains
@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | WEI stabilization head `d3396a0` passed 11/11 CI jobs, 671 local tests, CUDA, all R gates, and the installed-wheel smoke test |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | WEI documentation head `e685a6c` passed 11/11 CI jobs in run 30762374326; IG, `pbc()`, `pbz()`, `tp()`, one- and two-dimensional `ad()`, and integer/categorical/supplied-penalty/polygon full-/low-rank `mrf()` pass the complete local validation stack, with publication and CI pending |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -572,14 +572,337 @@ family-driven nested LAML core with its standard log/log links.
   ([run 30761725213](https://github.com/martinoni/torchgamlss/actions/runs/30761725213)),
   including Python 3.10--3.13 on Linux and Windows.
 
+### Phase 12S — inverse-Gaussian LAML vertical validated locally
+
+The uncensored two-parameter `gamlss.dist::IG` family now uses the
+family-driven nested LAML core with its standard log/log links and the exact R
+parameterization `E(Y)=mu`, `Var(Y)=sigma^2*mu^3`.
+
+- whole-model `fit_laml()`/`fit_laml_data()` accepts uncensored IG models and
+  rejects unsupported links before optimization;
+- IG LAML bootstrap refits reselect automatic scalar or tensor lambdas;
+- a deterministic weighted fixture with offsets in both predictors fixes the
+  `mu` P-spline lambda at 10 and compares the compatible RS-warm-started Torch
+  fit with `gamlss::gamlss(IG())` for the negative log likelihood and all 160
+  fitted `mu` and `sigma` rows, or 320 fitted parameter values, within `3e-6`;
+- a separate weighted audit matches the implicit outer gradient and analytic
+  outer Hessian to finite differences;
+- automatic formula selection, ten-replicate bootstrap lambda reselection,
+  and the complete path pass on local CUDA 12.8;
+- inverse Gaussian is mathematically Tweedie with variance power `p=3`, but
+  `mgcv::Tweedie()` explicitly accepts only `1<p<=2`; no misleading direct
+  `mgcv` parity claim is made, and the fixed-R plus derivative protocol is the
+  independent reference strategy;
+- censored IG remains supported through its existing likelihood and fitting
+  routes but is not yet claimed for whole-model LAML;
+- the core R generator and installed-wheel smoke test include IG LAML gates;
+- all 675 Python tests pass without skips; all five R reference gates and four
+  end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, isolated installed-wheel smoke checks, and the complete local
+  CUDA path pass;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+This completes whole-model LAML validation across every uncensored base
+family currently implemented in TorchGAMLSS.
+
+### Phase 12T — cyclic and shrinkage P-splines validated locally
+
+The generic basis--penalty interface now exposes two additional
+GAMLSS-compatible one-dimensional terms.
+
+- `CyclicPSpline` and formula `pbc()` close the equally spaced B-spline basis,
+  use the exact `gamlss::pbc()` circular-difference root, and wrap prediction
+  covariates by the fitted period;
+- the complete 120-row R basis agrees within `9.4e-13`, the penalty within
+  `2.7e-15`, and the fixed-lambda coefficients, EDF, likelihood, and fitted
+  values agree at near-machine precision;
+- cyclic automatic LAML selection, ten-replicate bootstrap reselection, and
+  CUDA pass locally;
+- `ShrinkagePSpline` and formula `pbz()` expose second- and first-difference
+  penalties with a sum-to-zero constraint and two penalty-indexed lambdas;
+- fixed RS/CG uses `lambda_=(roughness, shrinkage)`, while
+  `initial_lambda_=(roughness, shrinkage)` selects both jointly through LAML;
+- the activated fixed `gamlss::pbz()` fixture agrees within `9e-5` for fitted
+  means and `7e-4` for global deviance; the tolerance records R's conditional
+  activation and additive centering rather than claiming exact algebra where
+  the algorithms differ;
+- joint two-lambda LAML selection, ten-replicate bootstrap reselection,
+  constraint satisfaction, installed-wheel smoke coverage, and CUDA pass;
+- nine focused cyclic/shrinkage tests and all 684 Python tests pass without
+  skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12U — thin-plate regression splines validated locally
+
+The first new `mgcv` basis family is implemented without requiring R at
+runtime.
+
+- `ThinPlateSpline` and formula `tp()` accept one or more covariates and build
+  the low-rank isotropic thin-plate basis from the training locations;
+- the implementation follows `mgcv`'s radial kernel, polynomial null space,
+  leading-magnitude spectral truncation, column scaling, absorbed empirical
+  sum-to-zero constraint, and stored out-of-sample prediction mapping;
+- formula aliases include `k`, `m`, `lambda_`, and `initial_lambda_`; fixed
+  lambda terms retain the absorbed constraint, while automatic terms select
+  one lambda through whole-model LAML;
+- the invariant fixed smoothing operator agrees with
+  `mgcv::smoothCon(..., bs="tp", absorb.cons=TRUE,
+  scale.penalty=FALSE)` for all 90 training fits and seven out-of-sample
+  predictions at approximately machine precision;
+- automatic LAML selection, ten-replicate bootstrap reselection, state
+  serialization, one-row prediction, and local CUDA execution pass;
+- five focused thin-plate tests and all 689 Python tests pass without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- the dense prototype caps the exact eigendecomposition at 500 unique knot
+  locations by default and uses deterministic subsampling above that limit;
+  `mgcv`'s larger randomized-knot/Lanczos path remains a structured-backend
+  target rather than a false large-data claim;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12V — one-dimensional adaptive P-splines validated locally
+
+The first adaptive smooth varies its roughness penalty over a single
+covariate while preserving the generic multipenalty interface.
+
+- `AdaptivePSpline` and formula `ad()` reproduce the one-dimensional
+  `mgcv::s(..., bs="ad")` construction: a cubic P-spline main basis, a
+  second-difference operator, and local penalties
+  `S_j = D' diag(V[, j]) D` generated by a lower-rank penalty basis;
+- formula aliases `k` and `m` select the main and penalty basis dimensions;
+  `lambda_=(...)` fixes all local penalties and `initial_lambda_=(...)`
+  selects them jointly through whole-model LAML;
+- the empirical sum-to-zero constraint is absorbed into the parameterization,
+  and prediction retains `mgcv`'s linear extrapolation outside the fitted
+  boundary knots;
+- fixed fits run through RS, CG, full-batch L-BFGS, and mini-batch training;
+  automatic fits reselect every local lambda during LAML bootstrap;
+- the invariant fixed smoothing operator agrees with
+  `mgcv::smoothCon(..., bs="ad", absorb.cons=TRUE,
+  scale.penalty=FALSE)` for all 100 training fits and eight in- and
+  out-of-range predictions within approximately `3e-13`;
+- six focused adaptive tests and all 695 Python tests pass without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- joint three-lambda selection and bootstrap refitting run on the local
+  NVIDIA GeForce RTX 4090 through CUDA;
+- two-dimensional `mgcv::ad` has directional and cross-derivative penalties
+  and remains the next separate adaptive slice rather than being approximated
+  by the one-dimensional implementation;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12W — two-dimensional adaptive P-splines validated locally
+
+The adaptive surface now reproduces `mgcv`'s coefficient-grid construction
+instead of approximating it with independent tensor marginal penalties.
+
+- `AdaptiveTensorPSpline` and formula `ad(x, z, ...)` use a tensor product of
+  cubic `mgcv::ps` bases and absorb the empirical sum-to-zero constraint;
+- the implementation translates `mgcv::D2` literally: `Drr` and `Dcc` take
+  directional second differences and `Dcr` supplies the scaled mixed
+  derivative;
+- a lower-rank tensor P-spline evaluates local non-negative weights at each
+  operator's grid locations, producing
+  `Drr' diag(vrr_j) Drr + Dcc' diag(vcc_j) Dcc +
+  Dcr' diag(vcr_j) Dcr` for every penalty coordinate;
+- `k=(k1,k2)` sets unequal or equal main dimensions, `m=(m1,m2)` sets the
+  penalty-basis shape, and the term exposes `m1*m2` fixed or jointly selected
+  lambdas;
+- the fixed reference intentionally uses `k=(7,6)` and nine distinct lambdas
+  so incorrect transposition or penalty ordering is observable; all 120 fitted
+  values agree with `mgcv` within `5.1e-14`, and seven in- and out-of-range
+  predictions agree within `3.9e-14`;
+- nine-lambda whole-model LAML converges, ten-replicate bootstrap refits
+  reselect every component, and the complete path runs on the local NVIDIA
+  GeForce RTX 4090 through CUDA;
+- five focused two-dimensional adaptive tests and all 700 Python tests pass
+  without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- penalty-basis dimensions below three, cyclic adaptive marginals, and the
+  non-adaptive single-penalty special case remain outside this first 2D slice;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12X — full-rank areal MRF smooths validated locally
+
+The first discrete spatial slice now represents region effects through an
+explicit undirected graph and the exact full-rank `mgcv::mrf` Laplacian.
+
+- `MarkovRandomField` and formula `mrf()` accept contiguous zero-based region
+  codes, an explicit edge list, and an optional `area_count` that can reserve
+  unobserved regions;
+- each edge contributes `(beta_a-beta_b)^2`; duplicate reversed edges are
+  normalized, while self-loops and unknown endpoints are rejected;
+- the raw area-indicator design and graph Laplacian are jointly transformed to
+  absorb the empirical intercept constraint and preserve out-of-sample
+  region prediction;
+- `lambda_=` fixes the graph penalty for RS, CG, L-BFGS, or mini-batch fitting,
+  while `initial_lambda_=` selects it through whole-model LAML;
+- the connected 3-by-3 reference graph agrees with
+  `mgcv::s(region, bs="mrf")` within `6e-15` for all 135 fitted values and all
+  nine region predictions;
+- LAML converges, ten-replicate bootstrap refits reselect lambda, and the path
+  runs on the local NVIDIA GeForce RTX 4090 through CUDA;
+- five focused MRF tests and all 705 Python tests pass without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- textual/factor labels, polygon-derived adjacency, direct user penalty
+  matrices, and `mgcv`'s low-rank `nat.param` truncation remain later slices;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12Y — low-rank areal MRF smooths validated locally
+
+The areal smoother now also implements `mgcv`'s natural low-rank
+parameterization instead of approximating dimension reduction after fitting.
+
+- `MarkovRandomField(..., basis_size=k)` and formula `mrf(..., k=k)` retain
+  the `k` least-penalized natural coordinates obtained from the generalized
+  eigensystem of the area-indicator design and graph Laplacian;
+- the construction follows `mgcv::nat.param(type=0)`, including QR
+  reparameterization, unit-Frobenius scaling, diagonal natural penalties, and
+  dummy indicator rows for graph regions absent from the training sample;
+- the empirical intercept constraint is absorbed after truncation, so a
+  requested `k=6` exposes five fitted smooth coefficients while retaining the
+  intended six-dimensional unconstrained natural space;
+- truncation through the middle of a repeated eigenvalue is rejected with an
+  explicit error because no individual basis inside that eigenspace is
+  uniquely identifiable; callers can include or exclude the complete tied
+  block instead;
+- on the connected 3-by-3 reference graph, the invariant fixed-lambda
+  smoothing operator and held-out region predictions agree with
+  `mgcv::s(..., bs="mrf", k=6)` within approximately `5e-15`;
+- both full- and low-rank MRF paths pass whole-model LAML selection,
+  ten-replicate bootstrap reselection, and local NVIDIA GeForce RTX 4090 CUDA
+  execution;
+- nine focused MRF tests and all 709 Python tests pass without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- textual/factor labels, adjacency mappings, polygon-derived adjacency,
+  direct user penalty matrices, and continuous spatial smooths remain later
+  slices;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12Z — categorical MRF inputs validated locally
+
+The graph smoother now accepts domain labels directly without moving
+categorical operations into the numerical fitting path.
+
+- `MarkovRandomField.from_labels(regions, adjacency, ...)` infers the stable
+  level order from adjacency keys and stores both integer and labelled graph
+  edges;
+- `encode_regions()`, `basis_labels()`, and `predict_design_labels()` reuse
+  the fitted encoding and reject labels outside the configured graph;
+- formula `mrf(region, adjacency={...})` accepts named neighbor mappings,
+  `nb=` is an `mgcv`-style alias, and labelled edge pairs can declare an
+  explicit `levels=(...)` order;
+- formula materialization encodes the MRF before Formulaic can create dummy
+  linear columns, while the stored level order permits prediction for graph
+  regions absent from the training sample;
+- the numerical core remains a floating-point tensor of integer codes, so
+  classical fitting, LAML, bootstrap, serialization, and CUDA retain the same
+  execution path as numeric-region models;
+- semantic relabeling of the connected 3-by-3 fixture preserves the exact
+  design and graph penalty, and therefore its full-/low-rank `mgcv` smoother
+  parity at approximately machine precision;
+- fourteen focused MRF tests and all 714 Python tests pass without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- polygon-derived adjacency, direct user penalty matrices, and continuous
+  spatial smooths remain later slices;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12AA — supplied MRF penalties validated locally
+
+Users can now provide an already constructed spatial precision/penalty matrix
+instead of requiring TorchGAMLSS to derive a unit-weight graph Laplacian.
+
+- `MarkovRandomField(..., graph_penalty=S)` and
+  `MarkovRandomField.from_labels(..., graph_penalty=S, levels=...)` accept
+  tensor or array-like matrices in the declared region order;
+- formula `mrf(region, penalty=((...), ...))` accepts the corresponding nested
+  numeric literal, while categorical columns require an explicit
+  `levels=(...)` order;
+- exactly one spatial source is required among edges, adjacency, and supplied
+  penalty, preventing silently ambiguous graph specifications;
+- supplied matrices are converted once to the term dtype/device and must be
+  square, finite, symmetric, positive semidefinite, and dimensionally
+  consistent with the area count;
+- full-rank centering and low-rank `nat.param(type=0)` operate on the supplied
+  matrix unchanged, including unobserved-region augmentation and repeated
+  eigenspace protection;
+- a 3-by-3 weighted-Laplacian fixture uses twelve distinct edge weights and
+  agrees with `mgcv::s(..., bs="mrf", xt=list(penalty=S))` within `4e-15` for
+  all fixed-lambda fitted values and region predictions at full rank and
+  `k=6`;
+- whole-model LAML selection, ten-replicate bootstrap reselection, labelled
+  prediction, and local NVIDIA GeForce RTX 4090 CUDA execution pass with the
+  external penalty;
+- twenty focused MRF tests and all 720 Python tests pass without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- polygon-derived adjacency and continuous spatial smooths remain later
+  slices;
+- GitHub publication and CI remain pending because the weekday 09:00--18:00
+  commit/push restriction is active.
+
+### Phase 12AB — polygon-derived MRF adjacency validated locally
+
+The areal smoother can now derive its graph directly from named polygon
+coordinates while keeping GIS dependencies outside the numerical core.
+
+- public `polygon_adjacency(polygons)` reproduces `mgcv::pol2nb`: any exactly
+  shared `(x, y)` vertex makes two regions neighbors, including corner-only
+  contact;
+- each mapping value accepts one finite `(n, 2)` coordinate ring or multiple
+  components, with at least three unique vertices required per component;
+- `MarkovRandomField.from_polygons(regions, polygons, ...)` and formula
+  `mrf(region, polygons={...})` retain mapping-key order as the categorical
+  region order and feed the derived undirected graph into the existing MRF
+  construction;
+- the implementation intentionally performs no snapping, tolerance-based
+  matching, segment intersection, shapefile I/O, or topology repair; callers
+  can clean GIS data externally without adding Shapely/GeoPandas as core
+  dependencies;
+- a six-region triangular-chain fixture reproduces all five
+  `mgcv::pol2nb` edges and agrees with
+  `mgcv::s(..., bs="mrf", xt=list(polys=polygons))` within `5e-15` for
+  full-rank and `k=4` fixed-lambda fits and region predictions;
+- whole-model LAML selection, ten-replicate bootstrap reselection, categorical
+  prediction, and local NVIDIA GeForce RTX 4090 CUDA execution pass with
+  polygon-derived adjacency;
+- twenty-six focused MRF tests and all 726 Python tests pass without skips;
+- all five R reference gates and all four end-to-end parity examples pass;
+- Ruff, dependency and bytecode checks, package build, strict Twine
+  validation, and an isolated installed-wheel smoke test pass;
+- continuous spatial smooths remain the next structured basis slice;
+- GitHub publication and CI are ready to run under the weekend schedule.
+
 ### Later slices
 
-1. inverse-Gaussian LAML validation;
-2. cyclic, shrinkage, adaptive, thin-plate, spatial, and GMRF terms;
-3. discretized marginal bases and structured crossproducts;
-4. unconditional inference and smoothing-uncertainty-aware information
+1. continuous spatial smooth terms;
+2. discretized marginal bases and structured crossproducts;
+3. unconditional inference and smoothing-uncertainty-aware information
    criteria;
-5. basis-dimension, concurvity, rank, and conditioning diagnostics.
+4. basis-dimension, concurvity, rank, and conditioning diagnostics.
 
 ## Open design decisions
 
@@ -609,7 +932,7 @@ whose internal representation is already available.
 
 ## Resume point
 
-The next family extension should reuse the same fixed-lambda R parity plus
-derivative-audit protocol for inverse-Gaussian with its standard log/log
-links. Rebase onto `main` only after stacked dependencies merge. Do not merge
-any existing draft PR without explicit user authorization.
+The next technical slice should implement a continuous spatial basis, starting
+with a scoped dense construction and explicit parity target. Rebase onto
+`main` only after stacked dependencies merge. Do not merge any existing draft
+PR without explicit user authorization.

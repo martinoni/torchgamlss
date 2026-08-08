@@ -221,7 +221,7 @@ def _set_term_smoothing_parameter_value(
 
 def _linear_design_overlap(term: SmoothTerm) -> int:
     """Return smooth null-space dimensions duplicated in the linear block."""
-    return term.penalty_nullity if len(term.penalty_matrices()) == 1 else 0
+    return term.linear_design_overlap
 
 
 def fit_cg(

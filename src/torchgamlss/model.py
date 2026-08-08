@@ -34,7 +34,12 @@ from torchgamlss.fitting import (
     fit_cg,
     fit_rs,
 )
-from torchgamlss.formula import FormulaData, FormulaEncoder, TensorFormulaSpec
+from torchgamlss.formula import (
+    FormulaData,
+    FormulaEncoder,
+    SmoothFormulaSpec,
+    TensorFormulaSpec,
+)
 from torchgamlss.inference import (
     InferenceResult,
     SmoothBootstrapResult,
@@ -70,10 +75,16 @@ from torchgamlss.quantiles import (
     quantile_bootstrap as run_quantile_bootstrap,
 )
 from torchgamlss.smooths import (
+    AdaptivePSpline,
+    AdaptiveTensorPSpline,
+    CyclicPSpline,
+    MarkovRandomField,
     PSpline,
+    ShrinkagePSpline,
     SmoothTerm,
     TensorInteractionSmooth,
     TensorProductSmooth,
+    ThinPlateSpline,
 )
 from torchgamlss.survival import SurvivalPrediction, survival_prediction
 
@@ -112,11 +123,36 @@ class TermContributions:
         return total + self.offset
 
 
+def _scalar_smooth_from_formula(
+    spec: SmoothFormulaSpec,
+    covariate: Tensor,
+) -> SmoothTerm:
+    term_type = {
+        "ad": AdaptivePSpline,
+        "mrf": MarkovRandomField,
+        "pb": PSpline,
+        "pbc": CyclicPSpline,
+        "pbz": ShrinkagePSpline,
+    }.get(spec.kind)
+    if term_type is None:
+        raise RuntimeError(f"unsupported scalar smooth kind: {spec.kind!r}")
+    return term_type.from_data(covariate, **dict(spec.options))
+
+
 def _tensor_smooth_from_formula(
     spec: TensorFormulaSpec,
     covariates: Tensor,
 ) -> SmoothTerm:
-    function_name = "ti" if spec.interaction else "te"
+    if spec.kind == "tp":
+        return ThinPlateSpline.from_data(covariates, **dict(spec.options))
+    if spec.kind == "ad":
+        return AdaptiveTensorPSpline.from_data(
+            covariates,
+            **dict(spec.options),
+        )
+    if spec.kind not in {"te", "ti"}:
+        raise RuntimeError(f"unsupported multivariate smooth kind: {spec.kind!r}")
+    function_name = spec.kind
     marginal_count = len(spec.covariates)
     options = dict(spec.options)
     raw_smoothing_parameters = tuple(options.pop("smoothing_parameters"))
@@ -369,9 +405,9 @@ class GAMLSS(nn.Module):
         smooth_terms: dict[str, dict[str, SmoothTerm]] = {}
         for parameter in family.parameter_names:
             parameter_terms: dict[str, SmoothTerm] = {
-                spec.name: PSpline.from_data(
+                spec.name: _scalar_smooth_from_formula(
+                    spec,
                     prepared.smooth_covariates[parameter][spec.name],
-                    **dict(spec.options),
                 )
                 for spec in encoder.smooth_specs[parameter]
             }
