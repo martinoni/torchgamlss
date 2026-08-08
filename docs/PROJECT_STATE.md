@@ -32,7 +32,7 @@ an explicit decision.
 | [#10](https://github.com/martinoni/torchgamlss/pull/10) | Finite mixtures | `agent/finite-mixtures` | 11/11 CI checks passed |
 | [#11](https://github.com/martinoni/torchgamlss/pull/11) | Generic smooth architecture | `agent/generic-smooth-architecture` | 11/11 CI checks passed |
 | [#12](https://github.com/martinoni/torchgamlss/pull/12) | Generic penalized solver | `agent/generic-penalized-solver` | 11/11 CI checks passed |
-| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor smooths and family-driven LAML | `agent/tensor-product-smooths` | WEI documentation head `e685a6c` passed 11/11 CI jobs in run 30762374326; IG, `pbc()`, `pbz()`, `tp()`, one- and two-dimensional `ad()`, and integer/categorical/supplied-penalty/polygon full-/low-rank `mrf()` pass the complete local validation stack, with publication and CI pending |
+| [#13](https://github.com/martinoni/torchgamlss/pull/13) | Tensor, adaptive, and spatial smooths with family-driven LAML | `agent/tensor-product-smooths` | Extended smooth/spatial implementation head `c89829e` passed 11/11 CI jobs in run 31279678278; IG, `pbc()`, `pbz()`, `tp()`, one- and two-dimensional `ad()`, and integer/categorical/supplied-penalty/polygon full-/low-rank `mrf()` pass the complete validation stack |
 
 PRs #9, #10, and #11 are based on `main`; PR #12 is stacked on #11, and PR
 #13 currently contains the LAML/tensor slice stacked on #12. The local
@@ -894,7 +894,9 @@ coordinates while keeping GIS dependencies outside the numerical core.
 - Ruff, dependency and bytecode checks, package build, strict Twine
   validation, and an isolated installed-wheel smoke test pass;
 - continuous spatial smooths remain the next structured basis slice;
-- GitHub publication and CI are ready to run under the weekend schedule.
+- implementation head `c89829e` passed all 11/11 GitHub CI jobs
+  ([run 31279678278](https://github.com/martinoni/torchgamlss/actions/runs/31279678278)),
+  including Python 3.10--3.13 on Linux and Windows.
 
 ### Later slices
 
