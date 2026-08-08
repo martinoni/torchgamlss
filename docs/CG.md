@@ -115,7 +115,11 @@ Committed R fixtures cover:
   outer iteration counts;
 - one-parameter fitting and control validation.
 
-CG supports the current one-dimensional `pb()` implementation, all
-smoothing-selection modes described in [`SMOOTHS.md`](SMOOTHS.md), and
-fixed-lambda analytic joint covariance for penalized terms. Broader smooth
-families remain future work.
+CG supports the one-dimensional `pb()` implementation and all its
+smoothing-selection modes described in [`SMOOTHS.md`](SMOOTHS.md). It also
+supports fixed-lambda `te()` and `ti()` terms: multiply penalized partial
+residuals are delegated to the generic constrained solver, while scalar
+`pb()` retains its GAMLSS-compatible numerical path. Tensor tests verify
+agreement with RS for full surfaces and pure interactions. Automatic
+multi-lambda selection is available through whole-model LAML rather than
+inside CG; broader smooth families remain future work.

@@ -336,8 +336,8 @@ Canonical Python option names are:
 The aliases `lambda_`, `df`, `method`, `k`, and `inter` are accepted in
 formulas. Use `penalty_order` for R's `order`.
 
-The current smoother scope is one-dimensional P-splines. A `pb()` call must be
-a standalone additive term over a simple numeric column. Multiple `pb()` terms
+The current `pb()` scope is one-dimensional P-splines. A `pb()` call must be a
+standalone additive term over a simple numeric column. Multiple `pb()` terms
 can be attached to one predictor, and different distribution parameters can
 contain smooths simultaneously.
 
@@ -356,16 +356,185 @@ fit.smoothing_iterations["mu"]["x"]
 
 See [`SMOOTHS.md`](SMOOTHS.md) for the tensor-level `PSpline` API.
 
+## Translating `pbc()` and `pbz()`
+
+Periodic P-splines map directly to `pbc()`:
+
+| R | Python formula |
+| --- | --- |
+| `pbc(x)` | `pbc(x)` |
+| `pbc(x, lambda=12, inter=12)` | `pbc(x, lambda_=12, intervals=12)` |
+| `pbc(x, df=4)` | `pbc(x, df=4)` |
+| `pbc(x, sin=FALSE)` | `pbc(x, sin=False)` |
+
+Torch prediction wraps new values by the fitted period. The stored
+`CyclicPSpline` therefore gives identical predictions at `x`, `x+period`, and
+`x-period`, including outside the original range.
+
+`pbz()` exposes both its ordinary roughness penalty and its additional
+first-difference shrinkage penalty. Supply both lambdas for a fixed RS/CG fit:
+
+```python
+"y ~ pbz(x, lambda_=(100000, 50), intervals=20)"
+```
+
+or supply LAML starting values and select both jointly:
+
+```python
+"y ~ pbz(x, initial_lambda_=(10, 10), intervals=10)"
+```
+
+R's `pbz()` activates the second penalty conditionally when a preliminary fit
+falls below its EDF limit. Torch reproduces an activated fixed-R fixture, but
+its LAML model treats the two declared penalties as jointly active throughout
+selection. This distinction is intentional and visible through the two
+penalty-indexed smoothing parameters.
+
+## Translating `mgcv` thin-plate smooths
+
+The default isotropic `mgcv` thin-plate basis maps to `tp()`:
+
+| `mgcv` formula | TorchGAMLSS formula |
+| --- | --- |
+| `s(x, bs="tp")` | `tp(x)` |
+| `s(x, z, bs="tp", k=15, m=2)` | `tp(x, z, k=15, m=2)` |
+| fixed smoothing parameter | `tp(x, z, lambda_=2.5)` |
+| automatic LAML from a chosen start | `tp(x, z, initial_lambda_=1)` |
+
+`tp()` absorbs its sum-to-zero constraint when the formula model is built.
+The fixed-lambda term can therefore use RS, CG, L-BFGS, or mini-batch fitting;
+automatic selection uses `fit_laml_data()`. The stored training shift, knot
+locations, spectral transform, polynomial null space, and penalty are reused
+for prediction.
+
+The current dense Torch constructor uses an exact eigendecomposition and a
+default cap of 500 unique knot locations. `mgcv` defaults to a larger cap and
+uses randomized knot subsampling plus a Lanczos eigensolver. Below the cap the
+resulting smoothing and prediction operators agree at floating-point
+precision; matching individual basis columns is neither required nor stable
+because eigenvector signs and rotations are arbitrary.
+
+## Translating `mgcv` adaptive smooths
+
+The one-dimensional adaptive P-spline maps to `ad()`:
+
+| `mgcv` formula | TorchGAMLSS formula |
+| --- | --- |
+| `s(x, bs="ad")` | `ad(x)` |
+| `s(x, bs="ad", k=20, m=5)` | `ad(x, k=20, m=5)` |
+| fixed five-component penalty | `ad(x, m=5, lambda_=(a, b, c, d, e))` |
+| automatic LAML starts | `ad(x, m=5, initial_lambda_=(a, b, c, d, e))` |
+| `s(x, z, bs="ad", k=c(7,6), m=c(3,3))` | `ad(x, z, k=(7,6), m=(3,3))` |
+
+As in `mgcv`, `k` controls the main cubic P-spline dimension and `m` controls
+the dimension of the smoother over the local penalty weights. Consequently,
+an `m=5` term contributes five coefficient-space penalties and five lambda
+coordinates. The sum-to-zero constraint is absorbed during construction.
+
+TorchGAMLSS reproduces the `mgcv::ps` knot expansion, the adaptive penalty
+basis, `D' diag(v_j) D` matrices, and linear extrapolation outside the boundary
+knots. For two covariates it additionally reproduces the coefficient-grid
+second differences in both directions and the scaled mixed derivative. Fixed
+fits can use RS, CG, L-BFGS, or mini-batch fitting; automatic multi-lambda terms
+use `fit_laml_data()`.
+
+## Translating `mgcv` areal MRF smooths
+
+The graph slice accepts either zero-based integer codes with explicit edges or
+categorical labels with a named adjacency mapping:
+
+| `mgcv` formula/input | TorchGAMLSS formula/input |
+| --- | --- |
+| `s(region, bs="mrf", xt=list(nb=nb))` | `mrf(region, edges=edges, area_count=n)` |
+| named factor plus `xt=list(nb=nb)` | `mrf(region, adjacency=neighbors)` |
+| `xt=list(polys=polygons)` | `mrf(region, polygons=polygons)` |
+| `xt=list(penalty=S)` | `mrf(region, penalty=S)` |
+| `s(region, bs="mrf", k=6, xt=list(nb=nb))` | `mrf(region, edges=edges, area_count=n, k=6)` |
+| fixed graph penalty | `mrf(region, edges=edges, lambda_=a)` |
+| REML/LAML graph penalty | `mrf(region, edges=edges, initial_lambda_=a)` |
+
+Each edge contributes `(beta_a-beta_b)^2`, exactly producing the `mgcv`
+neighbour-list Laplacian. TorchGAMLSS absorbs the empirical intercept
+constraint and stores the mapping needed for region-level prediction. An
+`area_count` larger than the observed maximum can reserve unobserved regions
+whose values are informed through graph neighbours.
+
+For categorical data, adjacency keys define the factor-level order and values
+list neighboring labels. The fitted encoder stores that order for prediction,
+including graph levels absent from the training observations. `nb=` is an
+alias for `adjacency=`. Labelled edge pairs are also accepted when their order
+is declared explicitly with `levels=(...)`.
+
+A supplied penalty replaces edge/adjacency construction and must be square,
+finite, symmetric, positive semidefinite, and ordered exactly like the region
+codes or declared `levels`. Formula matrices are nested numeric literals;
+direct use accepts tensors and array-like matrices through
+`graph_penalty=`. The same matrix supports full rank or `k`-truncated natural
+parameterization.
+
+Polygon mappings use region labels as keys. Each value is either one sequence
+of `(x, y)` vertices or a sequence of polygon components. Matching
+`mgcv::pol2nb`, two regions are neighbors when any vertex pair is exactly
+equal; corner-only contact counts, repeated closing vertices are harmless,
+and no coordinate tolerance or general segment-intersection rule is applied.
+For noisy GIS coordinates, normalize/snap boundaries before construction.
+
+Supplying `k < area_count` reproduces the `nat.param(type=0)` low-rank
+construction and retains the least-penalized graph coordinates. Choose `k` so
+that the truncation does not split an exactly repeated eigenvalue; otherwise
+the retained subspace is not uniquely defined across numerical libraries and
+TorchGAMLSS raises an explicit error.
+
+Explicit edge lists and polygon-derived pairs are normalized as undirected, so
+reversed duplicates do not change the penalty. Reading shapefiles or repairing
+invalid geometries remains the caller's responsibility; the core deliberately
+does not require a heavyweight GIS dependency.
+
+## Translating `mgcv::te()` and `mgcv::ti()`
+
+TorchGAMLSS formula tensor terms use equally spaced P-spline marginals and
+support fixed or jointly LAML-selected smoothing parameters:
+
+| `mgcv` concept | TorchGAMLSS formula |
+| --- | --- |
+| automatic full tensor surface | `te(x, z)` |
+| automatic pure tensor interaction | `ti(x, z)` |
+| fixed tensor lambdas | `te(x, z, lambda_=(2, 8))` |
+| LAML starting lambdas | `te(x, z, initial_lambda_=(2, 8))` |
+| marginal basis sizes | `intervals=(6, 4)` |
+| named contribution | `name='surface'` |
+
+`te()` contains the complete surface and absorbs a global sum-to-zero
+constraint when constructed from a formula. `ti()` removes the marginal
+main-effect directions, so include the desired lower-order terms explicitly:
+
+```python
+formulas = {
+    "mu": "y ~ x + z + ti(x, z, intervals=(6, 4))",
+    "sigma": "~ 1",
+}
+model = GAMLSS.from_formula(Normal(), formulas, data)
+fit = model.fit_laml_data(data)
+```
+
+`fit_laml_data()` selects all automatic scalar and tensor lambdas jointly for
+the current Normal location-scale slice. Formula `te()`/`ti()` also works
+through RS, CG, L-BFGS, or mini-batch Adam when `lambda_=` fixes each margin.
+RS and CG use the generic constrained solver for the tensor update and retain
+the GAMLSS-compatible scalar solver for `pb()`. See
+[`TENSOR_SMOOTHS.md`](TENSOR_SMOOTHS.md).
+
 ## Fitting algorithm mapping
 
 | R | TorchGAMLSS |
 | --- | --- |
 | `method=RS()` | `model.fit_rs_data(...)` |
 | `method=CG()` | `model.fit_cg_data(...)` |
+| `mgcv` REML/LAML smoothing selection | `model.fit_laml_data(...)` |
 | no direct equivalent | `model.fit_data(...)` using Torch L-BFGS |
 
 The methods without the `_data` suffix are the low-level tensor equivalents:
-`fit_rs()`, `fit_cg()`, and `fit()`.
+`fit_rs()`, `fit_cg()`, `fit_laml()`, and `fit()`.
 
 RS and CG support fixed, ML, target-EDF, GAIC, and GCV smoothing-parameter
 selection. The L-BFGS path requires fixed smoothing parameters.
@@ -676,10 +845,25 @@ bootstrap = model.smooth_bootstrap_data(
 mu_x_bootstrap = bootstrap["mu"]["x"]
 ```
 
-Every replicate simulates from the fitted family and reruns the complete RS or
-CG fit, so automatic `pb()` lambda selection is repeated. This is a
-TorchGAMLSS extension rather than a claim of direct `gamlss` output parity;
-the underlying fit and conditional variance remain covered by the R fixtures.
+Every replicate simulates from the fitted family and reruns the selected
+complete estimator. RS and CG repeat their available `pb()` lambda updates.
+Fixed-lambda `te()`/`ti()` models use the same workflow and store one lambda
+column per marginal penalty; those columns have zero variance. For an
+automatic tensor model fitted by LAML, pass `algorithm="laml"` and
+`control=LAMLControl()` to repeat joint scalar/tensor selection in every
+successful sample. This is a TorchGAMLSS extension rather than a claim of
+direct `gamlss` output parity; the underlying fit and conditional variance
+remain covered by the R fixtures.
+
+Whole-model LAML uses implicit-function outer gradients and Hessians by
+default, matching the outer-derivative strategy used by `mgcv`. Set
+`LAMLControl(outer_derivative_method="finite_difference")` only to audit
+against the original profile-difference implementation.
+
+The low-level `fit_gamlss_laml()` API can condition on a fixed distribution
+parameter by pairing an `n x 0` design with its link-scale offset. This is used
+for direct Beta parity with `mgcv::betar(theta=...)`; regular Beta formula
+models estimate both `mu` and `sigma` predictors.
 
 Use `smooth_joint_bootstrap_data()` when several fitted smooths must remain
 aligned within each replicate:
@@ -796,8 +980,16 @@ TorchGAMLSS is pre-alpha and currently covers a focused subset of R `gamlss`.
 Important exclusions include:
 
 - families other than the ten listed above;
-- smoothers other than the current `pb()` implementation;
-- transformed or interaction smooth terms;
+- smoothers other than the implemented `pb()`, `pbc()`, `pbz()`, one- and
+  two-dimensional `ad()`, full-rank `mrf()`, `tp()`, and P-spline
+  `te()`/`ti()` slices;
+- transformed smooth covariates and tensor LAML beyond the standard Normal
+  location-scale, Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and
+  Beta mean/dispersion, Student-t location/scale/shape, BCCG
+  location/scale/shape, BCT location/scale/skewness/tail-shape, and BCPE
+  location/scale/skewness/kurtosis, PE location/scale/shape, and uncensored GG
+  positive-location/scale/shape, uncensored IG mean/dispersion, uncensored
+  LOGNO mean-log/scale, and uncensored WEI scale/shape families;
 - automatic missing-value row removal;
 - profile-likelihood and robust covariance workflows;
 - nonparametric and cluster bootstrap intervals;

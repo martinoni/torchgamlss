@@ -61,6 +61,14 @@ from torchgamlss.inference import (
     SmoothJointInferenceResult,
     SmoothSimultaneousBand,
 )
+from torchgamlss.laml import (
+    GAMLSSLAMLResult,
+    LAMLControl,
+    LAMLHistoryEntry,
+    NormalLAMLResult,
+    fit_gamlss_laml,
+    fit_normal_laml,
+)
 from torchgamlss.links import IdentityLink, InverseLink, Link, LogitLink, LogLink
 from torchgamlss.model import GAMLSS, FitResult, TermContributions
 from torchgamlss.optimization import (
@@ -68,16 +76,36 @@ from torchgamlss.optimization import (
     MiniBatchFitResult,
     MiniBatchValidationData,
 )
+from torchgamlss.penalties import (
+    PenalizedLeastSquaresResult,
+    solve_penalized_least_squares,
+)
 from torchgamlss.predictors import MLPPredictor, SharedMLPPredictor
 from torchgamlss.quantiles import (
     QuantileBandResult,
     QuantileBootstrapResult,
     QuantilePrediction,
 )
-from torchgamlss.smooths import PSpline, SmoothTerm
+from torchgamlss.smooths import (
+    AdaptivePSpline,
+    AdaptiveTensorPSpline,
+    CyclicPSpline,
+    MarkovRandomField,
+    PSpline,
+    ShrinkagePSpline,
+    SmoothTerm,
+    TensorInteractionSmooth,
+    TensorProductSmooth,
+    ThinPlateSpline,
+    polygon_adjacency,
+    row_tensor_product,
+    tensor_product_penalties,
+)
 from torchgamlss.survival import SurvivalPrediction
 
 __all__ = [
+    "AdaptivePSpline",
+    "AdaptiveTensorPSpline",
     "BCCG",
     "BCT",
     "BCPE",
@@ -93,10 +121,12 @@ __all__ = [
     "CensoredFamily",
     "CensoredResponse",
     "Censoring",
+    "CyclicPSpline",
     "Family",
     "FitResult",
     "FormulaData",
     "GAMLSS",
+    "GAMLSSLAMLResult",
     "Gamma",
     "GeneralizedGamma",
     "GG",
@@ -105,9 +135,12 @@ __all__ = [
     "InferenceResult",
     "InverseGaussian",
     "InverseLink",
+    "LAMLControl",
+    "LAMLHistoryEntry",
     "Link",
     "LogLink",
     "LOGNO",
+    "MarkovRandomField",
     "LogNormal",
     "LogitLink",
     "ModelDiagnostics",
@@ -117,9 +150,12 @@ __all__ = [
     "MLPPredictor",
     "NegativeBinomial",
     "Normal",
+    "NormalLAMLResult",
     "Poisson",
     "PowerExponential",
+    "polygon_adjacency",
     "PE",
+    "PenalizedLeastSquaresResult",
     "PSpline",
     "QuantileBandResult",
     "QuantileBootstrapResult",
@@ -127,6 +163,7 @@ __all__ = [
     "QuantileResidualSummary",
     "RSControl",
     "RSFitResult",
+    "ShrinkagePSpline",
     "ResidualDiagnosticPlot",
     "SmoothBootstrapResult",
     "SmoothCrossingBootstrapResult",
@@ -142,6 +179,9 @@ __all__ = [
     "SmoothTerm",
     "SharedMLPPredictor",
     "TermContributions",
+    "TensorInteractionSmooth",
+    "TensorProductSmooth",
+    "ThinPlateSpline",
     "StudentT",
     "SurvivalPrediction",
     "TF",
@@ -152,6 +192,11 @@ __all__ = [
     "WormPlotResult",
     "bucket_plot",
     "compare_models",
+    "fit_gamlss_laml",
+    "fit_normal_laml",
+    "row_tensor_product",
+    "solve_penalized_least_squares",
+    "tensor_product_penalties",
     "worm_plot",
 ]
 

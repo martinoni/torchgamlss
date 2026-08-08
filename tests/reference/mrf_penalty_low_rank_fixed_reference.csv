@@ -1,0 +1,2 @@
+requested_basis_size,basis_size,penalty_rank,penalty_nullity,lambda,mgcv_version
+6,5,5,0,1.9,1.9.4

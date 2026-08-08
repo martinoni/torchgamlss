@@ -4,6 +4,9 @@ TorchGAMLSS will grow in verified vertical slices. Each slice must include
 automated comparisons with the reference R implementation before it is treated
 as supported.
 
+The current implementation state, accepted architectural decisions, and
+next-session handoff are recorded in [`PROJECT_STATE.md`](PROJECT_STATE.md).
+
 ## Phase 0 — foundation
 
 - [x] Package skeleton and GPL-3.0-only licensing
@@ -139,8 +142,83 @@ as supported.
 
 ## Phase 12 — additive-model ecosystem
 
-- [ ] Tensor-product and multidimensional smooths
-- [ ] Free-knot and expanded penalty families
-- [ ] Spatial smooths and GMRF-style penalties
+- [x] Generic `design` + penalties + constraints + prediction-design contract
+  layered over the GAMLSS-compatible `PSpline`
+- [x] Coefficient-space penalty representation with multiple fixed lambdas
+- [x] Null-space reparameterization for sum-to-zero and point constraints
+- [x] First whole-model LAML prototype for Normal location-scale models and
+  current one-dimensional P-splines
+- [x] Generic family-driven LAML likelihood core and non-Normal vertical
+  slices for Poisson log-mean, NBI mean/dispersion, Gamma mean/CV, and Beta
+  mean/dispersion models, plus Student-t location/scale/shape, including direct
+  `mgcv` REML/LAML parity and bootstrap refits
+- [x] BCCG identity/log/identity LAML with fixed-lambda `gamlss` parity,
+  implicit-versus-finite-difference derivative audits, bootstrap, and CUDA
+- [x] BCT identity/log/identity/log LAML with fixed-lambda `gamlss` parity,
+  RS warm starts, derivative audits, bootstrap, and CUDA
+- [x] BCPE identity/log/identity/log LAML with fixed-lambda `gamlss` parity,
+  RS warm starts, derivative audits, bootstrap, and CUDA
+- [x] PE identity/log/log LAML with fixed-lambda `gamlss` parity, RS warm
+  starts, derivative audits, bootstrap, and CUDA
+- [x] Uncensored GG log/log/identity LAML with fixed-lambda `gamlss` parity,
+  RS warm starts, derivative audits away from the piecewise log-normal
+  transition, bootstrap, and CUDA
+- [x] Uncensored LOGNO identity/log LAML with fixed-lambda `gamlss` parity,
+  exact Normal-on-log objective/derivative identity, bootstrap, and CUDA
+- [x] Uncensored WEI log/log LAML with weighted fixed-lambda `gamlss` parity,
+  exact Gumbel transformed-response `mgcv` parity, derivative audits,
+  bootstrap, and CUDA
+- [x] Uncensored IG log/log LAML with weighted fixed-lambda `gamlss` parity,
+  derivative audits, bootstrap, CUDA, and an explicit record that
+  `mgcv::Tweedie()` excludes the mathematically corresponding `p=3`
+- [x] Implicit-function outer LAML gradients with a finite-difference audit
+  fallback and reduced profile-evaluation diagnostics
+- [x] Fully analytic outer LAML Hessian from second-order implicit coefficient
+  sensitivities and exact autograd partials, with no displaced profile fits
+- [x] Complete whole-model LAML validation for every currently implemented
+  uncensored base family, retaining fixed-lambda `gamlss` and derivative gates
+  where no directly overlapping `mgcv` location-scale family exists
+- [x] Fixed-lambda tensor-product full smooths and ANOVA-style tensor
+  interactions through the generic dense solver
+- [x] Fixed-lambda `te()`/`ti()` formula construction, prediction, L-BFGS,
+  mini-batch, and CUDA execution
+- [x] RS/CG integration for fixed-lambda multiply penalized tensor terms
+- [x] Conditional and joint analytic fixed-lambda inference for tensor terms
+- [x] RS/CG smooth bootstrap with penalty-level vector-lambda storage for
+  tensor terms
+- [x] Whole-model LAML selection for tensor smoothing parameters, including
+  formula integration and direct `mgcv::te()` REML reference checks
+- [x] Fixed-design LAML bootstrap refits with joint scalar/tensor lambda
+  reselection for smooth and response-quantile inference
+- [x] Random intercepts and slopes represented as ridge-penalized terms
+- [x] Cyclic `pbc()` smooths with exact basis/penalty and fixed-fit R parity,
+  periodic prediction, LAML/bootstrap, and CUDA
+- [x] Double-penalty shrinkage `pbz()` smooths with activated fixed-fit R
+  parity, joint two-lambda LAML/bootstrap, centering, and CUDA
+- [x] Low-rank isotropic thin-plate regression splines with `tp()` formula
+  construction, invariant `mgcv` smoother/prediction parity, LAML/bootstrap,
+  and CUDA
+- [x] One-dimensional adaptive `ad()` P-splines with `mgcv` basis/penalty and
+  extrapolation parity, multi-lambda LAML/bootstrap, and CUDA
+- [x] Two-dimensional adaptive `ad()` tensor P-splines with directional and
+  mixed-derivative `mgcv` parity, nine-lambda LAML/bootstrap, and CUDA
+- [x] Full-rank areal `mrf()` graph smooths with explicit edges, exact `mgcv`
+  Laplacian/smoother parity, LAML/bootstrap, and CUDA
+- [x] Low-rank `mrf(k=...)` natural parameterization with unobserved-region
+  support, exact `mgcv` smoother parity, LAML/bootstrap, and CUDA
+- [x] Textual/factor MRF regions, named adjacency mappings, stable fitted-level
+  prediction, LAML/bootstrap, and CUDA
+- [x] Directly supplied MRF penalty matrices with full-/low-rank `mgcv`
+  parity, label ordering, LAML/bootstrap, and CUDA
+- [x] Polygon-derived MRF adjacency with exact `mgcv::pol2nb` shared-vertex
+  semantics, multiple components, full-/low-rank parity, LAML/bootstrap, and
+  CUDA
+- [ ] Continuous spatial smooths
+- [ ] Discretized marginal bases and structured crossproducts for large data
+- [ ] Unconditional covariance including log-smoothing-parameter uncertainty
+- [ ] Basis-dimension, concurvity, rank, and conditioning diagnostics
 - [ ] Cross-validation and rolling-origin model validation
 - [ ] Expanded diagnostic and plotting compatibility with the GAMLSS ecosystem
+
+See [`SMOOTH_ARCHITECTURE.md`](SMOOTH_ARCHITECTURE.md) for the staged design,
+compatibility rules, and validation gates.

@@ -102,6 +102,8 @@ jobs:
       - run: Rscript tools/generate_r_references.R --check
       - run: Rscript tools/generate_truncated_references.R --check
       - run: Rscript tools/generate_censored_references.R --check
+      - run: Rscript tools/generate_mgcv_tensor_reference.R --check
+      - run: Rscript tools/generate_mgcv_laml_reference.R --check
       - name: Run end-to-end Normal location-scale parity
         run: >-
           python tools/run_parity.py

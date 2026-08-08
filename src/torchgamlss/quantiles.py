@@ -6,14 +6,21 @@ import copy
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import torch
 from torch import Tensor
 
+from torchgamlss.bootstrap import (
+    BootstrapAlgorithm,
+    BootstrapControl,
+    bootstrap_fit_converged,
+    fit_bootstrap_model,
+    validate_bootstrap_refit,
+)
+
 if TYPE_CHECKING:
-    from torchgamlss.fitting import CGControl, RSControl
     from torchgamlss.model import GAMLSS
 
 
@@ -251,8 +258,8 @@ def quantile_bootstrap(
     ) = None,
     replicates: int = 999,
     max_attempts: int | None = None,
-    algorithm: Literal["rs", "cg"] = "rs",
-    control: RSControl | CGControl | None = None,
+    algorithm: BootstrapAlgorithm = "rs",
+    control: BootstrapControl | None = None,
     confidence_level: float = 0.95,
     generator: torch.Generator | None = None,
 ) -> QuantileBootstrapResult:
@@ -273,17 +280,7 @@ def quantile_bootstrap(
         raise ValueError("max_attempts must be an integer not smaller than replicates")
     if not math.isfinite(confidence_level) or not 0.0 < confidence_level < 1.0:
         raise ValueError("confidence_level must be finite and between zero and one")
-    if algorithm not in {"rs", "cg"}:
-        raise ValueError("algorithm must be 'rs' or 'cg'")
-
-    from torchgamlss.fitting import CGControl, RSControl
-
-    expected_control = RSControl if algorithm == "rs" else CGControl
-    if control is not None and not isinstance(control, expected_control):
-        raise ValueError(
-            f"control must be {expected_control.__name__} when algorithm="
-            f"{algorithm!r}"
-        )
+    algorithm = validate_bootstrap_refit(model, algorithm, control)
 
     model_parameter = next(model.parameters())
     if (
@@ -380,28 +377,19 @@ def quantile_bootstrap(
 
         bootstrap_model = copy.deepcopy(model)
         try:
-            if algorithm == "rs":
-                fit_result = bootstrap_model.fit_rs(
-                    bootstrap_response,
-                    design_matrices,
-                    weights=case_weights,
-                    offsets=offsets,
-                    smooth_covariates=smooth_covariates,
-                    initial_parameters=fitted_parameters,
-                    control=control,
-                )
-            else:
-                fit_result = bootstrap_model.fit_cg(
-                    bootstrap_response,
-                    design_matrices,
-                    weights=case_weights,
-                    offsets=offsets,
-                    smooth_covariates=smooth_covariates,
-                    initial_parameters=fitted_parameters,
-                    control=control,
-                )
-            if not fit_result.converged:
-                failure_messages.append("classical fit did not converge")
+            fit_result = fit_bootstrap_model(
+                bootstrap_model,
+                bootstrap_response,
+                design_matrices,
+                weights=case_weights,
+                offsets=offsets,
+                smooth_covariates=smooth_covariates,
+                initial_parameters=fitted_parameters,
+                algorithm=algorithm,
+                control=control,
+            )
+            if not bootstrap_fit_converged(fit_result, algorithm):
+                failure_messages.append(f"{algorithm.upper()} fit did not converge")
                 continue
             bootstrap_parameters = bootstrap_model.predict(
                 evaluation_design_matrices,

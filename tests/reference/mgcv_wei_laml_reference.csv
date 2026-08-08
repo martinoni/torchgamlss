@@ -1,0 +1,2 @@
+"mgcv_version","objective","log_likelihood","weighted_log_jacobian","lambda_mu","lambda_sigma","effective_degrees_of_freedom","outer_iterations","outer_convergence","gradient_mu","gradient_sigma","hessian_mu_mu","hessian_mu_sigma","hessian_sigma_sigma","coefficient_count"
+"1.9.4",530.154060358355,-513.731009483241,-76.4324929615012,49.3849821131207,9.22654516428923,9.25373754427889,6,"full convergence",1.98545579976894e-09,7.06293811547631e-06,1.01975502817148,0.0139036417218809,1.30174006519776,15

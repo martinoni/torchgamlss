@@ -1,0 +1,2 @@
+basis_size,penalty_count,penalty_nullity,first_basis_size,second_basis_size,first_penalty_basis_size,second_penalty_basis_size,mgcv_version,lambda_0,lambda_1,lambda_2,lambda_3,lambda_4,lambda_5,lambda_6,lambda_7,lambda_8
+41,9,3,7,6,3,3,1.9.4,0.3,0.7,1.5,3,2.2,1.1,0.8,1.7,0.5

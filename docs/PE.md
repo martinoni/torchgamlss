@@ -53,6 +53,38 @@ provides a differentiable Torch density and CDF, seeded response sampling,
 conditional quantiles, and the parameter-scale scores and expected
 derivatives used by the R RS and CG algorithms.
 
+## Whole-model LAML
+
+The standard identity/log/log parameterization is supported by the dense
+whole-model LAML estimator. Automatic scalar and tensor smoothing parameters
+are selected jointly across `mu`, `sigma`, and `nu`:
+
+```python
+from torchgamlss import GAMLSS, LAMLControl, PE
+
+model = GAMLSS.from_formula(
+    PE(),
+    {
+        "mu": "y ~ pb(x, intervals=8)",
+        "sigma": "~ 1",
+        "nu": "~ 1",
+    },
+    data,
+)
+model.fit_rs_data(data, weights="weight")
+fit = model.fit_laml_data(
+    data,
+    weights="weight",
+    warm_start=True,
+    control=LAMLControl(),
+)
+```
+
+The compatible RS warm start is recommended for strict fixed-lambda parity
+with R and for data sets where tail shape is weakly identified. LAML
+bootstrap refits repeat automatic scalar or tensor lambda selection. The
+complete path is tested on CPU and CUDA.
+
 ## Verified parity
 
 Committed fixtures generated with `gamlss.dist` 6.1-1 and `gamlss` 5.5-0
@@ -65,6 +97,9 @@ cover:
   `sigma`, and `nu`;
 - full-Hessian inference, information criteria, quantile residuals, response
   quantiles, and seeded sampling;
+- fixed-lambda whole-model LAML parity for all fitted parameters, independent
+  implicit-versus-finite-difference outer derivative audits, formula
+  selection, ten-replicate LAML bootstrap, and CUDA execution;
 - the exact `nu=2` Normal identity;
 - CUDA FP32, FP16, and BF16 stress fitting across concentrated and
   heavy-tailed regimes.
